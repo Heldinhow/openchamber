@@ -3,6 +3,7 @@ import type { ModelSelection, Session } from "@/lib/opencode/model"
 import { opencodeClient } from "@/lib/opencode/client"
 import type { MessagePage } from "@/lib/opencode/client"
 import { getRuntimeKey } from "@/lib/runtime-switch"
+import { createPendingDraftWorktreeRequest, resolvePendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraftWorktree"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { ChildStoreManager } from "./child-store"
 import { setActionRefs, setOptimisticRefs } from "./session-actions"
@@ -238,6 +239,39 @@ describe("the first message of a draft", () => {
     const retry = send("hello", "normal", draft)
     await flush()
     expect(createSessionCalls).toHaveLength(2)
+    creation.resolve()
+    await retry
+    expect(sendCalls).toHaveLength(1)
+  })
+
+  test("a draft that waited for a new worktree reopens on that worktree after a failed creation and can send again", async () => {
+    const requestId = createPendingDraftWorktreeRequest()
+    const draft: NewSessionDraftState = { ...openDraft(9), directoryOverride: "/repo-root", pendingWorktreeRequestId: requestId }
+    useSessionUIStore.setState({ newSessionDraft: draft, currentSessionId: null, currentSessionDirectory: null })
+    const sending = send("hello", "normal", draft)
+    sending.catch(() => undefined)
+    await flush()
+    // Still the draft: the worktree is being made.
+    expect(useSessionUIStore.getState().currentSessionId).toBeNull()
+    expect(createSessionCalls).toEqual([])
+
+    resolvePendingDraftWorktreeRequest(requestId, DIRECTORY)
+    await flush()
+    const sessionId = useSessionUIStore.getState().currentSessionId
+    expect(sessionId).not.toBeNull()
+    expect(createSessionCalls).toEqual([{ id: sessionId, directory: DIRECTORY }])
+
+    creation.reject(new Error("offline"))
+    await sending.then(() => null, () => null)
+
+    const reopened = useSessionUIStore.getState().newSessionDraft
+    expect(reopened).toMatchObject({ open: true, draftId: 9, pendingWorktreeRequestId: null, directoryOverride: DIRECTORY })
+
+    creation = deferred<void>()
+    const retry = send("hello", "normal", reopened)
+    await flush()
+    expect(createSessionCalls).toHaveLength(2)
+    expect(createSessionCalls[1].directory).toBe(DIRECTORY)
     creation.resolve()
     await retry
     expect(sendCalls).toHaveLength(1)

@@ -1356,10 +1356,17 @@ const reopenDraftAfterFailedCreation = (
   if (draft.target === "chat") void deleteChatDirectory(directory).catch(() => undefined)
   const store = useSessionUIStore.getState()
   if (store.currentSessionId !== sessionId) return
-  store.setCurrentSession(null, draft.directoryOverride)
-  const reopened: NewSessionDraftState = { ...draft, preparedChatDirectory: null }
+  // A worktree the draft waited for exists by now and its request is settled,
+  // so the draft reopens on that directory; a chat prepares a new folder.
+  const reopened: NewSessionDraftState = {
+    ...draft,
+    preparedChatDirectory: null,
+    pendingWorktreeRequestId: null,
+    directoryOverride: draft.target === "chat" ? draft.directoryOverride : directory,
+  }
+  store.setCurrentSession(null, reopened.directoryOverride)
   useSessionUIStore.setState({ newSessionDraft: reopened })
-  writeRuntimeSessionMemory(runtimeMemoryKey(), { sessionId: null, directory: draft.directoryOverride ?? null, draft: reopened })
+  writeRuntimeSessionMemory(runtimeMemoryKey(), { sessionId: null, directory: reopened.directoryOverride ?? null, draft: reopened })
   clearLastActiveSession(runtimeMemoryKey())
 }
 
