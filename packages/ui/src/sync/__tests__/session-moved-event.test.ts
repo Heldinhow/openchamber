@@ -94,9 +94,9 @@ describe("session.moved", () => {
 
   // Recorded from OpenCode 2.1.4: `session.moved` is tagged with the directory
   // the session left, and the `permission.asked` that follows carries no
-  // location. Meanwhile the chat, still switching over, re-reads the session
-  // into the old directory's store, and a later re-read of that store (a
-  // reconnect, opening it) indexes the session there again.
+  // location. The old directory's store gets a copy of the session back only
+  // when that directory is read again later (a stream reconnect, opening it),
+  // and that read indexes the session there again; the copy below models it.
   test("a permission asked after the move lands where the chat reads", () => {
     const { source, destination, receive, routingIndex } = setup()
     useGlobalSessionsStore.getState().upsertSession(session())
