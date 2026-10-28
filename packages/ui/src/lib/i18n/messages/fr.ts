@@ -4003,6 +4003,8 @@ export const dict = {
   'notifications.permission.title': 'Autorisation requise',
   'header.repoWorkspace.subtitle': "Session ouverte dans le dépôt principal",
   'header.repoWorkspace.refsAria': "Références de l'espace de travail",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "Références masquées ({count}) : {aliases}",
   'header.repoWorkspace.refMissing': "manquant",
   'header.repoWorkspace.refDifferent': "diffère de l'espace de travail",
   'header.repoWorkspace.refOutside': "définie en dehors de cet espace de travail",

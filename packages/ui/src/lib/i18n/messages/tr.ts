@@ -4002,6 +4002,8 @@ export const dict = {
   'notifications.permission.title': 'İzin gerekiyor',
   'header.repoWorkspace.subtitle': "Oturum birincil depoda açık",
   'header.repoWorkspace.refsAria': "Çalışma alanı referansları",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "Gizli referanslar ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "eksik",
   'header.repoWorkspace.refDifferent': "çalışma alanından farklı",
   'header.repoWorkspace.refOutside': "bu çalışma alanının dışında tanımlı",

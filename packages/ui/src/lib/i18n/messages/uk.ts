@@ -4005,6 +4005,8 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': 'Потрібен дозвіл',
   'header.repoWorkspace.subtitle': "Сесію відкрито в основному репозиторії",
   'header.repoWorkspace.refsAria': "Посилання робочого простору",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "Приховані посилання ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "відсутнє",
   'header.repoWorkspace.refDifferent': "відрізняється від робочого простору",
   'header.repoWorkspace.refOutside': "визначено поза цим робочим простором",

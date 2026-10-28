@@ -4004,6 +4004,8 @@ export const dict = {
   'notifications.permission.title': 'Permission required',
   'header.repoWorkspace.subtitle': "Session open in the primary",
   'header.repoWorkspace.refsAria': "Workspace references",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "Hidden references ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "missing",
   'header.repoWorkspace.refDifferent': "differs from the workspace",
   'header.repoWorkspace.refOutside': "defined outside this workspace",

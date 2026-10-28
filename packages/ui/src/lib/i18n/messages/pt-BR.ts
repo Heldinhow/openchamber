@@ -4005,6 +4005,8 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': 'Permissão necessária',
   'header.repoWorkspace.subtitle': "Sessão aberta no principal",
   'header.repoWorkspace.refsAria': "References do workspace",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "References ocultas ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "ausente",
   'header.repoWorkspace.refDifferent': "difere do workspace",
   'header.repoWorkspace.refOutside': "definida fora deste workspace",

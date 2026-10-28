@@ -4004,6 +4004,8 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': '권한 필요',
   'header.repoWorkspace.subtitle': "기본 저장소에서 세션이 열려 있습니다",
   'header.repoWorkspace.refsAria': "워크스페이스 참조",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "숨겨진 참조 ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "없음",
   'header.repoWorkspace.refDifferent': "워크스페이스와 다름",
   'header.repoWorkspace.refOutside': "이 워크스페이스 외부에서 정의됨",

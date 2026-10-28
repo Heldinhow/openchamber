@@ -4002,6 +4002,8 @@ export const dict = {
   'notifications.permission.title': 'Berechtigung erforderlich',
   'header.repoWorkspace.subtitle': "Sitzung im Haupt-Repository geöffnet",
   'header.repoWorkspace.refsAria': "Workspace-Referenzen",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "Ausgeblendete Referenzen ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "fehlt",
   'header.repoWorkspace.refDifferent': "weicht vom Workspace ab",
   'header.repoWorkspace.refOutside': "außerhalb dieses Workspace definiert",

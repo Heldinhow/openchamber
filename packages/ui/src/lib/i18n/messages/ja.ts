@@ -4004,6 +4004,8 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': '権限が必要です',
   'header.repoWorkspace.subtitle': "プライマリでセッションを開いています",
   'header.repoWorkspace.refsAria': "ワークスペースの参照",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "非表示の参照（{count}）：{aliases}",
   'header.repoWorkspace.refMissing': "見つかりません",
   'header.repoWorkspace.refDifferent': "ワークスペースと異なります",
   'header.repoWorkspace.refOutside': "このワークスペースの外で定義されています",

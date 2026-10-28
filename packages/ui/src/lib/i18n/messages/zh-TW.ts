@@ -4004,6 +4004,8 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': '需要權限',
   'header.repoWorkspace.subtitle': "工作階段已在主儲存庫中開啟",
   'header.repoWorkspace.refsAria': "工作區參照",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "隱藏的參照（{count}）：{aliases}",
   'header.repoWorkspace.refMissing': "缺少",
   'header.repoWorkspace.refDifferent': "與工作區不同",
   'header.repoWorkspace.refOutside': "在此工作區之外定義",

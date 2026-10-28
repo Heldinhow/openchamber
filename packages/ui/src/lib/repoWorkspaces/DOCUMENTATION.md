@@ -90,6 +90,13 @@ workspace document and never stores one locally.
   config on its own. Every mounted copy of the hook applies that answer through
   `openchamber:workspace-refs-updated`, so the sidebar's edit dialog and the
   header never show different states for the same workspace.
+- The session header keeps the workspace name, its subtitle and the retry
+  visible at any width. Only the reference entries that fit are rendered; every
+  hidden entry, `ok` or not, is counted in a `+N` control whose tooltip lists
+  its alias, path and non-`ok` label, so a hidden state is never silent. The
+  row is measured from each entry's natural width plus the control, never
+  capped by a fixed count, and without `ResizeObserver` the whole row stays
+  visible rather than guessing.
 
 ## Decisions
 
@@ -134,3 +141,13 @@ which adds a third view of the header for a switch that is already in flight.
 A failed read applies the activated pointer from the last document's
 per-workspace pair, so the old workspace is not claimed and a workspace the
 last document described is never shown as having no references.
+
+### Why the header measures the reference row instead of capping it
+
+The entries are text at a user-controlled interface size, and the room left for
+them changes with the window, the workspace name and the retry. A fixed cap
+either clipped the third chip at 1100px or hid entries while space remained.
+Measuring each entry's natural width and the `+N` control, then recounting on
+resize, keeps every visible entry whole and makes the count honest. Rejected
+alternative: a fixed maximum number of chips, which still clipped at narrow
+widths.

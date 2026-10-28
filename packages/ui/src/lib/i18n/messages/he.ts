@@ -4029,6 +4029,8 @@ export const dict = {
   'notifications.permission.title': 'נדרשת הרשאה',
   'header.repoWorkspace.subtitle': "השיחה פתוחה במאגר הראשי",
   'header.repoWorkspace.refsAria': "הפניות מרחב העבודה",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "הפניות מוסתרות ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "חסר",
   'header.repoWorkspace.refDifferent': "שונה ממרחב העבודה",
   'header.repoWorkspace.refOutside': "מוגדר מחוץ למרחב העבודה הזה",

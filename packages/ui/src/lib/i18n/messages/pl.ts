@@ -4009,6 +4009,8 @@ export const dict: Record<I18nKey, string> = {
   'notifications.permission.title': 'Wymagane uprawnienie',
   'header.repoWorkspace.subtitle': "Sesja otwarta w repozytorium głównym",
   'header.repoWorkspace.refsAria': "Odwołania przestrzeni roboczej",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "Ukryte odwołania ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "brak",
   'header.repoWorkspace.refDifferent': "różni się od przestrzeni roboczej",
   'header.repoWorkspace.refOutside': "zdefiniowane poza tą przestrzenią roboczą",

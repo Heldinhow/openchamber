@@ -4004,6 +4004,8 @@ export const dict = {
   'notifications.permission.title': 'Toestemming vereist',
   'header.repoWorkspace.subtitle': "Sessie geopend in de primaire repository",
   'header.repoWorkspace.refsAria': "Workspace-referenties",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "Verborgen referenties ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "ontbreekt",
   'header.repoWorkspace.refDifferent': "wijkt af van de workspace",
   'header.repoWorkspace.refOutside': "buiten deze workspace gedefinieerd",

@@ -4029,6 +4029,8 @@ export const dict = {
   'notifications.permission.title': 'مطلوب إذن',
   'header.repoWorkspace.subtitle': "الجلسة مفتوحة في المستودع الرئيسي",
   'header.repoWorkspace.refsAria': "مراجع مساحة العمل",
+  'header.repoWorkspace.moreRefs': "+{count}",
+  'header.repoWorkspace.hiddenRefsAria': "المراجع المخفية ({count}): {aliases}",
   'header.repoWorkspace.refMissing': "مفقود",
   'header.repoWorkspace.refDifferent': "يختلف عن مساحة العمل",
   'header.repoWorkspace.refOutside': "معرّف خارج مساحة العمل هذه",

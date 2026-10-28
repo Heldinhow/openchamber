@@ -71,6 +71,20 @@ const render = async (refs: RepoWorkspaceRef[], onRetry: (alias: string) => void
   ));
 };
 
+const stubMeasurements = (available: number, entryWidth = 60, overflowWidth = 30) => {
+  Object.defineProperty(dom.HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get: () => available,
+  });
+  Object.defineProperty(dom.HTMLElement.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    value(this: Element) {
+      const width = this.textContent?.startsWith('+') ? overflowWidth : entryWidth;
+      return new dom.DOMRect(0, 0, width, 20);
+    },
+  });
+};
+
 describe('RepoWorkspaceSessionMeta', () => {
   test('shows the workspace, the subtitle, ok chips and the other statuses as states', async () => {
     await render([
@@ -115,5 +129,49 @@ describe('RepoWorkspaceSessionMeta', () => {
   test('a missing reference the workspace does not own shows no retry', async () => {
     await render([ref({ alias: 'gone', status: 'missing', owned: false })]);
     expect([...document.querySelectorAll('button')]).toHaveLength(0);
+  });
+
+  test('renders the entries that fit and lists the hidden ones behind +N', async () => {
+    stubMeasurements(165);
+    await render([
+      ref({ alias: 'web', status: 'ok', path: '/shop/web' }),
+      ref({ alias: 'api', status: 'ok', path: '/shop/api' }),
+      ref({ alias: 'gone', status: 'missing', path: '/shop/gone' }),
+    ]);
+
+    const group = document.querySelector('[role="group"]');
+    expect(group?.textContent).toContain('@web');
+    expect(group?.textContent).toContain('@api');
+    expect(group?.textContent).not.toContain('@gone');
+
+    const overflow = [...document.querySelectorAll('button')].find((element) => element.textContent === '+1');
+    expect(overflow?.getAttribute('type')).toBe('button');
+    expect(overflow?.getAttribute('aria-label')).toBe('Hidden references (1): @gone');
+
+    await act(async () => {
+      overflow!.focus();
+      await Promise.resolve();
+    });
+    expect(document.activeElement).toBe(overflow);
+
+    const tooltip = document.querySelector('[data-slot="tooltip-content"]');
+    expect(tooltip?.textContent).toContain('@gone');
+    expect(tooltip?.textContent).toContain('/shop/gone');
+    expect(tooltip?.textContent).toContain('missing');
+  });
+
+  test('shows no +N control when every entry fits', async () => {
+    stubMeasurements(1000);
+    await render([
+      ref({ alias: 'web', status: 'ok', path: '/shop/web' }),
+      ref({ alias: 'api', status: 'ok', path: '/shop/api' }),
+      ref({ alias: 'docs', status: 'outside', current: { path: '/elsewhere/docs', description: 'docs' }, owned: false }),
+    ]);
+
+    const group = document.querySelector('[role="group"]');
+    expect(group?.textContent).toContain('@web');
+    expect(group?.textContent).toContain('@api');
+    expect(group?.textContent).toContain('@docs');
+    expect([...document.querySelectorAll('button')].some((element) => element.textContent?.startsWith('+'))).toBe(false);
   });
 });
