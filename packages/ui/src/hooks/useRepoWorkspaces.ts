@@ -24,6 +24,13 @@ type RepoWorkspaceRefsUpdatedDetail = {
   refsError: { path: string; message: string } | null;
 };
 
+/** A switch read by one hook instance is a switch for every other instance. */
+const REPO_WORKSPACE_ACTIVE_UPDATED_EVENT = 'openchamber:workspace-active-updated';
+
+type RepoWorkspaceActiveUpdatedDetail = {
+  activeWorkspaceId: string | null;
+};
+
 /** The fields a settings save holds, so a resolved list can be compared to it. */
 type WorkspaceListEntry = {
   id: string;
@@ -85,6 +92,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
   const activationInFlightRef = React.useRef(false);
   const heldWorkspacesSignatureRef = React.useRef<string | null>(null);
   const pendingSettingsReadRef = React.useRef(false);
+  const appliedWorkspaceIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     heldWorkspacesSignatureRef.current = workspaceListSignature(state.workspaces);
@@ -100,6 +108,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
     try {
       const document = await fetchRepoWorkspaces();
       if (generation !== requestGenerationRef.current || runtimeKey !== getRuntimeKey()) return 'stale';
+      appliedWorkspaceIdRef.current = document.activeWorkspaceId;
       setState((current) => ({
         status: 'ready',
         workspaces: document.workspaces,
@@ -113,6 +122,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
     } catch (error) {
       if (generation !== requestGenerationRef.current || runtimeKey !== getRuntimeKey()) return 'stale';
       if (error instanceof RepoWorkspacesUnavailableError) {
+        appliedWorkspaceIdRef.current = null;
         setState((current) => ({ ...initialState(true), status: 'unavailable', activating: current.activating }));
         return 'unavailable';
       }
@@ -134,6 +144,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       settingsSignatureRef.current = null;
       activationInFlightRef.current = false;
       pendingSettingsReadRef.current = false;
+      appliedWorkspaceIdRef.current = null;
       setState(initialState(true));
       void load();
     });
@@ -169,12 +180,22 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
         ? { ...current, refs: detail.refs, refsError: detail.refsError }
         : current);
     };
+    const onActiveUpdated = (event: Event) => {
+      // SAFETY: selectWorkspace dispatches this event with RepoWorkspaceActiveUpdatedDetail.
+      const detail = (event as CustomEvent<RepoWorkspaceActiveUpdatedDetail>).detail;
+      if (!detail || appliedWorkspaceIdRef.current === detail.activeWorkspaceId) return;
+      // The pointer is not applied here either: reading answers with it and the
+      // new workspace's references together.
+      void load({ silent: true });
+    };
     window.addEventListener('openchamber:settings-synced', onSettingsSynced);
     window.addEventListener(REPO_WORKSPACE_REFS_UPDATED_EVENT, onRefsUpdated);
+    window.addEventListener(REPO_WORKSPACE_ACTIVE_UPDATED_EVENT, onActiveUpdated);
     return () => {
       unsubscribeRuntime();
       window.removeEventListener('openchamber:settings-synced', onSettingsSynced);
       window.removeEventListener(REPO_WORKSPACE_REFS_UPDATED_EVENT, onRefsUpdated);
+      window.removeEventListener(REPO_WORKSPACE_ACTIVE_UPDATED_EVENT, onActiveUpdated);
     };
   }, [enabled, load]);
 
@@ -193,20 +214,30 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       // The name and the chips are one view of one document: keep the previous
       // complete view until the route answers with the new pointer and its refs.
       const outcome = await load({ silent: true });
-      if (selection !== selectionGenerationRef.current || outcome !== 'failed') return;
-      // The read failed, so apply the switch from the last resolved document:
-      // its per-workspace refs still describe the workspace now active. The
-      // status the read reported stays, and the header never shows the old
-      // workspace with the new pointer.
-      setState((current) => {
-        const workspace = current.workspaces.find((entry) => entry.id === result.activeWorkspaceId) ?? null;
-        return {
-          ...current,
-          activeWorkspaceId: result.activeWorkspaceId,
-          refs: workspace?.refs ?? [],
-          refsError: workspace?.refsError ?? null,
-        };
-      });
+      if (selection !== selectionGenerationRef.current) return;
+      if (outcome === 'failed') {
+        // The read failed, so apply the switch from the last resolved document:
+        // its per-workspace refs still describe the workspace now active. The
+        // status the read reported stays, and the header never shows the old
+        // workspace with the new pointer.
+        appliedWorkspaceIdRef.current = result.activeWorkspaceId;
+        setState((current) => {
+          const workspace = current.workspaces.find((entry) => entry.id === result.activeWorkspaceId) ?? null;
+          return {
+            ...current,
+            activeWorkspaceId: result.activeWorkspaceId,
+            refs: workspace?.refs ?? [],
+            refsError: workspace?.refsError ?? null,
+          };
+        });
+      } else if (outcome !== 'applied') {
+        return;
+      }
+      // Every other mounted copy of the hook reads the new pointer with its
+      // references; the announcing copy already holds the answer.
+      window.dispatchEvent(new CustomEvent<RepoWorkspaceActiveUpdatedDetail>(REPO_WORKSPACE_ACTIVE_UPDATED_EVENT, {
+        detail: { activeWorkspaceId: appliedWorkspaceIdRef.current },
+      }));
     } finally {
       if (selection === selectionGenerationRef.current) {
         activationInFlightRef.current = false;

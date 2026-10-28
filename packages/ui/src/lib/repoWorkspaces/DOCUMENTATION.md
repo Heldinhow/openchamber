@@ -37,7 +37,11 @@ workspace document and never stores one locally.
   answer alone does not move it: the hook reads again and applies the new
   pointer together with its top-level reference pair, and the activation answer
   is only the fallback of a failed read. Clicking the active workspace, or "All
-  projects", sends `{ id: null }`.
+  projects", sends `{ id: null }`. Every other mounted copy of the hook hears
+  the switch through `openchamber:workspace-active-updated`, compares the
+  announced pointer with the one it applied, and reads again instead of
+  applying it; the copy that switched already holds the answer and does not
+  read.
 - Requests are generation-guarded and keyed to the runtime that started them:
   a late response from another runtime or from before a selection can neither
   replace the list nor re-activate the old workspace. A settings-synced pointer
@@ -146,7 +150,11 @@ alternative: clearing `refs` on the pointer change and showing a loading state,
 which adds a third view of the header for a switch that is already in flight.
 A failed read applies the activated pointer from the last document's
 per-workspace pair, so the old workspace is not claimed and a workspace the
-last document described is never shown as having no references.
+last document described is never shown as having no references. Every other
+mounted copy of the hook, such as the header beside the sidebar, is told of the
+switch through `openchamber:workspace-active-updated` and reads the same
+document; announcing the pointer and letting each copy read is what keeps their
+name and chips together.
 
 ### Why the header measures the reference row instead of capping it
 

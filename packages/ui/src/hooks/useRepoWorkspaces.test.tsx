@@ -81,9 +81,26 @@ type ProbeState = {
   docsRefs: number | null;
 };
 
-const state = (): ProbeState => {
-  const text = host.querySelector('[data-id="state"]')?.textContent ?? '{}';
+const stateOf = (id: string): ProbeState => {
+  const text = document.querySelector(`[data-id="${id}"]`)?.textContent ?? '{}';
   return JSON.parse(text);
+};
+
+const state = (): ProbeState => stateOf('state');
+
+const SecondaryProbe = () => {
+  const workspaces = useRepoWorkspaces({ enabled: true });
+  seen.push({ active: workspaces.activeWorkspace?.id ?? null, refs: workspaces.refs.length });
+  return (
+    <span data-id="state-secondary">
+      {JSON.stringify({
+        status: workspaces.status,
+        active: workspaces.activeWorkspace?.id ?? null,
+        name: workspaces.activeWorkspace?.name ?? null,
+        refs: workspaces.refs.map((ref) => ref.alias),
+      })}
+    </span>
+  );
 };
 
 const pressSwitch = async () => {
@@ -195,6 +212,35 @@ describe('useRepoWorkspaces', () => {
     });
 
     expect(state()).toMatchObject({ status: 'ready', active: 'ws_2', name: 'Docs', refs: ['docs'] });
+    expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
+  });
+
+  test('a switch in one hook brings every other mounted copy to the new workspace and refs', async () => {
+    let reads = 0;
+    fetchResponse = async (input) => {
+      if (String(input).endsWith('/api/workspaces')) reads += 1;
+      return Response.json(documentPayload);
+    };
+    await act(async () => root.render(<><Probe /><SecondaryProbe /></>));
+    // Each mounted copy reads once on mount.
+    expect(reads).toBe(2);
+    expect(stateOf('state-secondary')).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
+
+    reads = 0;
+    fetchResponse = async (input) => {
+      if (!String(input).endsWith('/api/workspaces')) return Response.json({ activeWorkspaceId: 'ws_2' });
+      reads += 1;
+      return Response.json({ ...documentPayload, activeWorkspaceId: 'ws_2', refs: [docsRef] });
+    };
+
+    await pressSwitch();
+    await act(async () => {});
+
+    // The announcing copy does not read again; the other one reads the same
+    // pointer with its references instead of applying the event's id.
+    expect(reads).toBe(2);
+    expect(state()).toMatchObject({ active: 'ws_2', name: 'Docs', refs: ['docs'] });
+    expect(stateOf('state-secondary')).toMatchObject({ status: 'ready', active: 'ws_2', name: 'Docs', refs: ['docs'] });
     expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
   });
 
