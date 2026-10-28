@@ -737,6 +737,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteOwnedNote": "이 워크스페이스가 만든 참조만 해당합니다.",
   "sessions.sidebar.workspace.deleteAction": "삭제",
   "sessions.sidebar.workspace.deleteFailed": "워크스페이스를 삭제하지 못했습니다.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "워크스페이스는 삭제되었지만 편집 권한 규칙을 제거하지 못했습니다.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias}을(를) 제거하지 못했습니다. 아무것도 삭제되지 않았습니다.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "참조를 남기고 삭제",
   "sessions.sidebar.workspace.deleteOverwriteRef": "그래도 @{alias} 제거",

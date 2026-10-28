@@ -746,6 +746,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteOwnedNote": "Solo las referencias que creó este espacio de trabajo.",
   "sessions.sidebar.workspace.deleteAction": "Eliminar",
   "sessions.sidebar.workspace.deleteFailed": "No se pudo eliminar el espacio de trabajo.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "Espacio de trabajo eliminado, pero no se pudo quitar su regla de permiso de edición.",
   "sessions.sidebar.workspace.deleteFailedAlias": "No se pudo eliminar @{alias}. No se eliminó nada.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "Eliminar sin quitar las referencias",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Quitar @{alias} de todos modos",

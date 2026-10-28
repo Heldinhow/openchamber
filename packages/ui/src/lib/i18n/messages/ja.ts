@@ -737,6 +737,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteOwnedNote": "このワークスペースが作成した参照のみです。",
   "sessions.sidebar.workspace.deleteAction": "削除",
   "sessions.sidebar.workspace.deleteFailed": "ワークスペースを削除できませんでした。",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "ワークスペースは削除されましたが、編集権限のルールを削除できませんでした。",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} を削除できませんでした。何も削除されていません。",
   "sessions.sidebar.workspace.deleteWithoutRefs": "参照を残して削除",
   "sessions.sidebar.workspace.deleteOverwriteRef": "@{alias} をそれでも削除",

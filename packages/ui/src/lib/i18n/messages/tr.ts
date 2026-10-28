@@ -657,6 +657,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteOwnedNote": "Yalnızca bu çalışma alanının oluşturduğu referanslar.",
   "sessions.sidebar.workspace.deleteAction": "Sil",
   "sessions.sidebar.workspace.deleteFailed": "Çalışma alanı silinemedi.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "Çalışma alanı silindi, ancak düzenleme izni kuralı kaldırılamadı.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} kaldırılamadı. Hiçbir şey silinmedi.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "Başvuruları kaldırmadan sil",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Yine de @{alias} kaldır",

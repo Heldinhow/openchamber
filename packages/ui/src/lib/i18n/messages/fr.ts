@@ -570,6 +570,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteOwnedNote": "Uniquement les références créées par cet espace de travail.",
   "sessions.sidebar.workspace.deleteAction": "Supprimer",
   "sessions.sidebar.workspace.deleteFailed": "Impossible de supprimer l'espace de travail.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "Espace de travail supprimé, mais sa règle d'autorisation de modification n'a pas pu être retirée.",
   "sessions.sidebar.workspace.deleteFailedAlias": "Impossible de supprimer @{alias}. Rien n'a été supprimé.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "Supprimer sans retirer les références",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Retirer @{alias} quand même",

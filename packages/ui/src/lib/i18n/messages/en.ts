@@ -736,6 +736,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteOwnedNote": "Only the references this workspace created.",
   "sessions.sidebar.workspace.deleteAction": "Delete",
   "sessions.sidebar.workspace.deleteFailed": "Couldn't delete the workspace.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "Workspace deleted, but its edit permission rule could not be removed.",
   "sessions.sidebar.workspace.deleteFailedAlias": "Couldn't remove @{alias}. Nothing was deleted.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "Delete without removing the references",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Remove @{alias} anyway",

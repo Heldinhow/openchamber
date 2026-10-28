@@ -690,6 +690,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteOwnedNote": "فقط المراجع التي أنشأتها مساحة العمل هذه.",
   "sessions.sidebar.workspace.deleteAction": "حذف",
   "sessions.sidebar.workspace.deleteFailed": "تعذّر حذف مساحة العمل.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "تم حذف مساحة العمل، لكن تعذّر إزالة قاعدة إذن التعديل الخاصة بها.",
   "sessions.sidebar.workspace.deleteFailedAlias": "تعذّر إزالة @{alias}. لم يُحذف شيء.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "حذف دون إزالة المراجع",
   "sessions.sidebar.workspace.deleteOverwriteRef": "إزالة @{alias} على أي حال",

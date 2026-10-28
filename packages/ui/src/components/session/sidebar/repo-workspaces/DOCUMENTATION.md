@@ -109,6 +109,10 @@ total, partial flag and branch divergence come from
   checked box only when the workspace owns references. The box names exactly
   `createdRefs`; a secondary reference the user owns is never listed. Cancel
   closes without a request.
+- A delete that removed the workspace but could not remove its app-owned edit
+  rule still closes, after a warning toast that names the config path when the
+  server supplied one. The deletion stands; the leftover rule is reported, not
+  retried from this dialog.
 - A delete whose owned removal failed keeps the dialog and the workspace open,
   shows the failing alias (or the config path when it could not be read), and
   never claims the workspace was deleted. Only `removed: true` reloads the

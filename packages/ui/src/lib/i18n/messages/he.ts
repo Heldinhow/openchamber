@@ -690,6 +690,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteOwnedNote": "רק ההפניות שסביבת העבודה הזו יצרה.",
   "sessions.sidebar.workspace.deleteAction": "מחיקה",
   "sessions.sidebar.workspace.deleteFailed": "לא ניתן למחוק את סביבת העבודה.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "סביבת העבודה נמחקה, אך לא ניתן היה להסיר את כלל הרשאת העריכה שלה.",
   "sessions.sidebar.workspace.deleteFailedAlias": "לא ניתן להסיר את @{alias}. דבר לא נמחק.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "מחיקה בלי להסיר את ההפניות",
   "sessions.sidebar.workspace.deleteOverwriteRef": "להסיר את @{alias} בכל זאת",

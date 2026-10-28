@@ -578,6 +578,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteOwnedNote": "Tylko odwołania utworzone przez tę przestrzeń roboczą.",
   "sessions.sidebar.workspace.deleteAction": "Usuń",
   "sessions.sidebar.workspace.deleteFailed": "Nie udało się usunąć przestrzeni roboczej.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "Przestrzeń robocza została usunięta, ale nie udało się usunąć jej reguły uprawnień do edycji.",
   "sessions.sidebar.workspace.deleteFailedAlias": "Nie udało się usunąć @{alias}. Nic nie zostało usunięte.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "Usuń, zostawiając odwołania",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Mimo to usuń @{alias}",

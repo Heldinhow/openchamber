@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React, { act } from 'react';
 import type { Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
+import { Toaster, toast } from 'sonner';
 import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import type { DeleteRepoWorkspaceResult } from '@/lib/repoWorkspaces/client';
 
@@ -73,6 +74,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  toast.dismiss();
   for (const [name, descriptor] of globals) {
     if (descriptor) Object.defineProperty(globalThis, name, descriptor);
     else Reflect.deleteProperty(globalThis, name);
@@ -225,6 +227,65 @@ describe('delete workspace question', () => {
     ]);
     expect(deleted).toBe(1);
     expect(closed).toBe(1);
+  });
+
+  test('a delete whose edit rule could not be removed warns with the config path before closing', async () => {
+    let deleted = 0;
+    const path = '/repos/api/.opencode/opencode.json';
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <>
+          <DeleteDialog
+            open
+            workspace={workspaceWith({})}
+            onOpenChange={() => undefined}
+            onDeleted={() => { deleted += 1; }}
+            deleteWorkspace={async () => deleteResult({
+              permissionRemoved: false,
+              configError: { path, message: 'disk full' },
+            })}
+          />
+          <Toaster />
+        </>
+      </I18nProvider>,
+    ));
+
+    await clickButton('Delete');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(deleted).toBe(1);
+    expect(document.body.textContent).toContain('Workspace deleted, but its edit permission rule could not be removed.');
+    expect(document.body.textContent).toContain(path);
+  });
+
+  test('a delete whose edit rule was removed shows no warning', async () => {
+    let deleted = 0;
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <>
+          <DeleteDialog
+            open
+            workspace={workspaceWith({})}
+            onOpenChange={() => undefined}
+            onDeleted={() => { deleted += 1; }}
+            deleteWorkspace={async () => deleteResult({ permissionRemoved: true })}
+          />
+          <Toaster />
+        </>
+      </I18nProvider>,
+    ));
+
+    await clickButton('Delete');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(deleted).toBe(1);
+    expect(document.body.textContent).not.toContain('Workspace deleted, but its edit permission rule could not be removed.');
   });
 
   test('deleting without removing the reference retries with removeCreatedRefs false and closes', async () => {

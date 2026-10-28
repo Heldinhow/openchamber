@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { toast } from '@/components/ui/toast';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import {
@@ -184,6 +185,12 @@ const RepoWorkspaceDeleteContent: React.FC<DeleteContentProps> = ({
         confirmRefs.length > 0 ? confirmRefs : undefined,
       );
       if (result.removed) {
+        // The workspace is gone; only its app-owned rule may be left behind.
+        if (result.permissionRemoved === false) {
+          toast.warning(t('sessions.sidebar.workspace.permissionRemoveFailed'), {
+            description: result.configError?.path,
+          });
+        }
         onDeleted();
         onClose();
         return;

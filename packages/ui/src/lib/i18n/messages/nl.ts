@@ -736,6 +736,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteOwnedNote": "Alleen de referenties die deze werkruimte heeft aangemaakt.",
   "sessions.sidebar.workspace.deleteAction": "Verwijderen",
   "sessions.sidebar.workspace.deleteFailed": "De werkruimte kon niet worden verwijderd.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "Werkruimte verwijderd, maar de bewerkingsmachtigingsregel kon niet worden verwijderd.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} kon niet worden verwijderd. Er is niets verwijderd.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "Verwijderen en de verwijzingen laten staan",
   "sessions.sidebar.workspace.deleteOverwriteRef": "@{alias} toch verwijderen",

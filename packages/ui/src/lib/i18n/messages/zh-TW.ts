@@ -762,6 +762,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteOwnedNote": "僅限此工作區建立的參照。",
   "sessions.sidebar.workspace.deleteAction": "刪除",
   "sessions.sidebar.workspace.deleteFailed": "無法刪除工作區。",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "工作區已刪除，但無法移除其編輯權限規則。",
   "sessions.sidebar.workspace.deleteFailedAlias": "無法移除 @{alias}。未刪除任何內容。",
   "sessions.sidebar.workspace.deleteWithoutRefs": "刪除但保留參照",
   "sessions.sidebar.workspace.deleteOverwriteRef": "仍要移除 @{alias}",

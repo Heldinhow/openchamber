@@ -3398,6 +3398,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteOwnedNote": "Nur die Referenzen, die dieser Arbeitsbereich erstellt hat.",
   "sessions.sidebar.workspace.deleteAction": "Löschen",
   "sessions.sidebar.workspace.deleteFailed": "Der Arbeitsbereich konnte nicht gelöscht werden.",
+  "sessions.sidebar.workspace.permissionRemoveFailed": "Arbeitsbereich gelöscht, aber seine Bearbeitungsberechtigung konnte nicht entfernt werden.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} konnte nicht entfernt werden. Nichts wurde gelöscht.",
   "sessions.sidebar.workspace.deleteWithoutRefs": "Löschen, ohne die Referenzen zu entfernen",
   "sessions.sidebar.workspace.deleteOverwriteRef": "@{alias} trotzdem entfernen",
