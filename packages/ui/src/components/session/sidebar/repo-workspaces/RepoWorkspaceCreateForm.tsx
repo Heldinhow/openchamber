@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Radio } from '@/components/ui/radio';
+import { toast } from '@/components/ui/toast';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import { normalizePath } from '@/lib/pathNormalization';
@@ -79,7 +80,7 @@ type RepoWorkspaceCreateFormProps = {
   fetchConfigTarget?: (path: string) => Promise<RepoWorkspaceConfigTarget>;
 };
 
-const ROW_GRID_COLS = 'grid-cols-[4.5rem_minmax(4.5rem,7rem)_minmax(0,1fr)_7rem_1.75rem]';
+const ROW_GRID_COLS = 'grid-cols-[4.5rem_minmax(4.5rem,7rem)_minmax(0,1fr)_7rem_6.5rem_1.75rem]';
 
 const rowIndexFromField = (field: string): number | null => {
   const match = /^repos\[(\d+)\]/.exec(field);
@@ -97,12 +98,16 @@ const RepoRow: React.FC<{
   tabIndex: number;
   onPrimary: () => void;
   onAlias: (alias: string) => void;
+  onReadOnly: (readOnly: boolean) => void;
   onRemove: () => void;
-}> = ({ row, isPrimary, registered, error, suggestion, disabled, tabIndex, onPrimary, onAlias, onRemove }) => {
+}> = ({ row, isPrimary, registered, error, suggestion, disabled, tabIndex, onPrimary, onAlias, onReadOnly, onRemove }) => {
   const { t } = useI18n();
   const status = useGitStatus(row.path);
   const branch = status?.current ?? row.branch ?? '';
   const aliasErrorId = `workspace-alias-error-${row.key}`;
+  const accessLabel = row.readOnly
+    ? t('sessions.sidebar.workspace.readOnlyAccess')
+    : t('sessions.sidebar.workspace.editAccess');
 
   React.useEffect(() => {
     const git = getRegisteredRuntimeAPIs()?.git;
@@ -160,6 +165,26 @@ const RepoRow: React.FC<{
           {branch || t('sessions.sidebar.workspace.noGit')}
         </span>
       </div>
+      <div className="flex h-8 min-w-0 items-center">
+        {isPrimary ? null : (
+          <label className="flex min-w-0 items-center gap-1.5">
+            <Checkbox
+              checked={!row.readOnly}
+              onChange={(checked) => onReadOnly(!checked)}
+              disabled={disabled}
+              ariaLabel={t(
+                row.readOnly
+                  ? 'sessions.sidebar.workspace.readOnlyAccessFor'
+                  : 'sessions.sidebar.workspace.editAccessFor',
+                { alias: row.alias.trim() || row.path },
+              )}
+            />
+            <span className="truncate typography-micro text-muted-foreground" title={accessLabel}>
+              {accessLabel}
+            </span>
+          </label>
+        )}
+      </div>
       <Button
         variant="ghost"
         size="sm"
@@ -175,7 +200,7 @@ const RepoRow: React.FC<{
       <p
         id={aliasErrorId}
         role={errorText ? 'alert' : undefined}
-        className={`col-start-2 col-span-4 min-h-4 truncate typography-micro ${errorText ? 'text-status-error' : 'text-muted-foreground'}`}
+        className={`col-start-2 col-span-5 min-h-4 truncate typography-micro ${errorText ? 'text-status-error' : 'text-muted-foreground'}`}
         title={errorText ?? undefined}
       >
         {errorText ?? (registered || row.missing ? '' : t('sessions.sidebar.workspace.unregisteredProject'))}
@@ -425,6 +450,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         key: `repo-${nextRowKey.current++}`,
         path,
         alias: aliasForFolder(path, current.rows.map((entry) => entry.alias)),
+        readOnly: false,
       };
       return {
         ...current,
@@ -454,6 +480,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         key: `repo-${nextRowKey.current++}`,
         path: folder.path,
         alias: folder.alias,
+        readOnly: false,
       }));
       const primaryIndex = accepted.findIndex((folder) => folder.primary);
       updateDraft(() => ({
@@ -503,6 +530,13 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           keepRefs: keepQuestions.filter((alias) => keepChoices[alias]),
         }))
         : await createWorkspace(createPayloadFromDraft(draft, branchFor));
+      // The workspace is saved either way; a rule that could not be written is
+      // reported and the dialog keeps its normal close and refresh path.
+      if (result.permissionWrites.status === 'failed') {
+        toast.error(t('sessions.sidebar.workspace.permissionWriteFailed'), {
+          description: result.permissionWrites.path,
+        });
+      }
       onCreated();
       const failedAliases = result.refWrites
         .filter((write) => write.status === 'failed')
@@ -716,6 +750,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           <span>{t('sessions.sidebar.workspace.aliasColumn')}</span>
           <span>{t('sessions.sidebar.workspace.folderColumn')}</span>
           <span>{t('sessions.sidebar.workspace.branchColumn')}</span>
+          <span>{t('sessions.sidebar.workspace.writeColumn')}</span>
         </div>
         <div
           className="flex flex-col gap-2"
@@ -737,6 +772,10 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
               onAlias={(alias) => updateDraft((current) => ({
                 ...current,
                 rows: current.rows.map((entry) => entry.key === row.key ? { ...entry, alias } : entry),
+              }))}
+              onReadOnly={(readOnly) => updateDraft((current) => ({
+                ...current,
+                rows: current.rows.map((entry) => entry.key === row.key ? { ...entry, readOnly } : entry),
               }))}
               onRemove={() => updateDraft((current) => {
                 const rows = current.rows.filter((entry) => entry.key !== row.key);

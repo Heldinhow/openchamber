@@ -12,7 +12,7 @@ import {
   type RepoWorkspaceDraft,
 } from './repoWorkspaceDraft';
 
-const row = (key: string, path: string, alias: string) => ({ key, path, alias });
+const row = (key: string, path: string, alias: string, readOnly = false) => ({ key, path, alias, readOnly });
 
 const draft = (overrides: Partial<RepoWorkspaceDraft> = {}): RepoWorkspaceDraft => ({
   name: 'Shop Platform',
@@ -78,10 +78,20 @@ describe('workspace create draft', () => {
     expect(payload).toEqual({
       name: 'Shop',
       repos: [
-        { alias: 'api', path: '/repos/api', branch: 'main', primary: true },
-        { alias: 'web', path: '/repos/web', branch: 'feat/tokens', primary: false },
+        { alias: 'api', path: '/repos/api', branch: 'main', primary: true, readOnly: false },
+        { alias: 'web', path: '/repos/web', branch: 'feat/tokens', primary: false, readOnly: false },
       ],
     });
+  });
+
+  test('the payload carries readOnly per repo and keeps the primary editable', () => {
+    const payload = createPayloadFromDraft(draft({
+      rows: [row('a', '/repos/api', 'api', true), row('b', '/repos/web', 'web', true)],
+    }), () => 'main');
+    expect(payload.repos).toEqual([
+      { alias: 'api', path: '/repos/api', branch: 'main', primary: true, readOnly: false },
+      { alias: 'web', path: '/repos/web', branch: 'main', primary: false, readOnly: true },
+    ]);
   });
 
   test('the edit draft loads the saved repos, primary and branch snapshots', () => {
@@ -90,8 +100,8 @@ describe('workspace create draft', () => {
       name: 'Shop Platform',
       primaryKey: 'repo-0',
       rows: [
-        { key: 'repo-0', path: '/repos/api', alias: 'api', projectId: 'p_api', missing: false, branch: 'main' },
-        { key: 'repo-1', path: '/repos/web', alias: 'web', projectId: 'p_web', missing: false, branch: 'feat/tokens' },
+        { key: 'repo-0', path: '/repos/api', alias: 'api', projectId: 'p_api', missing: false, branch: 'main', readOnly: false },
+        { key: 'repo-1', path: '/repos/web', alias: 'web', projectId: 'p_web', missing: false, branch: 'feat/tokens', readOnly: true },
       ],
     });
   });
@@ -104,8 +114,8 @@ describe('workspace create draft', () => {
     expect(payload).toEqual({
       name: 'Shop Platform',
       repos: [
-        { alias: 'api', projectId: 'p_api', branch: 'main', primary: true },
-        { alias: 'web', projectId: 'p_web', branch: 'feat/tokens', primary: false },
+        { alias: 'api', projectId: 'p_api', branch: 'main', primary: true, readOnly: false },
+        { alias: 'web', projectId: 'p_web', branch: 'feat/tokens', primary: false, readOnly: true },
       ],
       confirmRefs: ['web'],
       keepRefs: ['api'],
@@ -128,8 +138,8 @@ describe('workspace create draft', () => {
     expect(payload).toEqual({
       name: 'Shop Platform',
       repos: [
-        { projectId: 'p_api', alias: 'api', branch: 'main', primary: true },
-        { alias: 'web', path: '/repos/web-moved', branch: 'feat/moved', primary: false },
+        { projectId: 'p_api', alias: 'api', branch: 'main', primary: true, readOnly: false },
+        { alias: 'web', path: '/repos/web-moved', branch: 'feat/moved', primary: false, readOnly: true },
       ],
     });
   });
@@ -147,7 +157,7 @@ describe('workspace create draft', () => {
       workspace: resolvedWorkspace,
       draft: {
         ...loaded,
-        rows: [...loaded.rows, { key: 'repo-2', path: '/repos/docs', alias: 'docs' }],
+        rows: [...loaded.rows, { key: 'repo-2', path: '/repos/docs', alias: 'docs', readOnly: false }],
       },
       labels: new Map(),
     });
@@ -175,6 +185,7 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
       alias: 'api',
       description: 'API',
       branch: 'main',
+      readOnly: false,
       missing: false,
       project: { id: 'p_api', path: '/repos/api', label: 'API' },
     },
@@ -183,6 +194,7 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
       alias: 'web',
       description: 'Web',
       branch: 'feat/tokens',
+      readOnly: true,
       missing: false,
       project: { id: 'p_web', path: '/repos/web', label: 'Web' },
     },

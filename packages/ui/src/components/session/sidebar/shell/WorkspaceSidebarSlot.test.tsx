@@ -18,8 +18,8 @@ const workspace: RepoWorkspaceResolved = {
   refs: [],
   refsError: null,
   repos: [
-    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', missing: false, project: null },
-    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
+    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', readOnly: false, missing: false, project: null },
+    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', readOnly: false, missing: false, project: null },
   ],
 };
 

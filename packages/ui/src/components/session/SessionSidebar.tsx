@@ -511,6 +511,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
           projectId: repo.projectId,
           alias: repo.alias,
           branch: repo.branch,
+          readOnly: repo.readOnly,
           primary: repo.projectId === primaryProjectId,
         })),
         keepRefs: [alias],

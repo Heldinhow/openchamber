@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React, { act } from 'react';
 import type { Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
+import { Toaster, toast } from 'sonner';
 import type { CreateRepoWorkspaceResult, RepoWorkspaceConfigTarget, RepoWorkspaceImportDraft, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import type { RepoWorkspaceDraft } from './repoWorkspaceDraft';
 
@@ -14,8 +15,8 @@ const globals = new Map<string, PropertyDescriptor | undefined>();
 const draft: RepoWorkspaceDraft = {
   name: 'Shop Platform',
   rows: [
-    { key: 'a', path: '/repos/api', alias: 'api' },
-    { key: 'b', path: '/repos/web', alias: 'web' },
+    { key: 'a', path: '/repos/api', alias: 'api', readOnly: false },
+    { key: 'b', path: '/repos/web', alias: 'web', readOnly: false },
   ],
   primaryKey: 'a',
 };
@@ -25,8 +26,8 @@ const workspace = {
   name: 'Shop Platform',
   primaryProjectId: 'p_api',
   repos: [
-    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', missing: false, project: null },
-    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
+    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', readOnly: false, missing: false, project: null },
+    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', readOnly: false, missing: false, project: null },
   ],
   createdRefs: ['web'],
   refs: [],
@@ -53,6 +54,7 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
       alias: 'api',
       description: 'api',
       branch: 'main',
+      readOnly: false,
       missing: false,
       project: { id: 'p_api', path: '/repos/api', label: 'api' },
     },
@@ -61,6 +63,7 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
       alias: 'web',
       description: 'web',
       branch: 'main',
+      readOnly: true,
       missing: false,
       project: { id: 'p_web', path: '/repos/web', label: 'web' },
     },
@@ -72,6 +75,7 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
 
 const pendingResult = (): CreateRepoWorkspaceResult => ({
   workspace,
+  permissionWrites: { status: 'unchanged' },
   refs: [],
   refWrites: [{ alias: 'web', status: 'failed' }],
   refsError: null,
@@ -115,6 +119,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  toast.dismiss();
   for (const [name, descriptor] of globals) {
     if (descriptor) Object.defineProperty(globalThis, name, descriptor);
     else Reflect.deleteProperty(globalThis, name);
@@ -302,7 +307,7 @@ describe('workspace create form', () => {
           fetchConfigTarget={targetFor}
           initialDraft={{
             ...draft,
-            rows: [{ key: 'a', path: '/repos/api', alias: 'web app' }],
+            rows: [{ key: 'a', path: '/repos/api', alias: 'web app', readOnly: false }],
           }}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -486,6 +491,7 @@ describe('workspace create form', () => {
             updates.push({ id, input });
             return {
               workspace: resolvedWorkspace,
+              permissionWrites: { status: 'unchanged' },
               refs: [],
               refWrites: [],
               refsError: null,
@@ -557,6 +563,7 @@ describe('workspace create form', () => {
             updates.push({ input });
             return {
               workspace: resolvedWorkspace,
+              permissionWrites: { status: 'unchanged' },
               refs: [],
               refWrites: [],
               refsError: null,
@@ -714,6 +721,7 @@ describe('workspace create form', () => {
             updates.push({ input });
             return {
               workspace: resolvedWorkspace,
+              permissionWrites: { status: 'unchanged' },
               refs: [],
               refWrites: [],
               refsError: null,
@@ -911,5 +919,120 @@ describe('workspace create form', () => {
     expect(document.body.textContent).toContain(configPath);
     expect(document.body.textContent).toContain('Couldn\'t read this configuration file. Fix it and try again.');
     expect(document.querySelector<HTMLButtonElement>('form button[type="submit"]')?.disabled).toBe(true);
+  });
+
+  const accessControl = (alias: string) => [...document.querySelectorAll('[role="checkbox"]')]
+    .find((element) => element.getAttribute('aria-label')?.endsWith(`@${alias}`));
+
+  test('only a secondary row offers the edit permission control', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(accessControl('api')).toBeUndefined();
+    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Editable: @web');
+    expect(document.body.textContent).toContain('Write');
+  });
+
+  test('toggling the row control sends readOnly and leaves the primary editable', async () => {
+    const sent: Array<Array<{ alias: string; readOnly: boolean }>> = [];
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          createWorkspace={async (input) => {
+            sent.push(input.repos.map(({ alias, readOnly }) => ({ alias, readOnly })));
+            return pendingResult();
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    await act(async () => {
+      setCheckbox(accessControl('web'), false);
+    });
+    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Read-only: @web');
+
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(sent).toEqual([[
+      { alias: 'api', readOnly: false },
+      { alias: 'web', readOnly: true },
+    ]]);
+  });
+
+  test('editing opens on the saved read-only state', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          editing={{ workspace: resolvedWorkspace, refs: [], refsError: null }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    const web = accessControl('web');
+    expect(web?.getAttribute('aria-label')).toBe('Read-only: @web');
+    expect(web?.getAttribute('aria-checked')).toBe('false');
+    expect(accessControl('api')).toBeUndefined();
+  });
+
+  test('a failed permission write closes and reports the path without pretending the save failed', async () => {
+    let closed = 0;
+    const path = '/repos/api/.opencode/opencode.json';
+    await act(async () => root.render(
+      <I18nProvider>
+        <>
+          <Form
+            fetchConfigTarget={targetFor}
+            initialDraft={draft}
+            titleId="workspace-title"
+            onClose={() => { closed += 1; }}
+            onCreated={() => undefined}
+            onRefsChanged={() => undefined}
+            createWorkspace={async () => ({
+              workspace,
+              permissionWrites: { status: 'failed', path, message: 'disk full' },
+              refs: [],
+              refWrites: [],
+              refsError: null,
+              configTarget: { path, rootConfigPath: null },
+            })}
+          />
+          <Toaster />
+        </>
+      </I18nProvider>,
+    ));
+
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(closed).toBe(1);
+    expect(document.body.textContent).toContain('Workspace saved, but the edit permission rule could not be written.');
+    expect(document.body.textContent).toContain(path);
   });
 });

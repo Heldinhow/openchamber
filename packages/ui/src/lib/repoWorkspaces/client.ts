@@ -40,6 +40,7 @@ const repoWorkspaceRepoSchema = z.object({
   alias: z.string().min(1),
   description: z.string().catch(''),
   branch: z.string().catch(''),
+  readOnly: z.boolean().catch(false),
   missing: z.boolean().catch(false),
   project: projectRefSchema.nullable().catch(null),
 });
@@ -71,6 +72,12 @@ const refWriteSchema = z.object({
   message: z.string().optional(),
 });
 
+const permissionWriteSchema = z.object({
+  status: z.enum(['written', 'unchanged', 'failed']).catch('unchanged'),
+  path: z.string().optional(),
+  message: z.string().optional(),
+});
+
 const configTargetSchema = z.object({
   path: z.string(),
   rootConfigPath: z.string().nullable().catch(null),
@@ -85,6 +92,8 @@ const refsResultFields = {
 
 const createRepoWorkspaceResultSchema = z.object({
   workspace: repoWorkspaceSchema,
+  /** Best effort after the save: only a failure changes what the user sees. */
+  permissionWrites: permissionWriteSchema.catch({ status: 'unchanged' }),
   ...refsResultFields,
 });
 
@@ -138,6 +147,8 @@ const deleteRepoWorkspaceResultSchema = z.object({
   refs: z.array(repoWorkspaceRefSchema).catch([]),
   failedAlias: z.string().nullable().catch(null),
   configError: refsErrorSchema,
+  /** False when the workspace is gone but its edit rules could not be cleaned up. */
+  permissionRemoved: z.boolean().optional(),
 });
 
 export type DeleteRepoWorkspaceResult = z.infer<typeof deleteRepoWorkspaceResultSchema>;
@@ -255,6 +266,7 @@ export type CreateRepoWorkspaceInput = {
     path: string;
     branch: string;
     primary: boolean;
+    readOnly: boolean;
   }>;
 };
 
@@ -283,6 +295,7 @@ export type UpdateRepoWorkspaceInput = {
     alias: string;
     branch: string;
     primary: boolean;
+    readOnly: boolean;
     projectId?: string;
     path?: string;
   }>;

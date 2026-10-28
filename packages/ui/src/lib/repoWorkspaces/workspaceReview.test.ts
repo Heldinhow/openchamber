@@ -18,6 +18,7 @@ const workspace = (repos: Array<{ projectId: string; alias: string; branch?: str
     alias: repo.alias,
     description: repo.alias,
     branch: repo.branch ?? '',
+    readOnly: false,
     missing: repo.missing ?? false,
     project: repo.missing
       ? null

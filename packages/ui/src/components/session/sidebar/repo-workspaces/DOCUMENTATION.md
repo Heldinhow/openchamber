@@ -52,6 +52,17 @@ total, partial flag and branch divergence come from
   disabled and takes no keys.
 - Edit opens on the saved name, repos, aliases, primary and branch snapshots.
   A repo whose project is gone shows "Project not found" and keeps its id.
+- Only secondary rows show the edit-permission control; the primary row has
+  none, and every payload names the primary `readOnly: false` because the
+  session always runs there. The checkbox is checked when the folder may be
+  edited, its visible label names the state (`Editable` or `Read-only`) and its
+  accessible name adds the alias. Toggling changes only that row. A row that
+  becomes primary sends `false`; if it becomes secondary again it takes back
+  the draft value it had, which is editable for a new or imported row.
+- A saved workspace whose edit-permission rule could not be written still
+  counts as saved: the dialog closes and refreshes as usual, after an error
+  toast that names the config path. It is not the pending-references card,
+  which is reserved for unwritten references.
 - The create warning is part of the form, not a toast, and stays visible until
   the request: the exact target (`<primary>/.opencode/opencode.json`) as the
   server resolves it, one chip per secondary alias, and the notice that
@@ -142,6 +153,24 @@ server about the target.
 The common action is to remove the repo and its reference together, so the box
 starts checked and unchecking preserves the entry. A confirm dialog would add a
 second modal inside the dialog and hide the diff the user is deciding on.
+
+### Why the edit permission is one checkbox that names both states
+
+The row already carries alias, folder, branch and remove, so the permission
+answer is a single checkbox rather than two radios or a select: one click and
+one extra grid column. Its visible label swaps between "Editable" and
+"Read-only" so the unchecked state says what it means without a legend, and its
+accessible name adds the alias so a screen reader tells the rows apart.
+Rejected alternative: a badge plus an edit button, which spends two states on
+two interactions for the same boolean.
+
+### Why a failed permission write is a toast and not the pending card
+
+The workspace and its references were saved; only the permission rule is
+missing, and the next save rewrites it. The pending card already means
+"references unavailable" and carries a per-alias retry, so folding a second,
+different failure into it would make that retry ambiguous. A toast names the
+path and closes the dialog on its normal path, and it does not block the save.
 
 ### Why the form is its own component
 
