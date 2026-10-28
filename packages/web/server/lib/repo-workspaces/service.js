@@ -4,9 +4,11 @@
  * against the current catalog and registers a folder that is not a project yet
  * through the existing add-project path, never by writing settings itself.
  *
- * Nothing here touches OpenCode's `references`; ticket 04 adds the read side
- * and ticket 05 the write side.
+ * It also reads, but never writes, the primary's OpenCode `references`: each
+ * expected alias is classified against the project config (ownership) and the
+ * merged layers (conflict). Ticket 05 adds the write side.
  */
+import path from 'node:path';
 import { z } from 'zod';
 import { resolveProjectForDirectory } from '../projects/add-project.js';
 
@@ -169,6 +171,124 @@ const resolveRepos = async ({
   };
 };
 
+// Config is untyped JSONC: parse the `references` section at this boundary
+// instead of trusting its shape downstream.
+const referencesSchema = z.record(z.string(), z.unknown());
+const referenceEntrySchema = z.union([
+  z.string().transform((value) => ({ path: value, description: '' })),
+  z.object({
+    path: z.string().nullable().catch(null),
+    description: z.string().catch(''),
+  }),
+]);
+
+const referencesOf = (config) => {
+  const parsed = referencesSchema.safeParse(config?.references);
+  return parsed.success ? parsed.data : null;
+};
+
+const layerDefinesAlias = (config, alias) => {
+  const references = referencesOf(config);
+  return references !== null && Object.hasOwn(references, alias);
+};
+
+/** A config entry as `{ path, description }`; null when the value is not an object or string. */
+const currentReferenceValue = (value) => {
+  const parsed = referenceEntrySchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
+
+const referenceMatches = (current, expected) => (
+  current !== null
+  && current.path !== null
+  && path.isAbsolute(current.path)
+  && path.resolve(current.path) === expected.path
+  && current.description === expected.description
+);
+
+const describeReference = (reference, state) => ({
+  alias: reference.alias,
+  // The value ticket 05 will write: absolute and normalized, so it never
+  // depends on the config file's directory.
+  path: reference.path,
+  description: reference.description,
+  status: state.status,
+  owned: reference.owned,
+  current: state.current,
+});
+
+/**
+ * Reads the primary's config once and classifies every expected reference.
+ * Ownership is the project layer only; the merged layers only reveal an alias
+ * another layer also defines. Any layer parse error makes the conflict state
+ * untrustworthy, so every ref is `unknown` and the first error is reported once.
+ */
+const readWorkspaceRefs = ({ workspace, projectsById, readConfigLayers, getLayerError, getProjectConfigPath }) => {
+  const primaryProject = projectsById.get(workspace.primaryProjectId) ?? null;
+  const expected = workspace.repos
+    .filter((repo) => repo.projectId !== workspace.primaryProjectId)
+    .map((repo) => {
+      const project = projectsById.get(repo.projectId) ?? null;
+      return {
+        alias: repo.alias,
+        description: repo.description ?? '',
+        owned: workspace.createdRefs.includes(repo.alias),
+        project,
+        path: project ? path.resolve(project.path) : null,
+      };
+    });
+
+  if (!primaryProject) {
+    // Without the primary there is no config to read; its refs read as missing
+    // instead of failing the whole workspace.
+    return {
+      refs: expected.map((reference) => describeReference(reference, { status: 'missing', current: null })),
+      error: null,
+    };
+  }
+
+  const layers = readConfigLayers(primaryProject.path);
+  const projectConfigPath = getProjectConfigPath(primaryProject.path);
+  const failedLayer = getLayerError(layers, projectConfigPath) ?? layers.layerErrors?.[0] ?? null;
+  const error = failedLayer ? { path: failedLayer.path, message: failedLayer.message } : null;
+
+  const refs = expected.map((reference) => {
+    if (failedLayer) {
+      return describeReference(reference, { status: 'unknown', current: null });
+    }
+    if (!reference.project) {
+      return describeReference(reference, { status: 'missing', current: null });
+    }
+
+    const inProject = layerDefinesAlias(layers.projectConfig, reference.alias);
+    const inOtherLayer = [layers.userConfig, layers.userOverrideConfig, layers.customConfig]
+      .some((layer) => layerDefinesAlias(layer, reference.alias));
+
+    if (inProject && inOtherLayer) {
+      return describeReference(reference, {
+        status: 'overridden',
+        current: currentReferenceValue(referencesOf(layers.projectConfig)[reference.alias]),
+      });
+    }
+    if (inProject) {
+      const current = currentReferenceValue(referencesOf(layers.projectConfig)[reference.alias]);
+      return describeReference(reference, {
+        status: referenceMatches(current, reference) ? 'ok' : 'different',
+        current,
+      });
+    }
+    if (inOtherLayer) {
+      return describeReference(reference, {
+        status: 'outside',
+        current: currentReferenceValue(referencesOf(layers.mergedConfig)?.[reference.alias]),
+      });
+    }
+    return describeReference(reference, { status: 'missing', current: null });
+  });
+
+  return { refs, error };
+};
+
 export const createWorkspaceService = (dependencies) => {
   const {
     readSettings,
@@ -178,15 +298,27 @@ export const createWorkspaceService = (dependencies) => {
     validateDirectoryPath,
     fsPromises,
     crypto,
+    readConfigLayers,
+    getLayerError,
+    getProjectConfigPath,
   } = dependencies;
 
   const storedWorkspaces = (value) => sanitizeRepoWorkspaces(value)?.workspaces ?? [];
+
+  const refsFor = (workspace, projects) => readWorkspaceRefs({
+    workspace,
+    projectsById: new Map(projects.map((project) => [project.id, project])),
+    readConfigLayers,
+    getLayerError,
+    getProjectConfigPath,
+  });
 
   const list = async () => {
     const settings = await readSettings();
     const parsed = sanitizeRepoWorkspaces(settings.workspaces);
     const activeWorkspaceId = activeWorkspaceIdSchema.safeParse(settings.activeWorkspaceId);
-    const projectsById = new Map((sanitizeProjects(settings.projects) || []).map((project) => [project.id, project]));
+    const projects = sanitizeProjects(settings.projects) || [];
+    const projectsById = new Map(projects.map((project) => [project.id, project]));
 
     const workspaces = (parsed?.workspaces ?? []).map((workspace) => ({
       ...workspace,
@@ -199,14 +331,18 @@ export const createWorkspaceService = (dependencies) => {
         };
       }),
     }));
+    const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId.data) ?? null;
+    const { refs, error: refsError } = activeWorkspace
+      ? refsFor(activeWorkspace, projects)
+      : { refs: [], error: null };
 
     return {
       workspaces,
       activeWorkspaceId: activeWorkspaceId.success ? activeWorkspaceId.data : null,
       // Invalid entries are dropped from this read only; the file is untouched.
       discarded: parsed?.discarded ?? 0,
-      // The reference states arrive in ticket 04.
-      refs: [],
+      refs,
+      refsError,
     };
   };
 
@@ -244,7 +380,8 @@ export const createWorkspaceService = (dependencies) => {
     }
 
     await persistSettings(changes);
-    return { workspace, refs: [] };
+    const { refs, error: refsError } = refsFor(workspace, nextProjects);
+    return { workspace, refs, refsError };
   };
 
   const activate = async (payload) => {

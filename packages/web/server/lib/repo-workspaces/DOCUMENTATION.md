@@ -12,7 +12,9 @@ rule in `../projects/add-project.js`; its project id comes from there. Settings
 are persisted only through the settings runtime (`persistSettings`), never by
 writing `settings.json`.
 
-OpenCode `references` are not read or written yet; tickets 04 and 05 own them.
+OpenCode `references` are read here, through the injected `readConfigLayers`,
+`getLayerError` and `getProjectConfigPath` from `../opencode/shared.js`; this
+module never writes them. Ticket 05 owns the write side.
 
 ## Invariants
 
@@ -33,6 +35,18 @@ OpenCode `references` are not read or written yet; tickets 04 and 05 own them.
   a missing project on the repo (`missing: true`, `project: null`). Malformed
   stored workspaces are dropped by the shared parser and counted in
   `discarded`; the read never rewrites settings.
+- Every read returns `refs` for the expected references of one workspace (the
+  active workspace on `GET`, the new one on create): one entry per secondary
+  repo with `alias`, expected `path` and `description`, `status`, `owned` and
+  the `current` config value when one exists. A workspace with no secondary
+  repo returns an empty array.
+- `status` is `ok`, `missing`, `different`, `outside`, `overridden` or
+  `unknown`. A project whose id is gone makes its refs `missing` (and the
+  primary's absence makes all of them `missing`) without failing the workspace.
+  A config layer that cannot be parsed makes every ref `unknown`, never
+  `missing`, and reports `{ path, message }` once in `refsError`.
+- An expected alias is `owned` only when `createdRefs` lists it; ownership never
+  changes the classification.
 - Error bodies carry a field key (`repos[0].alias`) and an English API message.
   They never carry settings content, file contents or secrets.
 
@@ -58,6 +72,34 @@ writes twice and changes `activeProjectId`/`lastDirectory` once per folder.
 
 `refs` describes the active workspace's primary config, which is what the
 sidebar filter and the session header show. A per-workspace array would read
-every workspace's primary config on a list request. The field is empty until
-ticket 04 fills it; creation returns `refs` beside `workspace`, as the contract
-specifies.
+every workspace's primary config on a list request. Creation returns `refs`
+beside `workspace`, as the contract specifies.
+
+### Why the expected reference path is already absolute and normalized
+
+Ticket 05 writes `path.resolve(project.path)`, so the read reports exactly that
+value and the UI and the writer cannot disagree about the target. Comparison
+resolves an absolute `current.path` the same way, so a trailing separator does
+not read as `different`; a relative or `~` path does, because OpenCode would
+resolve it differently from the absolute value the workspace writes. Rejected
+alternative: comparing raw strings, which would report a hand-edited trailing
+slash as a conflict.
+
+### Why one bad config layer makes every ref `unknown`
+
+`readConfigLayers` omits a layer it cannot parse from the merge, so classifying
+against the remaining layers would read a user reference as `missing` or
+`outside`, and the next write could then overwrite it. A file-wide parse failure
+cannot be attributed to one alias, so the read reports `unknown` for all of them
+and the same `{ path, message }` once in `refsError`. A malformed individual
+entry is different: it is `different` (with `current: null`) and its siblings
+keep their states.
+
+### Why `current` comes from the project layer, except for `outside`
+
+Ownership and ticket 05's overwrite check read the project layer, so `ok`,
+`different` and `overridden` report that entry. `outside` has no project entry;
+its value is the merged one actually in effect. Rejected alternative: always
+reporting the merged value, which would hide the project entry that a removal
+is allowed to touch.
+

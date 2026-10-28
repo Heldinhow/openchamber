@@ -1,8 +1,19 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { registerCommonRequestMiddleware } from '../opencode/core-routes.js';
 import { registerWorkspaceRoutes } from './routes.js';
+
+const emptyLayers = () => ({
+  userConfig: {},
+  userOverrideConfig: {},
+  projectConfig: {},
+  customConfig: {},
+  mergedConfig: {},
+  paths: { userPath: null, userOverridePath: null, projectPath: null, customPath: null },
+  layerErrors: [],
+});
 
 const createApp = (overrides = {}) => {
   const app = express();
@@ -19,6 +30,9 @@ const createApp = (overrides = {}) => {
     validateDirectoryPath: vi.fn(async (directory) => ({ ok: true, directory })),
     fsPromises: { mkdir: vi.fn(async () => undefined) },
     crypto: { randomUUID: () => 'fixed-uuid' },
+    readConfigLayers: vi.fn(emptyLayers),
+    getLayerError: vi.fn(() => null),
+    getProjectConfigPath: vi.fn((directory) => path.join(directory, '.opencode', 'opencode.json')),
     ...overrides,
   };
   registerWorkspaceRoutes(app, dependencies);
@@ -67,5 +81,42 @@ describe('workspace routes', () => {
     const response = await request(app).get('/api/workspaces').expect(500);
 
     expect(response.body).toEqual({ error: 'Failed to read workspaces' });
+  });
+
+  it('serializes the active workspace reference states and one config parse error', async () => {
+    const projectConfigPath = '/repos/api/.opencode/opencode.json';
+    const message = `OpenCode configuration at ${projectConfigPath} contains invalid JSONC and cannot be loaded safely`;
+    const { app } = createApp({
+      readSettings: vi.fn(async () => ({
+        projects: [
+          { id: 'api', path: '/repos/api', label: 'API' },
+          { id: 'web', path: '/repos/web', label: 'Web' },
+        ],
+        workspaces: [{
+          id: 'ws_1',
+          name: 'Shop Platform',
+          primaryProjectId: 'api',
+          repos: [
+            { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+            { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+          ],
+          createdRefs: [],
+        }],
+        activeWorkspaceId: 'ws_1',
+      })),
+      readConfigLayers: vi.fn(() => ({
+        ...emptyLayers(),
+        paths: { userPath: null, userOverridePath: null, projectPath: projectConfigPath, customPath: null },
+        layerErrors: [{ path: projectConfigPath, code: 'INVALID_JSONC', message }],
+      })),
+      getProjectConfigPath: vi.fn(() => projectConfigPath),
+    });
+
+    const response = await request(app).get('/api/workspaces').expect(200);
+
+    expect(response.body.refs).toEqual([
+      { alias: 'web', path: '/repos/web', description: 'Web', status: 'unknown', owned: false, current: null },
+    ]);
+    expect(response.body.refsError).toEqual({ path: projectConfigPath, message });
   });
 });

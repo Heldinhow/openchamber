@@ -1010,6 +1010,7 @@ export {
   getJsonWriteTarget,
   getLayerError,
   getProjectConfigCandidates,
+  getProjectConfigPath,
   getFolderConfigPaths,
   getAncestors,
   findWorktreeRoot,
