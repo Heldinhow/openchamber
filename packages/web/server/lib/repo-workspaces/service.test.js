@@ -217,6 +217,35 @@ describe('workspace service: create', () => {
       .toEqual(['ws_previous', 'ws_fixed-uuid']);
   });
 
+  it('keeps both workspaces when two creates read the settings document at once', async () => {
+    let saved = { projects, workspaces: [], activeWorkspaceId: null };
+    const readSettings = vi.fn(async () => saved);
+    const persistSettings = vi.fn(async (changes) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      saved = { ...saved, ...changes };
+      return changes;
+    });
+    let sequence = 0;
+    const { service } = createService({
+      readSettings,
+      persistSettings,
+      crypto: { randomUUID: () => `uuid-${++sequence}` },
+    });
+
+    await Promise.all([
+      service.create(validPayload),
+      service.create({
+        name: 'Docs Platform',
+        repos: [
+          { projectId: 'api', alias: 'api', primary: true },
+          { projectId: 'web', alias: 'docs' },
+        ],
+      }),
+    ]);
+
+    expect(saved.workspaces.map((workspace) => workspace.name)).toEqual(['Shop Platform', 'Docs Platform']);
+  });
+
   it('registers a folder that is not a project yet through the add-project path', async () => {
     const { service, dependencies } = createService();
 
@@ -798,6 +827,78 @@ const storedWorkspaceFor = (primary, secondaries, createdRefs) => workspace({
   ],
 });
 
+describe('workspace service: list reference states per workspace', () => {
+  it('returns each workspace its own refs beside the active top-level ones', async () => {
+    const root = caseRoot('list-per-workspace');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const docs = projectAt(root, 'docs', 'Docs');
+    writeProjectConfig(api, JSON.stringify({
+      references: { web: { path: path.resolve(web.path), description: 'Web' } },
+    }));
+    writeProjectConfig(docs, JSON.stringify({
+      references: { api: { path: '/somewhere/api', description: 'Old API' } },
+    }));
+    const active = storedWorkspaceFor(api, [web], ['web']);
+    const other = workspace({
+      id: 'ws_2',
+      name: 'Docs Platform',
+      primaryProjectId: 'docs',
+      repos: [
+        { projectId: 'docs', alias: 'docs', description: 'Docs', branch: '' },
+        { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+      ],
+      createdRefs: [],
+    });
+    const { service } = fixtureService({
+      projects: [api, web, docs],
+      workspaces: [active, other],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.list();
+
+    expect(result.refs.map((reference) => [reference.alias, reference.status])).toEqual([['web', 'ok']]);
+    expect(result.workspaces[0].refs).toEqual(result.refs);
+    expect(result.workspaces[1].refs).toEqual([
+      {
+        alias: 'api',
+        path: path.resolve(api.path),
+        description: 'API',
+        status: 'different',
+        owned: false,
+        current: { path: '/somewhere/api', description: 'Old API' },
+      },
+    ]);
+    expect(result.workspaces[1].refsError).toBeNull();
+  });
+
+  it('reports a parse error on its own workspace without hiding another workspace', async () => {
+    const root = caseRoot('list-per-workspace-error');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const docs = projectAt(root, 'docs', 'Docs');
+    writeProjectConfig(api, JSON.stringify({
+      references: { web: { path: path.resolve(web.path), description: 'Web' } },
+    }));
+    const brokenFile = writeProjectConfig(docs, '{\n  "references": {');
+    const active = storedWorkspaceFor(api, [web], ['web']);
+    const broken = { ...storedWorkspaceFor(docs, [api], []), id: 'ws_2' };
+    const { service } = fixtureService({
+      projects: [api, web, docs],
+      workspaces: [active, broken],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.list();
+
+    expect(result.refs.map((reference) => [reference.alias, reference.status])).toEqual([['web', 'ok']]);
+    expect(result.refsError).toBeNull();
+    expect(result.workspaces[1].refs.map((reference) => [reference.alias, reference.status])).toEqual([['api', 'unknown']]);
+    expect(result.workspaces[1].refsError).toMatchObject({ path: brokenFile });
+  });
+});
+
 describe('workspace service: write references', () => {
   it('writes a missing secondary reference into the .opencode layer, preserving comments and foreign keys', async () => {
     const root = caseRoot('write-create');
@@ -1322,6 +1423,23 @@ describe('workspace service: delete', () => {
     expect(readConfigFile(file).references.web).toEqual(edited.references.web);
   });
 
+  it('removes a hand-edited owned reference when the request confirms it', async () => {
+    const { file, projects, stored } = deleteFixture('delete-edited-confirmed', ['web']);
+    const edited = { references: { web: { path: '/user/edited', description: 'Edited web' } } };
+    fs.writeFileSync(file, JSON.stringify(edited));
+    const { service, dependencies } = fixtureService({
+      projects,
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', { removeCreatedRefs: true, confirmRefs: ['web'] });
+
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(readConfigFile(file).references).toEqual({});
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
+  });
+
   it('puts the removed references back when the settings write fails', async () => {
     const { file, projects, stored } = deleteFixture('delete-settings-fails');
     const { service } = fixtureService(
@@ -1387,6 +1505,143 @@ describe('workspace service: update', () => {
     expect(result.refs.map((reference) => [reference.alias, reference.status])).toEqual([['api', 'ok']]);
     expect(dependencies.persistSettings).toHaveBeenCalledOnce();
     expect(dependencies.persistSettings.mock.calls[0][0].workspaces[0].primaryProjectId).toBe('web');
+  });
+
+  it('removes every owned entry from the old primary when the primary changes', async () => {
+    const root = caseRoot('update-primary-swap');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const docs = projectAt(root, 'docs', 'Docs');
+    const oldFile = writeProjectConfig(api, JSON.stringify({
+      references: {
+        web: { path: path.resolve(web.path), description: 'Web' },
+        docs: { path: path.resolve(docs.path), description: 'Docs' },
+      },
+    }));
+    const stored = storedWorkspaceFor(api, [web, docs], ['web', 'docs']);
+    const { service } = fixtureService({
+      projects: [api, web, docs],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.update('ws_1', updatePayloadWith(web, [api, docs]));
+
+    expect(result.workspace.primaryProjectId).toBe('web');
+    expect(result.workspace.createdRefs).toEqual(['docs', 'api']);
+    expect(readConfigFile(oldFile).references).toEqual({});
+    expect(readConfigFile(path.join(web.path, '.opencode', 'opencode.json')).references).toEqual({
+      api: { path: path.resolve(api.path), description: 'API' },
+      docs: { path: path.resolve(docs.path), description: 'Docs' },
+    });
+    expect(result.refWrites).toEqual([
+      { alias: 'api', status: 'written' },
+      { alias: 'docs', status: 'written' },
+    ]);
+  });
+
+  it('aborts the primary swap when an owned entry cannot be removed, leaving both untouched', async () => {
+    const root = caseRoot('update-primary-swap-fails');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const docs = projectAt(root, 'docs', 'Docs');
+    const oldFile = writeProjectConfig(api, JSON.stringify({
+      references: {
+        web: { path: path.resolve(web.path), description: 'Web' },
+        docs: { path: path.resolve(docs.path), description: 'Docs' },
+      },
+    }));
+    const before = fs.readFileSync(oldFile, 'utf8');
+    const stored = storedWorkspaceFor(api, [web, docs], ['web', 'docs']);
+    const { service, dependencies } = fixtureService(
+      { projects: [api, web, docs], workspaces: [stored], activeWorkspaceId: 'ws_1' },
+      { writeConfig: vi.fn(async () => { throw new Error('permission denied'); }) },
+    );
+
+    await expect(service.update('ws_1', updatePayloadWith(web, [api, docs]))).rejects.toMatchObject({
+      status: 409,
+      conflict: { aliases: ['web', 'docs'], path: oldFile },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(fs.readFileSync(oldFile, 'utf8')).toBe(before);
+    expect(fs.existsSync(path.join(web.path, '.opencode', 'opencode.json'))).toBe(false);
+  });
+
+  it('leaves an unchanged reference defined in another layer alone instead of refusing the edit', async () => {
+    const root = caseRoot('update-layer-unchanged');
+    const api = projectAt(root, 'api', 'API');
+    const outside = projectAt(root, 'outside', 'Outside');
+    const both = projectAt(root, 'both', 'Both');
+    writeProjectConfig(api, JSON.stringify({
+      references: { 'both-layers': { path: path.resolve(both.path), description: 'Both' } },
+    }));
+    const stored = workspace({
+      primaryProjectId: 'api',
+      repos: [
+        { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+        { projectId: 'outside', alias: 'user-only', description: 'Outside', branch: '' },
+        { projectId: 'both', alias: 'both-layers', description: 'Both', branch: '' },
+      ],
+      createdRefs: [],
+    });
+    const { service, dependencies } = fixtureService({
+      projects: [api, outside, both],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.update('ws_1', {
+      name: 'Renamed Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true },
+        { projectId: 'outside', alias: 'user-only' },
+        { projectId: 'both', alias: 'both-layers' },
+      ],
+    });
+
+    expect(result.workspace.name).toBe('Renamed Platform');
+    expect(result.refWrites).toEqual([
+      { alias: 'user-only', status: 'unchanged' },
+      { alias: 'both-layers', status: 'unchanged' },
+    ]);
+    expect(result.refs.map((reference) => [reference.alias, reference.status])).toEqual([
+      ['user-only', 'outside'],
+      ['both-layers', 'overridden'],
+    ]);
+    expect(dependencies.writeConfig).not.toHaveBeenCalled();
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
+  });
+
+  it('still refuses a changed reference defined in another layer', async () => {
+    const root = caseRoot('update-layer-changed');
+    const api = projectAt(root, 'api', 'API');
+    const outside = projectAt(root, 'outside', 'Outside');
+    writeProjectConfig(api, '{}');
+    const stored = workspace({
+      primaryProjectId: 'api',
+      repos: [
+        { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+        { projectId: 'outside', alias: 'user-only', description: 'Outside', branch: '' },
+      ],
+      createdRefs: [],
+    });
+    const { service, dependencies } = fixtureService({
+      projects: [api, outside],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    await expect(service.update('ws_1', {
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true },
+        { projectId: 'outside', alias: 'both-layers' },
+      ],
+    })).rejects.toMatchObject({
+      status: 409,
+      conflict: { alias: 'both-layers', path: '/outside/user-repo' },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
   });
 
   it('renames an owned alias: removes the old reference and writes the new one', async () => {

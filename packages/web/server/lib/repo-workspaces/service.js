@@ -130,6 +130,8 @@ const activeWorkspaceIdSchema = z.union([z.null(), z.string().trim().min(1)]);
 
 const removeWorkspaceSchema = z.object({
   removeCreatedRefs: z.boolean({ error: 'Remove references must be true or false' }).optional(),
+  // Aliases the user explicitly allowed removing after editing the entry.
+  confirmRefs: confirmRefsSchema,
 });
 
 const retryRefsSchema = z.object({
@@ -456,8 +458,19 @@ export const createWorkspaceService = (dependencies) => {
 
   const storedWorkspaces = (value) => sanitizeRepoWorkspaces(value)?.workspaces ?? [];
 
+  // create/update/remove/activate read the settings document and persist a new
+  // snapshot built from it; a lost update here would drop a workspace. The
+  // whole section runs through this queue.
+  let settingsQueue = Promise.resolve();
+  const withSettingsLock = (operation) => {
+    const run = settingsQueue.then(operation, operation);
+    settingsQueue = run.catch(() => {});
+    return run;
+  };
+
   // Every config read-modify-write runs through this queue. Two requests then
   // re-read the file the previous one wrote instead of overwriting each other.
+  // Lock order is settings first, refs second; nothing takes them the other way.
   let refsQueue = Promise.resolve();
   const withRefsLock = (operation) => {
     const run = refsQueue.then(operation, operation);
@@ -553,29 +566,33 @@ export const createWorkspaceService = (dependencies) => {
     const projects = sanitizeProjects(settings.projects) || [];
     const projectsById = new Map(projects.map((project) => [project.id, project]));
 
-    const workspaces = (parsed?.workspaces ?? []).map((workspace) => ({
-      ...workspace,
-      repos: workspace.repos.map((repo) => {
-        const project = projectsById.get(repo.projectId) || null;
-        return {
-          ...repo,
-          missing: project === null,
-          project: project ? { id: project.id, path: project.path, label: project.label ?? '' } : null,
-        };
-      }),
-    }));
+    const workspaces = (parsed?.workspaces ?? []).map((workspace) => {
+      // The edit dialog reads any workspace's references, so every entry
+      // carries its own state.
+      const { refs, error: refsError } = refsFor(workspace, projects);
+      return {
+        ...workspace,
+        repos: workspace.repos.map((repo) => {
+          const project = projectsById.get(repo.projectId) || null;
+          return {
+            ...repo,
+            missing: project === null,
+            project: project ? { id: project.id, path: project.path, label: project.label ?? '' } : null,
+          };
+        }),
+        refs,
+        refsError,
+      };
+    });
     const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId.data) ?? null;
-    const { refs, error: refsError } = activeWorkspace
-      ? refsFor(activeWorkspace, projects)
-      : { refs: [], error: null };
 
     return {
       workspaces,
       activeWorkspaceId: activeWorkspaceId.success ? activeWorkspaceId.data : null,
       // Invalid entries are dropped from this read only; the file is untouched.
       discarded: parsed?.discarded ?? 0,
-      refs,
-      refsError,
+      refs: activeWorkspace?.refs ?? [],
+      refsError: activeWorkspace?.refsError ?? null,
     };
   };
 
@@ -668,7 +685,7 @@ export const createWorkspaceService = (dependencies) => {
     };
   };
 
-  const create = async (payload) => {
+  const createWorkspace = async (payload) => {
     const { name, repos: entries, confirmRefs = [] } = parseCreatePayload(payload);
     const confirmed = new Set(confirmRefs);
     const primaryIndex = entries.findIndex((repo) => repo.primary === true);
@@ -749,6 +766,10 @@ export const createWorkspaceService = (dependencies) => {
       configTarget,
     };
   };
+
+  // The read of the settings snapshot and every write derived from it are one
+  // critical section; the reference writes inside it take the refs queue second.
+  const create = (payload) => withSettingsLock(() => createWorkspace(payload));
 
   const retryRefs = async (workspaceId, payload = {}) => {
     const { aliases, confirmRefs = [] } = parseInput(retryRefsSchema, payload ?? {});
@@ -901,7 +922,7 @@ export const createWorkspaceService = (dependencies) => {
    * references best effort. A failed removal aborts before the save, so the
    * workspace never points at a half-edited config.
    */
-  const update = async (workspaceId, payload) => {
+  const updateWorkspace = async (workspaceId, payload) => {
     const {
       name,
       repos: entries,
@@ -947,9 +968,15 @@ export const createWorkspaceService = (dependencies) => {
     const oldReferences = expectedReferences(existing, oldProjectsById);
     const oldReferenceByAlias = new Map(oldReferences.map((reference) => [reference.alias, reference]));
     const nextAliases = new Set(nextReferences.map((reference) => reference.alias));
+    const primaryChanged = existing.primaryProjectId !== primaryProjectId;
+    // A new primary means a new config file: every owned entry lives in the old
+    // primary, so each one is removed there even when its repo stays a
+    // secondary. Otherwise the old file keeps copies nothing can remove.
     const leavingAliases = oldReferences
       .filter((reference) => (
-        reference.owned && !nextAliases.has(reference.alias) && !kept.has(reference.alias)
+        reference.owned
+        && !kept.has(reference.alias)
+        && (primaryChanged || !nextAliases.has(reference.alias))
       ))
       .map((reference) => reference.alias);
     const oldPrimary = oldProjectsById.get(existing.primaryProjectId) ?? null;
@@ -973,6 +1000,12 @@ export const createWorkspaceService = (dependencies) => {
       // change with the workspace itself; only a hand-edited entry needs a
       // confirmation, because the user's value would be lost.
       const previous = oldReferenceByAlias.get(reference.alias) ?? null;
+      // The same expected entry in another layer is not this workspace's to
+      // rewrite, and rewriting it would not change what is in effect.
+      const unchanged = previous !== null
+        && previous.path === reference.path
+        && previous.description === reference.description;
+      if (unchanged && (state.status === 'outside' || state.status === 'overridden')) continue;
       const stillWorkspaceOwned = state.status === 'different'
         && previous?.owned === true
         && referenceMatches(state.current, previous);
@@ -1028,6 +1061,8 @@ export const createWorkspaceService = (dependencies) => {
     };
   };
 
+  const update = (workspaceId, payload) => withSettingsLock(() => updateWorkspace(workspaceId, payload));
+
   /**
    * A settings write that fails after a successful removal leaves a workspace
    * pointing at entries it no longer expects; put them back before reporting.
@@ -1049,8 +1084,11 @@ export const createWorkspaceService = (dependencies) => {
    * the workspace and clear the pointer when it was the active one. A failed
    * removal answers `removed: false` with the alias and leaves settings alone.
    */
-  const remove = async (workspaceId, payload = {}) => {
-    const { removeCreatedRefs: alsoRemoveRefs = false } = parseInput(removeWorkspaceSchema, payload ?? {});
+  const removeWorkspace = async (workspaceId, payload = {}) => {
+    const {
+      removeCreatedRefs: alsoRemoveRefs = false,
+      confirmRefs = [],
+    } = parseInput(removeWorkspaceSchema, payload ?? {});
     const settings = await readSettings();
     const stored = storedWorkspaces(settings.workspaces);
     const workspace = stored.find((candidate) => candidate.id === workspaceId) || null;
@@ -1062,7 +1100,7 @@ export const createWorkspaceService = (dependencies) => {
     let removal = null;
     if (alsoRemoveRefs && workspace.createdRefs.length > 0) {
       try {
-        removal = await removeCreatedRefs({ workspace });
+        removal = await removeCreatedRefs({ workspace, confirmRefs });
       } catch (error) {
         if (!(error instanceof WorkspaceRequestError)) throw error;
         // Config unreadable, a hand-edited entry, or a failed write: the
@@ -1104,7 +1142,9 @@ export const createWorkspaceService = (dependencies) => {
     return { removed: true, refs: [], failedAlias: null, configError: null };
   };
 
-  const activate = async (payload) => {
+  const remove = (workspaceId, payload) => withSettingsLock(() => removeWorkspace(workspaceId, payload));
+
+  const activateWorkspace = async (payload) => {
     const { id: requestedId } = parseInput(activatePayloadSchema, payload);
     const settings = await readSettings();
     if (requestedId === null) {
@@ -1130,6 +1170,8 @@ export const createWorkspaceService = (dependencies) => {
     });
     return { activeWorkspaceId: workspace.id };
   };
+
+  const activate = (payload) => withSettingsLock(() => activateWorkspace(payload));
 
   return { list, importDraft, create, update, activate, remove, retryRefs, removeCreatedRefs };
 };

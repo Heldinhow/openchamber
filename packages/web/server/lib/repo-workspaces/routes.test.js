@@ -363,6 +363,47 @@ describe('workspace routes', () => {
     expect(dependencies.persistSettings).not.toHaveBeenCalled();
   });
 
+  it('removes a hand-edited owned reference when DELETE confirms it', async () => {
+    const { app, state, dependencies } = createApp({
+      readSettings: vi.fn(async () => ({
+        projects: [
+          { id: 'api', path: '/repos/api', label: 'API' },
+          { id: 'web', path: '/repos/web', label: 'Web' },
+        ],
+        workspaces: [{
+          id: 'ws_1',
+          name: 'Shop Platform',
+          primaryProjectId: 'api',
+          repos: [
+            { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+            { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+          ],
+          createdRefs: ['web'],
+        }],
+        activeWorkspaceId: 'ws_1',
+      })),
+    });
+    state.projectConfig = { references: { web: { path: '/user/edited', description: 'Edited' } } };
+
+    const refused = await request(app)
+      .delete('/api/workspaces/ws_1')
+      .send({ removeCreatedRefs: true })
+      .expect(200);
+
+    expect(refused.body).toMatchObject({ removed: false, failedAlias: 'web' });
+    expect(state.projectConfig.references.web).toEqual({ path: '/user/edited', description: 'Edited' });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+
+    const confirmed = await request(app)
+      .delete('/api/workspaces/ws_1')
+      .send({ removeCreatedRefs: true, confirmRefs: ['web'] })
+      .expect(200);
+
+    expect(confirmed.body).toMatchObject({ removed: true, failedAlias: null });
+    expect(state.projectConfig.references).toEqual({});
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
+  });
+
   it('answers 404 for an unknown workspace', async () => {
     const { app, dependencies } = createApp();
 

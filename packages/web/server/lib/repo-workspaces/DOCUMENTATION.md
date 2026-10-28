@@ -42,6 +42,9 @@ warn that the new layer overrides it, and is never edited.
   a missing project on the repo (`missing: true`, `project: null`). Malformed
   stored workspaces are dropped by the shared parser and counted in
   `discarded`; the read never rewrites settings.
+- Every workspace returned by `GET` carries `refs` and `refsError` for its own
+  primary, so the edit dialog can show a workspace that is not active. The
+  top-level `refs`/`refsError` still describe the active workspace.
 - Every read returns `refs` for the expected references of one workspace (the
   active workspace on `GET`, the new one on create): one entry per secondary
   repo with `alias`, expected `path` and `description`, `status`, `owned` and
@@ -84,11 +87,24 @@ warn that the new layer overrides it, and is never edited.
   new references best effort. A failed owned removal is 409 with the alias and
   leaves both the workspace and the file untouched; a failed new write is a
   saved workspace plus `refWrites[].status === 'failed'` for that alias.
+- On edit, a next reference that still matches the stored workspace's entry for
+  the same alias (same resolved path and description) needs neither a write nor
+  a confirmation when it lives only in another layer (`outside`) or when another
+  layer also defines it (`overridden`); the config is left untouched. A changed
+  alias, path or description still needs `confirmRefs` for those states. A
+  `missing` owned reference is still written, so a save retries a pending one,
+  and a `different` entry keeps its existing ownership rule.
 - On edit, a reference leaves when its alias is no longer a secondary alias:
   the repo was removed, the alias was renamed, or the repo became primary.
   `keepRefs` names the owned aliases whose repo leaves but whose entry must
   stay in the config; those aliases also leave `createdRefs`, so the workspace
   no longer owns them.
+- A changed primary moves every owned reference: all owned aliases except
+  `keepRefs` are removed from the old primary's config, including those whose
+  repo stays a secondary, because only the new primary's file is read for this
+  workspace afterwards. The removal uses the atomic removal step, so a failure
+  answers 409 and leaves the workspace and both files untouched. The new
+  references are then written into the new primary.
 - Edited `createdRefs` keeps an old owned alias only while it is still a
   secondary alias, and adds every alias the edit actually writes. An entry that
   was already identical stays the user's.
@@ -108,8 +124,14 @@ warn that the new layer overrides it, and is never edited.
   stays. An owned alias whose entry cannot be verified (`skipped`) is treated
   the same way, because deleting the workspace would orphan it. A settings
   write that fails after a successful removal restores the removed entries.
+  `confirmRefs` lets the caller approve removing an owned entry the user
+  edited; without it the answer stays `removed: false` with the failing alias.
 - The config read-modify-write path is serialized per service instance: two
   concurrent saves re-read the previous write instead of losing it.
+- Settings changes are serialized per service instance too: create, update,
+  remove and activate read the document and persist from that same snapshot
+  inside one queue, so two concurrent requests cannot drop each other's
+  workspace. The settings queue is taken before the config queue, never after.
 - `POST /api/workspaces/import` only reads. It returns `{ name, folders }` and
   never calls `persistSettings`, registers a project or writes config, so a
   cancel after importing leaves no trace.
@@ -146,12 +168,16 @@ is still the source of the id and of path validation. Rejected alternative:
 calling `POST /api/openchamber/directory` internally, which costs an HTTP hop,
 writes twice and changes `activeProjectId`/`lastDirectory` once per folder.
 
-### Why `GET /api/workspaces` returns one top-level `refs`
+### Why `GET /api/workspaces` returns per-workspace refs and one top-level set
 
-`refs` describes the active workspace's primary config, which is what the
-sidebar filter and the session header show. A per-workspace array would read
-every workspace's primary config on a list request. Creation returns `refs`
-beside `workspace`, as the contract specifies.
+The top-level `refs`/`refsError` describe the active workspace's primary
+config, which is what the sidebar filter and the session header show, so they
+stay. The edit dialog opens a workspace that may not be active and needs that
+workspace's own state in the same response; a separate request or route would
+cost a second settings read and another loading state. The price is one config
+read per stored workspace on the list request. Rejected alternative: returning
+only the active workspace's refs and reading the edited one on demand. Creation
+still returns `refs` beside `workspace`, as the contract specifies.
 
 ### Why the expected reference path is already absolute and normalized
 
@@ -228,6 +254,18 @@ serializes settings writes, and this is the config-file equivalent. Rejected
 alternative: relying on the atomic writer alone — it prevents a torn file, not
 a lost update.
 
+### Why settings changes hold a second queue
+
+The refs queue protects one config file, but the workspace fields live in the
+settings document. Create, update, remove and activate read that document and
+then persist a snapshot built from the read; two concurrent requests can read
+the same list and the second write drops the first workspace. The settings
+queue wraps the read-to-persist section of each. A removal inside it still takes
+the refs queue, and `removeCreatedRefs` reads settings without the settings
+queue, so the order is always settings then refs and the queues cannot deadlock.
+Rejected alternative: serializing only the settings write, which cannot merge a
+snapshot the caller already built.
+
 ### Why a failed deletion answers 200 with `removed: false`
 
 Deletion is a request whose refusal is a normal outcome: the workspace is still
@@ -273,6 +311,27 @@ workspace are candidates. A list of aliases also keeps the payload independent
 of row order, and an alias that stays simply ignores its entry. The kept alias
 leaves `createdRefs`, because a reference the user chose to keep is no longer
 this workspace's to delete.
+
+### Why a primary change removes owned entries that stay secondaries
+
+Ownership is recorded by alias against the config file the workspace wrote,
+which is always the primary's file. After a swap the old primary is just a
+project: its file is no longer read for this workspace, and an entry left there
+can never be matched to `createdRefs` again. The edit therefore removes every
+owned alias from the old file except `keepRefs`, and the write step recreates
+the staying secondaries in the new primary. Rejected alternative: removing only
+the aliases that leave the workspace, which leaves orphan copies behind.
+
+### Why an unchanged reference in another layer is not rewritten
+
+`outside` and `overridden` mean the project layer does not hold the entry this
+workspace expects; a write would either duplicate another layer's alias or
+replace a value the workspace does not own. When the edit keeps the same alias,
+path and description, the reference itself did not change, so a rewrite would
+only risk touching another layer. Only a changed reference asks for
+`confirmRefs`, which is also the case the dialog can explain. Rejected
+alternative: requiring confirmation for every `outside`/`overridden`
+reference, which refused an unrelated rename with no action the dialog offered.
 
 ### Why import is its own read-only route
 
