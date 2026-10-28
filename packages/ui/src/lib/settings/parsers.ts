@@ -384,6 +384,105 @@ export const parseProjects = fromSchema(
   }).refine((projects) => projects.length > 0),
 );
 
+/** One project inside a multi-repo workspace; `alias` is its OpenCode reference key. */
+export type WorkspaceRepo = {
+  projectId: string;
+  alias: string;
+  description: string;
+  branch: string;
+};
+
+export type RepoWorkspace = {
+  id: string;
+  name: string;
+  primaryProjectId: string;
+  repos: WorkspaceRepo[];
+  createdRefs: string[];
+};
+
+/** `discarded` is the number of entries the per-entry parser rejected. */
+type RepoWorkspacesParse = {
+  workspaces: RepoWorkspace[];
+  discarded: number;
+};
+
+// OpenCode reference keys: no whitespace, `/`, backtick or comma, and no leading `@`.
+const WORKSPACE_ALIAS_PATTERN = /^[^\s/`,@][^\s/`,]*$/;
+
+const workspaceRepoSchema = z.object({
+  projectId: nonEmptyTrimmed,
+  alias: nonEmptyTrimmed.pipe(z.string().regex(WORKSPACE_ALIAS_PATTERN)),
+  description: z.string().optional(),
+  branch: z.string().optional(),
+});
+
+const workspaceEntrySchema = z.object({
+  id: nonEmptyTrimmed,
+  name: nonEmptyTrimmed,
+  primaryProjectId: nonEmptyTrimmed,
+  repos: z.array(z.unknown()),
+  // A malformed entry is dropped, never allowed to take the workspace with it.
+  createdRefs: z.array(z.string().optional().catch(undefined)).catch([]),
+}).transform((workspace) => {
+  const repos: WorkspaceRepo[] = [];
+  const aliases = new Set<string>();
+  for (const repoEntry of workspace.repos) {
+    const repo = workspaceRepoSchema.safeParse(repoEntry);
+    if (!repo.success || aliases.has(repo.data.alias)) return undefined;
+    aliases.add(repo.data.alias);
+    repos.push({
+      projectId: repo.data.projectId,
+      alias: repo.data.alias,
+      description: repo.data.description ?? '',
+      branch: repo.data.branch ?? '',
+    });
+  }
+  if (repos.length === 0 || !repos.some((repo) => repo.projectId === workspace.primaryProjectId)) return undefined;
+  const secondaryAliases = new Set(
+    repos.filter((repo) => repo.projectId !== workspace.primaryProjectId).map((repo) => repo.alias),
+  );
+  const createdRefs = Array.from(new Set(
+    workspace.createdRefs.flatMap((alias) => (alias !== undefined && secondaryAliases.has(alias) ? [alias] : [])),
+  ));
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    primaryProjectId: workspace.primaryProjectId,
+    repos,
+    createdRefs,
+  };
+});
+
+/**
+ * Parse `workspaces` one entry at a time: a structurally invalid workspace is
+ * dropped and counted, never allowed to erase its valid siblings or the rest
+ * of the settings document. A `projectId` that no longer exists is not
+ * structural, so it stays (the project catalog is a separate read).
+ */
+export const parseRepoWorkspaces: SettingsParser<RepoWorkspacesParse> = (value) => {
+  const entries = z.array(z.unknown()).safeParse(value);
+  if (!entries.success) return undefined;
+  const workspaces: RepoWorkspace[] = [];
+  const seenIds = new Set<string>();
+  let discarded = 0;
+  for (const entry of entries.data) {
+    const parsed = workspaceEntrySchema.safeParse(entry);
+    const workspace = parsed.success ? parsed.data : undefined;
+    if (!workspace || seenIds.has(workspace.id)) {
+      discarded += 1;
+      continue;
+    }
+    seenIds.add(workspace.id);
+    workspaces.push(workspace);
+  }
+  return { workspaces, discarded };
+};
+
+export const parseWorkspaces: SettingsParser<RepoWorkspace[]> = (value) => parseRepoWorkspaces(value, {})?.workspaces;
+
+/** `null` clears the pointer; a non-empty workspace id keeps it. */
+export const parseActiveWorkspaceId = fromSchema(z.union([z.null(), nonEmptyTrimmed]));
+
 const followUpBehaviorSchema = z.enum(['steer', 'queue']);
 
 /** Legacy `queueModeEnabled` → `followUpBehavior`; 'immediate' collapses onto 'steer'. */

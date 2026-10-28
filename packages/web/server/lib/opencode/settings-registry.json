@@ -41,6 +41,23 @@
       "scope": "instance",
       "adopt": "bootstrap-only"
     },
+    "workspaces": {
+      "scope": "instance",
+      "surfaces": [
+        "web",
+        "desktop",
+        "mobile"
+      ]
+    },
+    "activeWorkspaceId": {
+      "scope": "instance",
+      "surfaces": [
+        "web",
+        "desktop",
+        "mobile"
+      ],
+      "adopt": "bootstrap-only"
+    },
     "securityScopedBookmarks": {
       "scope": "instance",
       "surfaces": [

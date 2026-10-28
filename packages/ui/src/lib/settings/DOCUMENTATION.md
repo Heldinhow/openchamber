@@ -25,6 +25,12 @@
 - **Two files on the instance.** `settings.json` keeps instance facts and legacy keys; `preferences.json` beside it holds every `profile` key as `{ value, updatedAt }` (`version: 1`). The server (`packages/web/server/lib/opencode/settings-files.js`) and the VS Code bridge (`packages/vscode/src/settings-files.ts`) seed `preferences.json` once from an existing `settings.json`, keep a copy of the profile's base values in `settings.json` on every write (a build from before the split reads only that file, so a rollback keeps the user's preferences; current builds ignore the copy because `preferences.json` wins), and never touch a `preferences.json` they cannot parse; clients see one merged document and never address the files. Server modules that read a profile key off the disk (small model, session goal/assist, walkthrough) use `readMergedSettingsSync`.
 - **Markers, not code, carry the special cases.** `adopt: 'bootstrap-only'` (workspace pointers), `derived` (computed by the writer from other fields), `secret` (accepted on write, never returned), `computed` (server-emitted, never persisted), `surfaces` (which surface kinds have the field).
 
+## Decisions
+
+### Why workspaces are parsed per entry and the discard count is not a stored field
+
+`workspaces` is one settings value, but one malformed workspace must not erase its valid siblings or the rest of the document. The registry parser therefore exposes only the valid array (`parseWorkspaces`); the boundary parsers that also report the count (`parseRepoWorkspaces` in `parsers.ts`, `sanitizeRepoWorkspaces` in the server's `settings-helpers.js`) return `{ workspaces, discarded }` for readers such as the workspace route. A discarded entry is not written back on read, so a hand-edited `settings.json` keeps the bad entry until the next explicit save: a read must not rewrite settings. `createdRefs` is filtered to aliases of existing secondary repos instead of invalidating the workspace, because an unknown alias cannot own a reference. `activeWorkspaceId` accepts `null` as the explicit "no active workspace" value.
+
 ## Adding a setting
 
 1. Add one entry to `SETTINGS_REGISTRY` with `scope`, a parser from `parsers.ts`, and a `ui` binding when a store holds the live value. Use an existing setter so its side effects run.

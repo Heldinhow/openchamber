@@ -63,6 +63,87 @@ const sanitizeCustomProviderIcons = (value) => {
   return result;
 };
 
+// Multi-repo workspaces are parsed one entry at a time, mirroring
+// `parseRepoWorkspaces` in packages/ui/src/lib/settings/parsers.ts. A
+// structurally invalid workspace is dropped and counted; `projectId` values
+// are not checked against the catalog here, because a missing project must
+// not erase the workspace.
+const WORKSPACE_ALIAS_PATTERN = /^[^\s/`,@][^\s/`,]*$/;
+
+const workspaceRepoSchema = z.object({
+  projectId: z.string().trim().min(1),
+  alias: z.string().trim().min(1).regex(WORKSPACE_ALIAS_PATTERN),
+  description: z.string().optional(),
+  branch: z.string().optional(),
+});
+
+const activeWorkspaceIdSchema = z.union([z.null(), z.string().trim().min(1)]);
+
+const workspaceSchema = z.object({
+  id: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  primaryProjectId: z.string().trim().min(1),
+  repos: z.array(z.unknown()),
+  createdRefs: z.unknown().optional(),
+});
+
+const sanitizeRepoWorkspace = (entry) => {
+  const parsed = workspaceSchema.safeParse(entry);
+  if (!parsed.success) return undefined;
+  const repos = [];
+  const aliases = new Set();
+  for (const repoEntry of parsed.data.repos) {
+    const repo = workspaceRepoSchema.safeParse(repoEntry);
+    if (!repo.success || aliases.has(repo.data.alias)) return undefined;
+    aliases.add(repo.data.alias);
+    repos.push({
+      projectId: repo.data.projectId,
+      alias: repo.data.alias,
+      description: repo.data.description ?? '',
+      branch: repo.data.branch ?? '',
+    });
+  }
+  if (repos.length === 0 || !repos.some((repo) => repo.projectId === parsed.data.primaryProjectId)) {
+    return undefined;
+  }
+  const secondaryAliases = new Set(
+    repos.filter((repo) => repo.projectId !== parsed.data.primaryProjectId).map((repo) => repo.alias),
+  );
+  const rawCreatedRefs = Array.isArray(parsed.data.createdRefs) ? parsed.data.createdRefs : [];
+  const createdRefs = [...new Set(
+    rawCreatedRefs.filter((alias) => secondaryAliases.has(alias)),
+  )];
+  return {
+    id: parsed.data.id,
+    name: parsed.data.name,
+    primaryProjectId: parsed.data.primaryProjectId,
+    repos,
+    createdRefs,
+  };
+};
+
+/**
+ * Parse the `workspaces` field by entry. `undefined` means the field itself is
+ * not an array (so it is left untouched); otherwise readers also get the
+ * `discarded` count for the read route. Nothing is rewritten because of it.
+ */
+const sanitizeRepoWorkspaces = (value) => {
+  if (!Array.isArray(value)) return undefined;
+  const workspaces = [];
+  const seenIds = new Set();
+  let discarded = 0;
+  for (const entry of value) {
+    const workspace = sanitizeRepoWorkspace(entry);
+    if (!workspace || seenIds.has(workspace.id)) {
+      discarded += 1;
+      continue;
+    }
+    seenIds.add(workspace.id);
+    workspaces.push(workspace);
+  }
+  return { workspaces, discarded };
+};
+
 export const createSettingsHelpers = (dependencies) => {
   const {
     normalizePathForPersistence,
@@ -348,6 +429,16 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (typeof candidate.activeProjectId === 'string' && candidate.activeProjectId.length > 0) {
       result.activeProjectId = candidate.activeProjectId;
+    }
+    const workspaces = sanitizeRepoWorkspaces(candidate.workspaces);
+    if (workspaces) {
+      // Malformed entries are dropped here, never written raw. The read route
+      // gets the same parser's `discarded` count.
+      result.workspaces = workspaces.workspaces;
+    }
+    const activeWorkspaceId = activeWorkspaceIdSchema.safeParse(candidate.activeWorkspaceId);
+    if (activeWorkspaceId.success) {
+      result.activeWorkspaceId = activeWorkspaceId.data;
     }
     if (SIDEBAR_PROJECT_DISPLAY_MODE_VALUES.has(candidate.sidebarProjectDisplayMode)) {
       result.sidebarProjectDisplayMode = candidate.sidebarProjectDisplayMode;
@@ -1269,6 +1360,7 @@ export const createSettingsHelpers = (dependencies) => {
     normalizePwaAppName,
     normalizePwaOrientation,
     normalizeMobileKeyboardMode,
+    sanitizeRepoWorkspaces,
     sanitizeSettingsUpdate,
     mergePersistedSettings,
     formatSettingsResponse,

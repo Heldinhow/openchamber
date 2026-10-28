@@ -40,6 +40,7 @@ import { z } from 'zod';
 import {
   fromSchema,
   mapParser,
+  parseActiveWorkspaceId,
   parseActivityRenderMode,
   parseBoolean,
   parseCustomProviderIcons,
@@ -74,9 +75,11 @@ import {
   parseTrimmedString,
   parseTrimmedStringUpTo,
   parseUsageModelGroups,
+  parseWorkspaces,
   type ManagedRemoteTunnelPreset,
   type ModelRef,
   type NotificationTemplates,
+  type RepoWorkspace,
   type SettingsParser,
   type SettingsRawDocument,
   type SkillCatalogConfig,
@@ -238,6 +241,19 @@ export const SETTINGS_REGISTRY = {
   opencodeBinary: field({ scope: 'instance', parse: parseTrimmedString }),
   projects: field<ProjectEntry[]>({ scope: 'instance', parse: parseProjects }),
   activeProjectId: field({ scope: 'instance', adopt: 'bootstrap-only', parse: parseNonEmptyString }),
+  // Read by the workspace service and the sidebar; no store keeps a copy in
+  // this ticket. The server owns writes (never the generic client path).
+  workspaces: field<RepoWorkspace[]>({
+    scope: 'instance',
+    surfaces: ['web', 'desktop', 'mobile'],
+    parse: parseWorkspaces,
+  }),
+  activeWorkspaceId: field<string | null>({
+    scope: 'instance',
+    adopt: 'bootstrap-only',
+    surfaces: ['web', 'desktop', 'mobile'],
+    parse: parseActiveWorkspaceId,
+  }),
   securityScopedBookmarks: field({ scope: 'instance', surfaces: ['desktop'], parse: parseStringList }),
   pinnedDirectories: field({ scope: 'instance', parse: parseStringSet }),
   desktopLanAccessEnabled: field({ scope: 'instance', surfaces: ['desktop'], parse: parseBoolean }),
