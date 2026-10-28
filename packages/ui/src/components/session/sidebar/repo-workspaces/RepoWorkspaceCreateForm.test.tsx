@@ -15,8 +15,8 @@ const globals = new Map<string, PropertyDescriptor | undefined>();
 const draft: RepoWorkspaceDraft = {
   name: 'Shop Platform',
   rows: [
-    { key: 'a', path: '/repos/api', alias: 'api', readOnly: false },
-    { key: 'b', path: '/repos/web', alias: 'web', readOnly: false },
+    { key: 'a', path: '/repos/api', alias: 'api' },
+    { key: 'b', path: '/repos/web', alias: 'web' },
   ],
   primaryKey: 'a',
 };
@@ -26,8 +26,8 @@ const workspace = {
   name: 'Shop Platform',
   primaryProjectId: 'p_api',
   repos: [
-    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', readOnly: false, missing: false, project: null },
-    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', readOnly: false, missing: false, project: null },
+    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', missing: false, project: null },
+    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
   ],
   createdRefs: ['web'],
   refs: [],
@@ -54,7 +54,6 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
       alias: 'api',
       description: 'api',
       branch: 'main',
-      readOnly: false,
       missing: false,
       project: { id: 'p_api', path: '/repos/api', label: 'api' },
     },
@@ -63,7 +62,6 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
       alias: 'web',
       description: 'web',
       branch: 'main',
-      readOnly: true,
       missing: false,
       project: { id: 'p_web', path: '/repos/web', label: 'web' },
     },
@@ -307,7 +305,7 @@ describe('workspace create form', () => {
           fetchConfigTarget={targetFor}
           initialDraft={{
             ...draft,
-            rows: [{ key: 'a', path: '/repos/api', alias: 'web app', readOnly: false }],
+            rows: [{ key: 'a', path: '/repos/api', alias: 'web app' }],
           }}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -680,8 +678,6 @@ describe('workspace create form', () => {
       .map((input) => input.value)
       .filter((value) => value === 'api' || value === 'web');
     expect(aliases).toEqual(['api', 'web']);
-    // An imported repo starts editable, like one added by picking a folder.
-    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Editable: @web');
     expect(document.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('aria-label'))
       .toBe('Primary repository: /repos/api');
 
@@ -921,142 +917,6 @@ describe('workspace create form', () => {
     expect(document.body.textContent).toContain(configPath);
     expect(document.body.textContent).toContain('Couldn\'t read this configuration file. Fix it and try again.');
     expect(document.querySelector<HTMLButtonElement>('form button[type="submit"]')?.disabled).toBe(true);
-  });
-
-  const accessControl = (alias: string) => [...document.querySelectorAll('[role="checkbox"]')]
-    .find((element) => element.getAttribute('aria-label')?.endsWith(`@${alias}`));
-
-  test('only a secondary row offers the edit permission control', async () => {
-    await act(async () => root.render(
-      <I18nProvider>
-        <Form
-          fetchConfigTarget={targetFor}
-          initialDraft={draft}
-          titleId="workspace-title"
-          onClose={() => undefined}
-          onCreated={() => undefined}
-          onRefsChanged={() => undefined}
-        />
-      </I18nProvider>,
-    ));
-
-    expect(accessControl('api')).toBeUndefined();
-    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Editable: @web');
-    expect(document.body.textContent).toContain('Write');
-
-    // The primary row states its fixed permission instead of leaving the
-    // column empty, and offers no control to change it.
-    const primaryRow = radioFor('/repos/api')?.closest('.grid');
-    expect(primaryRow?.textContent).toContain('Editable');
-    expect(primaryRow?.querySelector('[role="checkbox"]')).toBeNull();
-  });
-
-  test('switching the primary leaves both repos editable', async () => {
-    const sent: Array<Array<{ alias: string; readOnly: boolean }>> = [];
-    await act(async () => root.render(
-      <I18nProvider>
-        <Form
-          fetchConfigTarget={targetFor}
-          initialDraft={{
-            ...draft,
-            rows: [
-              { key: 'a', path: '/repos/api', alias: 'api', readOnly: false },
-              { key: 'b', path: '/repos/web', alias: 'web', readOnly: true },
-            ],
-          }}
-          titleId="workspace-title"
-          onClose={() => undefined}
-          onCreated={() => undefined}
-          onRefsChanged={() => undefined}
-          createWorkspace={async (input) => {
-            sent.push(input.repos.map(({ alias, readOnly }) => ({ alias, readOnly })));
-            return pendingResult();
-          }}
-        />
-      </I18nProvider>,
-    ));
-
-    const webRadio = radioFor('/repos/web')!;
-    await act(async () => {
-      webRadio.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    // The old primary is now a secondary and stays editable; the new primary
-    // shows the fixed label with no control.
-    expect(accessControl('api')?.getAttribute('aria-label')).toBe('Editable: @api');
-    expect(accessControl('web')).toBeUndefined();
-    const webRow = radioFor('/repos/web')?.closest('.grid');
-    expect(webRow?.textContent).toContain('Editable');
-
-    // A repo promoted from read-only stays editable when it becomes secondary
-    // again, instead of taking back the old read-only choice.
-    await act(async () => {
-      radioFor('/repos/api')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Editable: @web');
-
-    await act(async () => {
-      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    });
-
-    expect(sent).toEqual([[
-      { alias: 'api', readOnly: false },
-      { alias: 'web', readOnly: false },
-    ]]);
-  });
-
-  test('toggling the row control sends readOnly and leaves the primary editable', async () => {
-    const sent: Array<Array<{ alias: string; readOnly: boolean }>> = [];
-    await act(async () => root.render(
-      <I18nProvider>
-        <Form
-          fetchConfigTarget={targetFor}
-          initialDraft={draft}
-          titleId="workspace-title"
-          onClose={() => undefined}
-          onCreated={() => undefined}
-          onRefsChanged={() => undefined}
-          createWorkspace={async (input) => {
-            sent.push(input.repos.map(({ alias, readOnly }) => ({ alias, readOnly })));
-            return pendingResult();
-          }}
-        />
-      </I18nProvider>,
-    ));
-
-    await act(async () => {
-      setCheckbox(accessControl('web'), false);
-    });
-    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Read-only: @web');
-
-    await act(async () => {
-      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    });
-
-    expect(sent).toEqual([[
-      { alias: 'api', readOnly: false },
-      { alias: 'web', readOnly: true },
-    ]]);
-  });
-
-  test('editing opens on the saved read-only state', async () => {
-    await act(async () => root.render(
-      <I18nProvider>
-        <Form
-          fetchConfigTarget={targetFor}
-          editing={{ workspace: resolvedWorkspace, refs: [], refsError: null }}
-          titleId="workspace-title"
-          onClose={() => undefined}
-          onCreated={() => undefined}
-          onRefsChanged={() => undefined}
-        />
-      </I18nProvider>,
-    ));
-
-    const web = accessControl('web');
-    expect(web?.getAttribute('aria-label')).toBe('Read-only: @web');
-    expect(web?.getAttribute('aria-checked')).toBe('false');
-    expect(accessControl('api')).toBeUndefined();
   });
 
   test('a failed permission write closes and reports the path without pretending the save failed', async () => {

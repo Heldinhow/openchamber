@@ -40,7 +40,6 @@ const repoWorkspaceRepoSchema = z.object({
   alias: z.string().min(1),
   description: z.string().catch(''),
   branch: z.string().catch(''),
-  readOnly: z.boolean().catch(false),
   missing: z.boolean().catch(false),
   project: projectRefSchema.nullable().catch(null),
 });
@@ -267,7 +266,6 @@ export type CreateRepoWorkspaceInput = {
     path: string;
     branch: string;
     primary: boolean;
-    readOnly: boolean;
   }>;
 };
 
@@ -296,7 +294,6 @@ export type UpdateRepoWorkspaceInput = {
     alias: string;
     branch: string;
     primary: boolean;
-    readOnly: boolean;
     projectId?: string;
     path?: string;
   }>;

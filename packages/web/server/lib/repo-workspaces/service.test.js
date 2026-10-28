@@ -243,8 +243,8 @@ describe('workspace service: create', () => {
         name: 'Shop Platform',
         primaryProjectId: 'api',
         repos: [
-          { projectId: 'api', alias: 'api', description: 'API', branch: '', readOnly: false },
-          { projectId: 'web', alias: 'web', description: 'web', branch: 'feat/tokens', readOnly: false },
+          { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+          { projectId: 'web', alias: 'web', description: 'web', branch: 'feat/tokens' },
         ],
         createdRefs: ['web'],
         editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'allow' }],
@@ -1633,7 +1633,7 @@ describe('workspace service: write references', () => {
 });
 
 describe('workspace service: permission rules', () => {
-  it('appends allow and deny rules for every secondary path form after the user rules', async () => {
+  it('appends allow rules for every secondary path form after the user rules, ignoring a legacy readOnly', async () => {
     const root = caseRoot('permission-create');
     const api = projectAt(root, 'api', 'API');
     const web = projectAt(root, 'web', 'Web');
@@ -1663,17 +1663,13 @@ describe('workspace service: permission rules', () => {
 
     const storedRules = [
       ...storedPermissionRules(linked, 'web', 'allow'),
-      ...storedPermissionRules(docs.path, 'docs', 'deny'),
+      ...storedPermissionRules(docs.path, 'docs', 'allow'),
     ];
     expect(result.workspace.editRules).toEqual(storedRules);
     expect(result.permissionWrites).toEqual({ status: 'written', path: file });
-    // The primary is always editable, even when the payload says otherwise.
+    // The primary needs no rule; an old client's readOnly is neither honoured nor stored.
     expect(result.workspace.editRules.some((rule) => rule.alias === 'api')).toBe(false);
-    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
-      ['api', false],
-      ['web', false],
-      ['docs', true],
-    ]);
+    expect(result.workspace.repos.some((repo) => Object.hasOwn(repo, 'readOnly'))).toBe(false);
     expect(dependencies.persistSettings.mock.calls[0][0].workspaces[0].editRules).toEqual(storedRules);
     expect(readConfigFile(file)).toEqual({
       $schema: 'https://opencode.ai/config.json',
@@ -1684,7 +1680,7 @@ describe('workspace service: permission rules', () => {
       permissions: [
         userRule,
         ...configPermissionRules(linked, 'allow'),
-        ...configPermissionRules(docs.path, 'deny'),
+        ...configPermissionRules(docs.path, 'allow'),
       ],
     });
   });
@@ -1703,11 +1699,6 @@ describe('workspace service: permission rules', () => {
 
     const result = await service.update(created.workspace.id, createPayloadWith(api, [web, docs]));
 
-    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
-      ['api', false],
-      ['web', false],
-      ['docs', false],
-    ]);
     expect(result.workspace.editRules).toEqual([
       ...storedPermissionRules(web.path, 'web', 'allow'),
       ...storedPermissionRules(docs.path, 'docs', 'allow'),
@@ -1718,16 +1709,18 @@ describe('workspace service: permission rules', () => {
     ]);
   });
 
-  it('removes the rules it wrote before and appends the new ones on edit', async () => {
+  it('replaces a stored deny rule with an allow rule on edit', async () => {
     const root = caseRoot('permission-update');
     const api = projectAt(root, 'api', 'API');
     const web = projectAt(root, 'web', 'Web');
     const userRule = { action: 'edit', resource: '/user/*', effect: 'deny' };
     const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {
-      permissions: [userRule, ...configPermissionRules(web.path, 'allow')],
+      permissions: [userRule, ...configPermissionRules(web.path, 'deny')],
     }).file;
+    // Written by the removed read-only option.
     const stored = storedWorkspaceFor(api, [web], ['web']);
-    stored.editRules = storedPermissionRules(web.path, 'web', 'allow');
+    stored.repos[1].readOnly = true;
+    stored.editRules = storedPermissionRules(web.path, 'web', 'deny');
     const { service } = fixtureService({
       projects: [api, web],
       workspaces: [stored],
@@ -1742,15 +1735,11 @@ describe('workspace service: permission rules', () => {
       ],
     });
 
-    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
-      ['api', false],
-      ['web', true],
-    ]);
-    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'deny'));
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'allow'));
     expect(result.permissionWrites.status).toBe('written');
     expect(readConfigFile(file).permissions).toEqual([
       userRule,
-      ...configPermissionRules(web.path, 'deny'),
+      ...configPermissionRules(web.path, 'allow'),
     ]);
   });
 
@@ -1827,11 +1816,11 @@ describe('workspace service: permission rules', () => {
       name: 'Shop Platform',
       repos: [
         { projectId: 'api', alias: 'api', primary: true },
-        { projectId: 'web', alias: 'web', readOnly: true },
+        { projectId: 'web', alias: 'web' },
       ],
     });
     const written = readConfigFile(file).permissions;
-    expect(written).toEqual(configPermissionRules(web.path, 'deny'));
+    expect(written).toEqual(configPermissionRules(web.path, 'allow'));
     settings.projects = [api];
     settings.workspaces = [created.workspace];
 
@@ -1839,47 +1828,16 @@ describe('workspace service: permission rules', () => {
       name: 'Renamed Platform',
       repos: [
         { projectId: 'api', alias: 'api', primary: true },
-        { projectId: 'web', alias: 'web', readOnly: true },
-      ],
-    });
-
-    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
-      ['api', false],
-      ['web', true],
-    ]);
-    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'deny'));
-    expect(result.permissionWrites.status).toBe('unchanged');
-    expect(readConfigFile(file).permissions).toEqual(written);
-  });
-
-  it('stores the primary as editable whatever the payload or settings say', async () => {
-    const root = caseRoot('permission-primary-read-only');
-    const api = projectAt(root, 'api', 'API');
-    const web = projectAt(root, 'web', 'Web');
-    const stored = storedWorkspaceFor(api, [web], []);
-    stored.repos[0].readOnly = true;
-    const { service } = fixtureService({
-      projects: [api, web],
-      workspaces: [stored],
-      activeWorkspaceId: 'ws_1',
-    });
-
-    const result = await service.update('ws_1', {
-      name: 'Shop Platform',
-      repos: [
-        { projectId: 'api', alias: 'api', primary: true, readOnly: true },
         { projectId: 'web', alias: 'web' },
       ],
     });
 
-    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
-      ['api', false],
-      ['web', false],
-    ]);
-    expect(result.workspace.editRules.some((rule) => rule.alias === 'api')).toBe(false);
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'allow'));
+    expect(result.permissionWrites.status).toBe('unchanged');
+    expect(readConfigFile(file).permissions).toEqual(written);
   });
 
-  it('removes only the rules it wrote when the workspace is deleted', async () => {
+  it('removes only the rules it wrote, an old deny included, when the workspace is deleted', async () => {
     const root = caseRoot('permission-delete');
     const api = projectAt(root, 'api', 'API');
     const web = projectAt(root, 'web', 'Web');
@@ -1887,10 +1845,10 @@ describe('workspace service: permission rules', () => {
     const otherRule = { action: 'edit', resource: '/other/*', effect: 'allow' };
     const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {
       references: { web: { path: path.resolve(web.path), description: 'Web' } },
-      permissions: [userRule, ...configPermissionRules(web.path, 'allow'), otherRule],
+      permissions: [userRule, ...configPermissionRules(web.path, 'deny'), otherRule],
     }).file;
     const stored = storedWorkspaceFor(api, [web], ['web']);
-    stored.editRules = storedPermissionRules(web.path, 'web', 'allow');
+    stored.editRules = storedPermissionRules(web.path, 'web', 'deny');
     const { service } = fixtureService({
       projects: [api, web],
       workspaces: [stored],

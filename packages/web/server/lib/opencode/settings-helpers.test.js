@@ -115,11 +115,12 @@ describe('settings helpers', () => {
       name: 'Shop Platform',
       primaryProjectId: 'p',
       repos: [
-        { projectId: 'p', alias: 'api', description: 'API', branch: 'main', readOnly: false },
-        { projectId: 'w', alias: 'web', description: 'Web', branch: 'feat/tokens', readOnly: true },
+        { projectId: 'p', alias: 'api', description: 'API', branch: 'main' },
+        { projectId: 'w', alias: 'web', description: 'Web', branch: 'feat/tokens' },
       ],
       createdRefs: ['web'],
       editRules: [
+        // A deny from the removed read-only option still parses so a save can replace it.
         { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
         // Kept even though no repo uses the alias any more.
         { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },
@@ -145,10 +146,10 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeRepoWorkspaces('bad')).toBeUndefined();
     const defaults = helpers.sanitizeRepoWorkspaces([{
       ...workspace,
-      repos: [{ projectId: 'p', alias: 'api', readOnly: 'yes' }],
+      repos: [{ projectId: 'p', alias: 'api', readOnly: true }],
       editRules: [{ alias: 'api', resource: '/p/*', effect: 'ask' }, 'bad'],
     }]).workspaces[0];
-    expect(defaults.repos[0].readOnly).toBe(false);
+    expect(Object.hasOwn(defaults.repos[0], 'readOnly')).toBe(false);
     expect(defaults.editRules).toEqual([]);
 
     const saved = helpers.mergePersistedSettings(current, changes);

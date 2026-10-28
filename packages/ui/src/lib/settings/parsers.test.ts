@@ -25,11 +25,11 @@ describe('parseRepoWorkspaces', () => {
     name: 'Shop Platform',
     primaryProjectId: 'proj_api',
     repos: [
-      { projectId: 'proj_api', alias: 'api', description: 'API de checkout', branch: 'main', readOnly: false },
-      { projectId: 'proj_web', alias: 'web', description: 'Frontend', branch: 'feat/tokens', readOnly: true },
+      { projectId: 'proj_api', alias: 'api', description: 'API de checkout', branch: 'main' },
+      { projectId: 'proj_web', alias: 'web', description: 'Frontend', branch: 'feat/tokens' },
     ],
     createdRefs: ['web'],
-    editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'deny' }],
+    editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'allow' }],
   };
 
   test('keeps valid entries and counts each rejected one', () => {
@@ -64,7 +64,7 @@ describe('parseRepoWorkspaces', () => {
     expect(parseRepoWorkspaces([{ ...validWorkspace, createdRefs: undefined }], {})?.workspaces[0]?.createdRefs).toEqual([]);
   });
 
-  test('defaults a missing or malformed readOnly and drops malformed edit rules', () => {
+  test('ignores a legacy readOnly key, keeps old deny rules and drops malformed edit rules', () => {
     const result = parseRepoWorkspaces([{
       ...validWorkspace,
       repos: [
@@ -79,7 +79,8 @@ describe('parseRepoWorkspaces', () => {
       ],
     }], {});
 
-    expect(result?.workspaces[0]?.repos.map((repo) => repo.readOnly)).toEqual([false, true]);
+    // Deny rules from the removed read-only option still parse so the next save or delete can remove them.
+    expect(result?.workspaces[0]?.repos.map((repo) => Object.keys(repo).includes('readOnly'))).toEqual([false, false]);
     expect(result?.workspaces[0]?.editRules).toEqual([
       { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
       { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },

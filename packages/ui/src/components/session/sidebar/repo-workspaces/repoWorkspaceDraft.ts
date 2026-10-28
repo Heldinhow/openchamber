@@ -11,8 +11,6 @@ export type RepoWorkspaceDraftRow = {
   missing?: boolean;
   /** The saved branch snapshot, used until live git status answers. */
   branch?: string;
-  /** A secondary repo the session may not edit; the primary is always editable. */
-  readOnly: boolean;
 };
 
 export type RepoWorkspaceDraft = {
@@ -32,7 +30,6 @@ export const draftFromWorkspace = (workspace: RepoWorkspaceResolved): RepoWorksp
     projectId: repo.projectId,
     missing: repo.missing,
     branch: repo.branch,
-    readOnly: repo.readOnly,
   }));
   const primaryIndex = workspace.repos.findIndex((repo) => repo.projectId === workspace.primaryProjectId);
   return {
@@ -142,7 +139,6 @@ export const createPayloadFromDraft = (
     path: normalizedRowPath(row.path),
     branch: branchFor(normalizedRowPath(row.path)),
     primary: row.key === draft.primaryKey,
-    readOnly: row.key === draft.primaryKey ? false : row.readOnly,
   })),
 });
 
@@ -167,9 +163,6 @@ export const updatePayloadFromDraft = (
       ...(row.projectId ? { projectId: row.projectId } : { path }),
       branch: branchFor(path) || row.branch || '',
       primary: row.key === draft.primaryKey,
-      // A row that becomes primary is always editable, whatever it kept while
-      // it was secondary; the draft value survives if it becomes secondary again.
-      readOnly: row.key === draft.primaryKey ? false : row.readOnly,
     };
   }),
   confirmRefs,
@@ -195,14 +188,12 @@ export const relocateWorkspaceRepoPayload = (
         path: normalizedRowPath(path),
         branch,
         primary: repo.projectId === workspace.primaryProjectId,
-        readOnly: repo.readOnly,
       }
       : {
         projectId: repo.projectId,
         alias: repo.alias,
         branch: repo.branch,
         primary: repo.projectId === workspace.primaryProjectId,
-        readOnly: repo.readOnly,
       }
   )),
 });

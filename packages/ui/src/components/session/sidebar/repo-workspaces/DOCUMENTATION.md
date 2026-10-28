@@ -52,15 +52,8 @@ total, partial flag and branch divergence come from
   disabled and takes no keys.
 - Edit opens on the saved name, repos, aliases, primary and branch snapshots.
   A repo whose project is gone shows "Project not found" and keeps its id.
-- Only secondary rows show the edit-permission control; the primary row shows
-  a static `Editable` label and no control, and every payload names the primary
-  `readOnly: false` because the session always runs there. The checkbox is
-  checked when the folder may be edited, its visible label names the state
-  (`Editable` or `Read-only`) and its accessible name adds the alias. Toggling
-  changes only that row. A repo starts editable, whether it is created with the
-  workspace or added to it later. A row that becomes primary is set editable in
-  the draft and sends `false`; when it becomes secondary again it stays
-  editable rather than taking back an earlier read-only choice.
+- Every repo of a workspace is editable. A row has no edit-permission control
+  and no payload carries an access field; the server writes the allow rules.
 - A saved workspace whose edit-permission rule could not be written still
   counts as saved: the dialog closes and refreshes as usual, after an error
   toast that names the config path. It is not the pending-references card,
@@ -161,15 +154,13 @@ The common action is to remove the repo and its reference together, so the box
 starts checked and unchecking preserves the entry. A confirm dialog would add a
 second modal inside the dialog and hide the diff the user is deciding on.
 
-### Why the edit permission is one checkbox that names both states
+### Why every repo is editable and the form has no access column
 
-The row already carries alias, folder, branch and remove, so the permission
-answer is a single checkbox rather than two radios or a select: one click and
-one extra grid column. Its visible label swaps between "Editable" and
-"Read-only" so the unchecked state says what it means without a legend, and its
-accessible name adds the alias so a screen reader tells the rows apart.
-Rejected alternative: a badge plus an edit button, which spends two states on
-two interactions for the same boolean.
+A workspace exists so the session can change all of its repos together, so the
+form offers no per-repo read-only choice. Rejected alternative: a per-row
+"Editable"/"Read-only" checkbox, which was removed. A workspace saved with a
+read-only repo keeps that deny rule until its next save, which replaces it with
+an allow rule, or its deletion, which removes it.
 
 ### Why a failed permission write is a toast and not the pending card
 

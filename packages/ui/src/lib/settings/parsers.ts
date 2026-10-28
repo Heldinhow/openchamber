@@ -397,7 +397,6 @@ export type WorkspaceRepo = {
   alias: string;
   description: string;
   branch: string;
-  readOnly: boolean;
 };
 
 export type RepoWorkspace = {
@@ -423,7 +422,6 @@ const workspaceRepoSchema = z.object({
   alias: nonEmptyTrimmed.pipe(z.string().regex(WORKSPACE_ALIAS_PATTERN)),
   description: z.string().optional(),
   branch: z.string().optional(),
-  readOnly: z.boolean().optional().catch(false),
 });
 
 const workspaceEditRuleSchema = z.object({
@@ -453,7 +451,6 @@ const workspaceEntrySchema = z.object({
       alias: repo.data.alias,
       description: repo.data.description ?? '',
       branch: repo.data.branch ?? '',
-      readOnly: repo.data.readOnly === true,
     });
   }
   if (repos.length === 0 || !repos.some((repo) => repo.projectId === workspace.primaryProjectId)) return undefined;

@@ -75,7 +75,6 @@ const workspaceRepoSchema = z.object({
   alias: z.string().trim().min(1).regex(WORKSPACE_ALIAS_PATTERN),
   description: z.string().optional(),
   branch: z.string().optional(),
-  readOnly: z.boolean().optional().catch(false),
 });
 
 const workspaceEditRuleSchema = z.object({
@@ -109,7 +108,6 @@ const sanitizeRepoWorkspace = (entry) => {
       alias: repo.data.alias,
       description: repo.data.description ?? '',
       branch: repo.data.branch ?? '',
-      readOnly: repo.data.readOnly === true,
     });
   }
   if (repos.length === 0 || !repos.some((repo) => repo.projectId === parsed.data.primaryProjectId)) {

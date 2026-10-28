@@ -70,7 +70,6 @@ const createRepoSchema = z.object({
   path: z.string({ error: 'Folder path must be text' }).trim().min(1, 'Folder path must not be empty').optional(),
   branch: z.string({ error: 'Branch must be a string' }).optional(),
   primary: z.boolean({ error: 'Primary must be true or false' }).optional(),
-  readOnly: z.boolean({ error: 'Read only must be true or false' }).optional(),
 });
 
 const confirmRefsSchema = z.array(
@@ -299,7 +298,6 @@ const resolveRepos = async ({
           alias: repo.alias,
           description: retained.description ?? '',
           branch: repo.branch ?? retained.branch ?? '',
-          readOnly: repo.readOnly === true,
         });
         continue;
       }
@@ -330,7 +328,6 @@ const resolveRepos = async ({
       alias: repo.alias,
       description: await repoDescription(project.path, project.label, fsPromises),
       branch: repo.branch ?? '',
-      readOnly: repo.readOnly === true,
     });
   }
 
@@ -339,11 +336,6 @@ const resolveRepos = async ({
   }
 
   const primaryProjectId = resolved[primaryIndex].projectId;
-  // The session runs in the primary, so it is always editable; a payload or a
-  // hand-edited settings document cannot store it otherwise.
-  for (const repo of resolved) {
-    if (repo.projectId === primaryProjectId) repo.readOnly = false;
-  }
 
   return {
     repos: resolved,
@@ -771,8 +763,9 @@ export const createWorkspaceService = (dependencies) => {
   /**
    * The rules this workspace owns: one per resource form (configured path and,
    * when a symlink resolves elsewhere, the canonical path) for every secondary
-   * repo whose folder is available. The primary is always editable because the
-   * session runs in it.
+   * repo whose folder is available. Every rule allows edits: no repo of a
+   * workspace is read-only, and the primary needs no rule because the session
+   * runs in it.
    */
   const permissionRulesFor = async (workspace, projectsById, previousRules = []) => {
     const rules = [];
@@ -800,7 +793,7 @@ export const createWorkspaceService = (dependencies) => {
         rules.push({
           alias: repo.alias,
           resource: `${resource}/*`,
-          effect: repo.readOnly === true ? 'deny' : 'allow',
+          effect: 'allow',
         });
       }
     }

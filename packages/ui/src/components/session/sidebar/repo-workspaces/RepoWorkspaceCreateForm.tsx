@@ -80,7 +80,7 @@ type RepoWorkspaceCreateFormProps = {
   fetchConfigTarget?: (path: string) => Promise<RepoWorkspaceConfigTarget>;
 };
 
-const ROW_GRID_COLS = 'grid-cols-[4.5rem_minmax(4.5rem,7rem)_minmax(0,1fr)_7rem_6.5rem_1.75rem]';
+const ROW_GRID_COLS = 'grid-cols-[4.5rem_minmax(4.5rem,7rem)_minmax(0,1fr)_7rem_1.75rem]';
 
 const rowIndexFromField = (field: string): number | null => {
   const match = /^repos\[(\d+)\]/.exec(field);
@@ -98,18 +98,12 @@ const RepoRow: React.FC<{
   tabIndex: number;
   onPrimary: () => void;
   onAlias: (alias: string) => void;
-  onReadOnly: (readOnly: boolean) => void;
   onRemove: () => void;
-}> = ({ row, isPrimary, registered, error, suggestion, disabled, tabIndex, onPrimary, onAlias, onReadOnly, onRemove }) => {
+}> = ({ row, isPrimary, registered, error, suggestion, disabled, tabIndex, onPrimary, onAlias, onRemove }) => {
   const { t } = useI18n();
   const status = useGitStatus(row.path);
   const branch = status?.current ?? row.branch ?? '';
   const aliasErrorId = `workspace-alias-error-${row.key}`;
-  // The primary is always editable: it runs the session, so it has no control
-  // and shows the state as fixed text.
-  const accessLabel = isPrimary || !row.readOnly
-    ? t('sessions.sidebar.workspace.editAccess')
-    : t('sessions.sidebar.workspace.readOnlyAccess');
 
   React.useEffect(() => {
     const git = getRegisteredRuntimeAPIs()?.git;
@@ -166,30 +160,6 @@ const RepoRow: React.FC<{
         <span className="truncate typography-micro" title={branch || undefined}>
           {branch || t('sessions.sidebar.workspace.noGit')}
         </span>
-      </div>
-      <div className="flex h-8 min-w-0 items-center">
-        {isPrimary ? (
-          <span className="truncate typography-micro text-muted-foreground" title={accessLabel}>
-            {accessLabel}
-          </span>
-        ) : (
-          <label className="flex min-w-0 items-center gap-1.5">
-            <Checkbox
-              checked={!row.readOnly}
-              onChange={(checked) => onReadOnly(!checked)}
-              disabled={disabled}
-              ariaLabel={t(
-                row.readOnly
-                  ? 'sessions.sidebar.workspace.readOnlyAccessFor'
-                  : 'sessions.sidebar.workspace.editAccessFor',
-                { alias: row.alias.trim() || row.path },
-              )}
-            />
-            <span className="truncate typography-micro text-muted-foreground" title={accessLabel}>
-              {accessLabel}
-            </span>
-          </label>
-        )}
       </div>
       <Button
         variant="ghost"
@@ -456,7 +426,6 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         key: `repo-${nextRowKey.current++}`,
         path,
         alias: aliasForFolder(path, current.rows.map((entry) => entry.alias)),
-        readOnly: false,
       };
       return {
         ...current,
@@ -486,7 +455,6 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         key: `repo-${nextRowKey.current++}`,
         path: folder.path,
         alias: folder.alias,
-        readOnly: false,
       }));
       const primaryIndex = accepted.findIndex((folder) => folder.primary);
       updateDraft(() => ({
@@ -756,7 +724,6 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           <span>{t('sessions.sidebar.workspace.aliasColumn')}</span>
           <span>{t('sessions.sidebar.workspace.folderColumn')}</span>
           <span>{t('sessions.sidebar.workspace.branchColumn')}</span>
-          <span>{t('sessions.sidebar.workspace.writeColumn')}</span>
         </div>
         <div
           className="flex flex-col gap-2"
@@ -774,20 +741,10 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
                 : null}
               disabled={submitting}
               tabIndex={row.key === tabStopKey ? 0 : -1}
-              onPrimary={() => updateDraft((current) => ({
-                ...current,
-                primaryKey: row.key,
-                // Becoming primary makes the repo editable, and it stays that
-                // way if it later returns to a secondary row.
-                rows: current.rows.map((entry) => entry.key === row.key ? { ...entry, readOnly: false } : entry),
-              }))}
+              onPrimary={() => updateDraft((current) => ({ ...current, primaryKey: row.key }))}
               onAlias={(alias) => updateDraft((current) => ({
                 ...current,
                 rows: current.rows.map((entry) => entry.key === row.key ? { ...entry, alias } : entry),
-              }))}
-              onReadOnly={(readOnly) => updateDraft((current) => ({
-                ...current,
-                rows: current.rows.map((entry) => entry.key === row.key ? { ...entry, readOnly } : entry),
               }))}
               onRemove={() => updateDraft((current) => {
                 const rows = current.rows.filter((entry) => entry.key !== row.key);

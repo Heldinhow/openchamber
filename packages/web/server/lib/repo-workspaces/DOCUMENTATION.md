@@ -74,9 +74,9 @@ the target layer.
   unreadable config neither fails the request nor hides the other workspaces.
 - An expected alias is `owned` only when `createdRefs` lists it; ownership never
   changes the classification.
-- Every repo carries `readOnly` (default `false`); the primary is stored as
-  editable (`readOnly: false`) whatever the payload or stored settings say, and
-  no rule is written for it. Each workspace also stores `editRules`: the exact
+- Every repo is editable; no repo stores an access field, and a `readOnly` key
+  from an older client or settings file is ignored and dropped on the next
+  write. The primary gets no rule. Each workspace stores `editRules`: the exact
   `{ alias, resource, effect }` entries it wrote into the primary's
   `permissions`. Rules for an alias that left `repos` stay stored so they can
   still be removed; they are never filtered on read.
@@ -90,9 +90,10 @@ the target layer.
   repo whose project is gone keeps its stored description, and `GET` never
   derives one.
 - Permissions are written to the same `<primary>/.opencode/opencode.json`
-  through `writeConfig`. A secondary repo gets `allow` (editable) or `deny`
-  (`readOnly`) for `<configured>/*` and, when `realpath` differs, for
-  `<canonical>/*`. Desired rules are appended after everything already in
+  through `writeConfig`. A secondary repo gets `allow` for `<configured>/*`
+  and, when `realpath` differs, for `<canonical>/*`. A stored `deny` from the
+  removed read-only option still parses, so the next save replaces it with
+  `allow` and deletion removes it. Desired rules are appended after everything already in
   `permissions`, because the last matching rule wins. Removal removes one
   occurrence per previous `editRules` entry, so an identical rule the user
   already had survives; every other key and rule is preserved. A secondary
@@ -343,6 +344,17 @@ single failed write fails every alias of the request; and a merged write with
 per-alias retry fallback, which is more code and still loses the per-alias
 provenance the pending card needs.
 
+### Why every repo gets an allow rule
+
+A workspace exists so the session can edit all of its repos. OpenCode already
+allows edits through a reference, so the `allow` rule only matters when the
+user has a broader `deny` or `ask`; it is what keeps every repo editable then.
+The per-repo read-only option was removed. Its stored `deny` rules are not
+migrated at startup: each stays in the primary's config until that workspace
+is saved (the previous `deny` is removed, the desired `allow` appended) or
+deleted. Rejected alternative: dropping the rules entirely, which would leave
+a user-wide `deny` blocking the secondary repos and strand old deny rules.
+
 ### Why permission rules are appended and removed by exact match
 
 OpenCode applies the last matching rule, so the workspace's rules go at the end
@@ -353,7 +365,7 @@ not deleted along with it, and includes rules whose alias is gone from `repos`,
 which is why the parser does not filter `editRules` by the current aliases:
 filtering on read would strand those entries in the config. A missing project
 keeps the rules already stored for its alias, so an edit does not silently drop
-a deny. Both the configured path and its canonical `realpath` are written when
+them. Both the configured path and its canonical `realpath` are written when
 they differ, because they are distinct resources to the permission check.
 Rejected
 alternative: rewriting the whole `permissions` array from the workspace state,

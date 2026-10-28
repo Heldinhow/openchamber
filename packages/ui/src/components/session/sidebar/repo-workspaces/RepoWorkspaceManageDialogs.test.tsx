@@ -18,8 +18,8 @@ const workspaceWith = (overrides: Partial<RepoWorkspaceResolved>): RepoWorkspace
   name: 'Shop Platform',
   primaryProjectId: 'p_api',
   repos: [
-    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', readOnly: false, missing: false, project: null },
-    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', readOnly: false, missing: false, project: null },
+    { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', missing: false, project: null },
+    { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
   ],
   createdRefs: ['web'],
   refs: [],
@@ -91,7 +91,7 @@ describe('manage workspaces list', () => {
     const other = workspaceWith({
       id: 'ws_2',
       name: 'Docs',
-      repos: [{ projectId: 'p_docs', alias: 'docs', description: 'docs', branch: '', readOnly: false, missing: false, project: null }],
+      repos: [{ projectId: 'p_docs', alias: 'docs', description: 'docs', branch: '', missing: false, project: null }],
       createdRefs: [],
     });
 
@@ -135,9 +135,9 @@ describe('delete workspace question', () => {
   test('warns that sessions stay and lists only the owned aliases', async () => {
     const workspace = workspaceWith({
       repos: [
-        { projectId: 'p_api', alias: 'api', description: 'api', branch: '', readOnly: false, missing: false, project: null },
-        { projectId: 'p_web', alias: 'web', description: 'web', branch: '', readOnly: false, missing: false, project: null },
-        { projectId: 'p_docs', alias: 'docs', description: 'docs', branch: '', readOnly: false, missing: false, project: null },
+        { projectId: 'p_api', alias: 'api', description: 'api', branch: '', missing: false, project: null },
+        { projectId: 'p_web', alias: 'web', description: 'web', branch: '', missing: false, project: null },
+        { projectId: 'p_docs', alias: 'docs', description: 'docs', branch: '', missing: false, project: null },
       ],
     });
 
