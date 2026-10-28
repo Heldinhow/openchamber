@@ -1096,12 +1096,7 @@ export const createSettingsRuntime = (deps) => {
 
   let hasCleanedOrphanedTempFiles = false;
 
-  const readSettingsFromDiskMigrated = async ({ surface = null } = {}) => {
-    if (!hasCleanedOrphanedTempFiles) {
-      hasCleanedOrphanedTempFiles = true;
-      await cleanupOrphanedSettingsTempFiles(path.dirname(SETTINGS_FILE_PATH));
-    }
-    const current = await readSettingsFromDisk();
+  const applySettingsMigrations = async (current) => {
     const migration1 = await migrateSettingsFromLegacyLastDirectory(current);
     const migration2 = await migrateSettingsFromLegacyThemePreferences(migration1.settings);
     const migration3 = await migrateSettingsFromLegacyCollapsedProjects(migration2.settings);
@@ -1114,10 +1109,24 @@ export const createSettingsRuntime = (deps) => {
     if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed || migration9.changed) {
       await writeSettingsToDisk(migration9.settings);
     }
+    return migration9.settings;
+  };
+
+  const readSettingsFromDiskMigrated = async ({ surface = null } = {}) => {
+    if (!hasCleanedOrphanedTempFiles) {
+      hasCleanedOrphanedTempFiles = true;
+      await cleanupOrphanedSettingsTempFiles(path.dirname(SETTINGS_FILE_PATH));
+    }
+    const current = await readSettingsFromDisk();
+    const settings = await applySettingsMigrations(current);
     // Migrations run on the base view; a surface asks for its own resolution
     // of the per-surface keys on top of the migrated files.
-    return normalizeSettingsSurface(surface) ? readSettingsFromDisk({ surface }) : migration9.settings;
+    return normalizeSettingsSurface(surface) ? readSettingsFromDisk({ surface }) : settings;
   };
+
+  // The strict read plus the same migrations: a caller that must not mistake
+  // an unreadable file for "no settings" still needs the canonical project ids.
+  const readSettingsFromDiskMigratedStrict = async () => applySettingsMigrations(await readSettingsFromDiskStrict());
 
   const persistSettings = async (changes, { surface = null } = {}) => {
     const result = persistSettingsLock.then(async () => {
@@ -1234,6 +1243,7 @@ export const createSettingsRuntime = (deps) => {
     readSettingsFromDisk,
     readSettingsFromDiskStrict,
     readSettingsFromDiskMigrated,
+    readSettingsFromDiskMigratedStrict,
     writeSettingsToDisk,
     persistSettings,
   };

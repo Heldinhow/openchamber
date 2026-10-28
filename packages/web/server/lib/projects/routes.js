@@ -12,9 +12,8 @@
  */
 
 import { isRecord as isObjectRecord } from '../shared/guards.js';
-import path from 'node:path';
 import { z } from 'zod';
-import { createProjectIdFromPath } from './project-id.js';
+import { resolveProjectForDirectory } from './add-project.js';
 import { isProjectSetupValidationError } from './project-setup.js';
 
 const directoryRequestSchema = z.object({
@@ -36,48 +35,27 @@ export const registerProjectDirectoryRoutes = (app, dependencies) => {
   app.post('/api/openchamber/directory', async (req, res) => {
     try {
       const { path: requestedPath, create } = directoryRequestSchema.parse(req.body);
-      if (!requestedPath) {
-        return res.status(400).json({ error: 'Path is required' });
+      const result = await resolveProjectForDirectory({
+        requestedPath,
+        create,
+        readExistingProjects: async () => sanitizeProjects((await readSettingsFromDisk()).projects) || [],
+        fsPromises,
+        validateDirectoryPath,
+      });
+      if (!result.ok) {
+        return res.status(400).json({ error: result.error });
       }
-
-      if (create) {
-        await fsPromises.mkdir(path.resolve(requestedPath), { recursive: true });
-      }
-
-      const validated = await validateDirectoryPath(requestedPath);
-      if (!validated.ok) {
-        return res.status(400).json({ error: validated.error });
-      }
-
-      const resolvedPath = validated.directory;
-      const currentSettings = await readSettingsFromDisk();
-      const existingProjects = sanitizeProjects(currentSettings.projects) || [];
-      const existing = existingProjects.find((project) => project.path === resolvedPath) || null;
-
-      const nextProjects = existing
-        ? existingProjects
-        : [
-            ...existingProjects,
-            {
-              id: createProjectIdFromPath(resolvedPath),
-              path: resolvedPath,
-              addedAt: Date.now(),
-              lastOpenedAt: Date.now(),
-            },
-          ];
-
-      const activeProjectId = existing ? existing.id : nextProjects[nextProjects.length - 1].id;
 
       const updated = await persistSettings({
-        projects: nextProjects,
-        activeProjectId,
-        lastDirectory: resolvedPath,
+        projects: result.projects,
+        activeProjectId: result.project.id,
+        lastDirectory: result.path,
       });
 
       return res.json({
         success: true,
         restarted: false,
-        path: resolvedPath,
+        path: result.path,
         settings: updated,
       });
     } catch (error) {

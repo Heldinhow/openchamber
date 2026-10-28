@@ -24,6 +24,7 @@ import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
 import { registerSessionDraftRoutes } from '../session-drafts/routes.js';
 import { registerProjectContextRoutes } from '../project-context/routes.js';
 import { registerProjectDirectoryRoutes, registerProjectSetupRoutes } from '../projects/routes.js';
+import { registerWorkspaceRoutes } from '../repo-workspaces/routes.js';
 import { registerAgentMemoryRoutes } from '../agent-memory/routes.js';
 import { registerSessionKnowledgeRoutes } from '../session-knowledge/routes.js';
 import { registerMessageSearchRoutes } from '../message-search/routes.js';
@@ -238,8 +239,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       formatSettingsResponse,
       readSettingsFromDisk,
       readSettingsFromDiskMigrated,
+      readSettingsFromDiskMigratedStrict,
       persistSettings,
       sanitizeProjects,
+      sanitizeRepoWorkspaces,
       sanitizeSkillCatalogs,
       isUnsafeSkillRelativePath,
       buildOpenCodeUrl,
@@ -783,6 +786,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       readSettingsFromDisk,
       sanitizeProjects,
       persistSettings,
+    });
+    registerWorkspaceRoutes(app, {
+      readSettings: readSettingsFromDiskMigratedStrict,
+      persistSettings,
+      sanitizeProjects,
+      sanitizeRepoWorkspaces,
+      validateDirectoryPath,
+      fsPromises,
+      crypto,
     });
     registerProjectSetupRoutes(app, { projectConfigRuntime });
     registerAgentMemoryRoutes(app, { agentMemoryRuntime, isAgentMemoryEnabled });

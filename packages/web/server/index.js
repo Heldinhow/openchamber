@@ -449,6 +449,7 @@ const settingsHelpers = createSettingsHelpers({
 const normalizePwaAppName = (...args) => settingsHelpers.normalizePwaAppName(...args);
 const normalizePwaOrientation = (...args) => settingsHelpers.normalizePwaOrientation(...args);
 const sanitizeSettingsUpdate = (...args) => settingsHelpers.sanitizeSettingsUpdate(...args);
+const sanitizeRepoWorkspaces = (...args) => settingsHelpers.sanitizeRepoWorkspaces(...args);
 const mergePersistedSettings = (...args) => settingsHelpers.mergePersistedSettings(...args);
 const formatSettingsResponse = (...args) => settingsHelpers.formatSettingsResponse(...args);
 
@@ -506,6 +507,7 @@ const settingsRuntime = createSettingsRuntime({
 });
 
 const readSettingsFromDiskMigrated = (...args) => settingsRuntime.readSettingsFromDiskMigrated(...args);
+const readSettingsFromDiskMigratedStrict = (...args) => settingsRuntime.readSettingsFromDiskMigratedStrict(...args);
 const readSettingsFromDisk = (...args) => settingsRuntime.readSettingsFromDisk(...args);
 const readSettingsFromDiskStrict = (...args) => settingsRuntime.readSettingsFromDiskStrict(...args);
 const writeSettingsToDisk = (...args) => settingsRuntime.writeSettingsToDisk(...args);
@@ -2840,8 +2842,10 @@ async function main(options = {}) {
     formatSettingsResponse,
     readSettingsFromDisk,
     readSettingsFromDiskMigrated,
+    readSettingsFromDiskMigratedStrict,
     persistSettings,
     sanitizeProjects,
+    sanitizeRepoWorkspaces,
     sanitizeSkillCatalogs,
     isUnsafeSkillRelativePath,
     buildOpenCodeUrl,

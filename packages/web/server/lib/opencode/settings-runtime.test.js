@@ -167,6 +167,24 @@ describe('settings runtime', () => {
     }
   });
 
+  it('applies the same migrations on the strict read and keeps an unreadable file intact', async () => {
+    const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime();
+    try {
+      const directory = path.join(tempRoot, 'legacy-project');
+      await fsPromises.mkdir(directory);
+      await runtime.writeSettingsToDisk({ projects: [], lastDirectory: directory });
+      await expect(runtime.readSettingsFromDiskMigratedStrict()).resolves.toMatchObject({
+        projects: [expect.objectContaining({ path: directory })],
+      });
+
+      await fsPromises.writeFile(settingsFilePath, '{ not json', 'utf8');
+      await expect(runtime.readSettingsFromDiskMigratedStrict()).rejects.toThrow();
+      expect(await fsPromises.readFile(settingsFilePath, 'utf8')).toBe('{ not json');
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('never turns a chat folder stored as the last directory into a project', async () => {
     const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-settings-chats-'));
     const chatsRoot = path.join(tempRoot, 'chats');

@@ -9,6 +9,9 @@ project list if needed, and saves `activeProjectId` and `lastDirectory`.
 the previously active workspace. It does not restart OpenCode. If creation
 succeeds but validation or settings persistence fails, the directory remains;
 the route reports failure rather than removing files it may not own.
+The add-project rule itself (`add-project.js#resolveProjectForDirectory`) is
+shared with the multi-repo workspace service, which keeps the returned project
+list for the workspace's own settings write.
 
 Server-owned storage for a project's per-user config file,
 `~/.config/openchamber/projects/<projectId>.json`. The file holds two
