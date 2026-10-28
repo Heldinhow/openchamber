@@ -21,7 +21,10 @@ through the injected `writeConfig` from `../opencode/shared.js` — the atomic
 writer that preserves comments and foreign keys. This module has no second
 writer. The write target is always `<primary>/.opencode/opencode.json`; a root
 `opencode.json` is reported in `configTarget.rootConfigPath` so the dialog can
-warn that the new layer overrides it, and is never edited.
+warn that the new layer overrides it, and is never edited. Because
+`readConfigLayers` parses only the highest-priority project file, the service
+reads `.opencode/opencode.jsonc` and the root `opencode.json`/`opencode.jsonc`
+itself as lower layers; the shared reader's merge order stays unchanged.
 
 ## Invariants
 
@@ -53,9 +56,14 @@ warn that the new layer overrides it, and is never edited.
 - `status` is `ok`, `missing`, `different`, `outside`, `overridden` or
   `unknown`. A project whose id is gone makes its refs `missing` (and the
   primary's absence makes all of them `missing`) without failing the workspace.
-  A config layer that cannot be parsed, or whose `references` value is not an
-  object, makes every ref `unknown`, never `missing`, and reports
-  `{ path, message }` once in `refsError`.
+  `outside` covers an alias defined below the project layer too: the lower
+  project files are `.opencode/opencode.jsonc`, `opencode.json` and
+  `opencode.jsonc` under the primary. `overridden` means the project layer holds
+  the entry and any other layer (including those lower files) also defines the
+  alias. An alias one of those files defines is never `missing`. A config layer
+  that cannot be parsed, or whose `references` value is not an object, makes
+  every ref `unknown`, never `missing`, and reports `{ path, message }` once in
+  `refsError`; a malformed lower file counts the same way.
 - A read of the reference state can fail after the workspace is already saved:
   create, edit, retry and delete's refusal paths answer the saved state with
   every expected ref `unknown` and `refsError: { path, message }` naming the
@@ -65,9 +73,10 @@ warn that the new layer overrides it, and is never edited.
   changes the classification.
 - Create validates every secondary's config and folder before persisting
   settings. An unreadable config is 422 with `configError: { path, message }`;
-  an alias already defined in any layer is 409 with `conflict: { alias, path }`
-  unless `confirmRefs` lists it; a missing or unreadable folder is 422. None of
-  these creates a workspace, a project or a file.
+  an alias already defined in any layer — including a lower project file — is
+  409 with `conflict: { alias, path }` unless `confirmRefs` lists it; a missing
+  or unreadable folder is 422. None of these creates a workspace, a project or a
+  file.
 - `createdRefs` is exactly the set of aliases create writes. An entry that was
   already identical in a merged layer works but stays the user's (not owned, no
   write). `createdRefs` is persisted before the refs write, so a failed write is
@@ -84,7 +93,8 @@ warn that the new layer overrides it, and is never edited.
 - `removeCreatedRefs` (the helper ticket 07 calls) removes only `createdRefs`
   entries, only from the workspace's own target file, and only when the current
   value equals the one the workspace wrote. A user-edited owned entry needs
-  `confirmRefs`; a reference outside `createdRefs` is never touched. All
+  `confirmRefs`; a reference outside `createdRefs` is never touched, and an
+  entry a lower project file defines is never removed or renamed. All
   removals of one call land in one atomic write, so a failed write removes
   nothing. The whole request is preflighted first: an owned alias whose project
   or path is gone cannot be verified, so it blocks every removal (`removed: []`,
@@ -228,9 +238,11 @@ over an entry it did not read.
 
 Ownership and ticket 05's overwrite check read the project layer, so `ok`,
 `different` and `overridden` report that entry. `outside` has no project entry;
-its value is the merged one actually in effect. Rejected alternative: always
-reporting the merged value, which would hide the project entry that a removal
-is allowed to touch.
+its value is the one actually in effect: the custom config first, then the lower
+project files from highest to lowest, then the merged global layers. Rejected
+alternative: always reporting the merged value, which would hide the project
+entry that a removal is allowed to touch; and reporting the root entry even
+when a `.opencode/opencode.jsonc` or custom config overrides it.
 
 ### Why the write target ignores `getProjectConfigPath`
 
@@ -238,10 +250,24 @@ OpenCode would let a root `opencode.json` be the project file when no
 `.opencode/` config exists, but the workspace contract fixes one target:
 `<primary>/.opencode/opencode.json`. Using the resolved project path could edit
 the user's root file. `configTarget.rootConfigPath` names the root file that
-the new layer starts to override, computed before the write, so the dialog can
-warn without choosing the root file. Rejected alternative: writing the root
-when it is the only project file, which is a silent edit of a file the contract
-does not own.
+the new layer starts to override, tested by existence rather than by
+`getProjectConfigPath`, because that helper stops reporting the root as soon as
+the target exists. The dialog can then warn on every save, not only the first.
+Rejected alternative: writing the root when it is the only project file, which
+is a silent edit of a file the contract does not own.
+
+### Why the service reads the lower project files itself
+
+`readConfigLayers` parses only the highest-priority project file, which is the
+write target once it exists. The root file (and `.opencode/opencode.jsonc`) then
+disappear from every classification, so an alias only the root defines read as
+`missing`, and a write buried it without a conflict. The service therefore
+reads those files with the injected `readConfigFile` and treats their
+`references` as other layers. Changing the shared merge order instead would
+change how every config surface resolves a project, far beyond this module.
+Rejected alternative: calling `getProjectConfigPath` twice or changing the
+shared reader to merge all project files; the first cannot see a root file below
+an existing target, and the second changes unrelated configuration behavior.
 
 ### Why one config write per alias
 

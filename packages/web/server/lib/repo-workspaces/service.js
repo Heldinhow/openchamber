@@ -322,15 +322,38 @@ const expectedRefsInState = (workspace, projects, status) => expectedReferences(
 ).map((reference) => describeReference(reference, { status, current: null }));
 
 /**
- * The project layer owns the entry, the merged layers reveal an alias another
- * layer also defines. A missing project entry is `missing`; an entry only in
- * another layer is `outside`.
+ * The value in effect for an alias that is not in the project layer. Custom
+ * config sits above the project files, then the lower project layers from
+ * highest to lowest, then the global user files.
  */
-const classifyReference = (reference, layers) => {
+const outsideReferenceValue = (alias, layers, lowerConfigs) => {
+  if (layerDefinesAlias(layers.customConfig, alias)) {
+    return currentReferenceValue(referencesOf(layers.customConfig)[alias]);
+  }
+  for (let index = lowerConfigs.length - 1; index >= 0; index -= 1) {
+    const config = lowerConfigs[index][1];
+    if (layerDefinesAlias(config, alias)) {
+      return currentReferenceValue(referencesOf(config)[alias]);
+    }
+  }
+  return currentReferenceValue(referencesOf(layers.mergedConfig)?.[alias]);
+};
+
+/**
+ * The project layer owns the entry, every other layer reveals an alias this
+ * workspace would shadow. A missing project entry is `missing`; an entry only
+ * in another layer is `outside`, including one defined below `.opencode/`.
+ */
+const classifyReference = (reference, layers, lower = null) => {
+  const lowerConfigs = lower?.configs ?? [];
   const projectReferences = referencesOf(layers.projectConfig);
   const inProject = projectReferences !== null && Object.hasOwn(projectReferences, reference.alias);
-  const inOtherLayer = [layers.userConfig, layers.userOverrideConfig, layers.customConfig]
-    .some((layer) => layerDefinesAlias(layer, reference.alias));
+  const inOtherLayer = [
+    layers.userConfig,
+    layers.userOverrideConfig,
+    layers.customConfig,
+    ...lowerConfigs.map(([, config]) => config),
+  ].some((layer) => layerDefinesAlias(layer, reference.alias));
 
   if (inProject && inOtherLayer) {
     return {
@@ -345,7 +368,7 @@ const classifyReference = (reference, layers) => {
   if (inOtherLayer) {
     return {
       status: 'outside',
-      current: currentReferenceValue(referencesOf(layers.mergedConfig)?.[reference.alias]),
+      current: outsideReferenceValue(reference.alias, layers, lowerConfigs),
     };
   }
   return { status: 'missing', current: null };
@@ -356,7 +379,14 @@ const classifyReference = (reference, layers) => {
  * Any layer parse error makes the conflict state untrustworthy, so every ref is
  * `unknown` and the first error is reported once.
  */
-const readWorkspaceRefs = ({ workspace, projectsById, readConfigLayers, getLayerError, getProjectConfigPath }) => {
+const readWorkspaceRefs = ({
+  workspace,
+  projectsById,
+  readConfigLayers,
+  getLayerError,
+  getProjectConfigPath,
+  readLowerConfigs,
+}) => {
   const primaryProject = projectsById.get(workspace.primaryProjectId) ?? null;
   const expected = expectedReferences(workspace, projectsById);
 
@@ -371,9 +401,10 @@ const readWorkspaceRefs = ({ workspace, projectsById, readConfigLayers, getLayer
 
   const layers = readConfigLayers(primaryProject.path);
   const projectConfigPath = getProjectConfigPath(primaryProject.path);
+  const lower = readLowerConfigs(primaryProject.path, projectConfigPath);
   // A malformed `references` section is a read error too: its shape cannot be
   // classified any more than a file that did not parse.
-  const readError = getLayerError(layers, projectConfigPath) ?? configReadError(layers);
+  const readError = getLayerError(layers, projectConfigPath) ?? configReadError(layers, lower);
   const error = readError ? { path: readError.path, message: readError.message } : null;
 
   const refs = expected.map((reference) => {
@@ -383,7 +414,7 @@ const readWorkspaceRefs = ({ workspace, projectsById, readConfigLayers, getLayer
     if (!reference.project) {
       return describeReference(reference, { status: 'missing', current: null });
     }
-    return describeReference(reference, classifyReference(reference, layers));
+    return describeReference(reference, classifyReference(reference, layers, lower));
   });
 
   return { refs, error };
@@ -396,28 +427,71 @@ const REFS_FILE = 'opencode.json';
 const refsConfigPath = (projectPath) => path.resolve(projectPath, REFS_DIR, REFS_FILE);
 
 /**
- * The dialog needs to warn when the new `.opencode/` file starts overriding a
- * root config. `getProjectConfigPath` names the root file only when no
- * `.opencode/` config exists, which is exactly that case.
+ * Project config files below the write target, lowest priority first. OpenCode
+ * loads all of them under `.opencode/opencode.json`, but `readConfigLayers`
+ * parses only the project's current highest-priority file, so the service reads
+ * the remaining layers here. The shared reader is untouched.
  */
-const describeConfigTarget = (projectPath, getProjectConfigPath) => {
+const LOWER_PROJECT_CONFIG_FILES = [
+  ['opencode.json'],
+  ['opencode.jsonc'],
+  [REFS_DIR, 'opencode.jsonc'],
+];
+
+/**
+ * Reads the project layers the shared reader skipped. A missing file reads as
+ * `{}`; a malformed one becomes the same `{ path, message }` config error as a
+ * failed layer, never a silent omission.
+ */
+const lowerProjectConfigs = (projectPath, projectConfigPath, readConfigFile) => {
+  const current = projectConfigPath ? path.resolve(projectConfigPath) : null;
+  const configs = [];
+  for (const segments of LOWER_PROJECT_CONFIG_FILES) {
+    const filePath = path.resolve(projectPath, ...segments);
+    // `readConfigLayers` already parsed this layer as `projectConfig`.
+    if (filePath === current) continue;
+    try {
+      configs.push([filePath, readConfigFile(filePath)]);
+    } catch (error) {
+      return {
+        configs,
+        error: { path: filePath, message: error?.message || 'The OpenCode configuration could not be read' },
+      };
+    }
+  }
+  return { configs, error: null };
+};
+
+/**
+ * The dialog needs to warn when the `.opencode/` layer overrides a root config.
+ * The root file is reported whenever it exists, including when the write target
+ * already exists and `getProjectConfigPath` no longer points at it.
+ */
+const describeConfigTarget = async (projectPath, fsPromises) => {
   const root = path.resolve(projectPath);
-  const currentPath = getProjectConfigPath(projectPath);
-  return {
-    path: refsConfigPath(projectPath),
-    rootConfigPath: currentPath && path.dirname(path.resolve(currentPath)) === root
-      ? path.resolve(currentPath)
-      : null,
-  };
+  let rootConfigPath = null;
+  for (const file of ['opencode.json', 'opencode.jsonc']) {
+    const candidate = path.join(root, file);
+    try {
+      if ((await fsPromises.stat(candidate)).isFile()) {
+        rootConfigPath = candidate;
+        break;
+      }
+    } catch {
+      // No readable file there; only an existing root config earns the warning.
+    }
+  }
+  return { path: refsConfigPath(projectPath), rootConfigPath };
 };
 
 /** A parsed config whose `references` key is not an object cannot be merged safely. */
-const invalidReferencesSection = (layers) => {
+const invalidReferencesSection = (layers, extraLayers = []) => {
   const candidates = [
     [layers.paths?.userPath, layers.userConfig],
     [layers.paths?.userOverridePath, layers.userOverrideConfig],
     [layers.paths?.projectPath, layers.projectConfig],
     [layers.paths?.customPath, layers.customConfig],
+    ...extraLayers,
   ];
   for (const [filePath, config] of candidates) {
     if (filePath && config && config.references !== undefined && referencesOf(config) === null) {
@@ -427,12 +501,12 @@ const invalidReferencesSection = (layers) => {
   return null;
 };
 
-const configReadError = (layers) => {
-  const failedLayer = layers.layerErrors?.[0] ?? null;
+const configReadError = (layers, lower = null) => {
+  const failedLayer = layers.layerErrors?.[0] ?? lower?.error ?? null;
   if (failedLayer) {
     return { path: failedLayer.path, message: failedLayer.message };
   }
-  return invalidReferencesSection(layers);
+  return invalidReferencesSection(layers, lower?.configs ?? []);
 };
 
 const configErrorResponse = (configError) => new WorkspaceRequestError(
@@ -504,6 +578,11 @@ export const createWorkspaceService = (dependencies) => {
     return primary;
   };
 
+  // The layers `readConfigLayers` does not parse because the write target exists.
+  const readLowerConfigs = (primaryPath, projectConfigPath = getProjectConfigPath(primaryPath)) => (
+    lowerProjectConfigs(primaryPath, projectConfigPath, readConfigFile)
+  );
+
   const assertWritableReference = async (reference) => {
     if (!reference.project) {
       throw invalid({ [`refs.${reference.alias}.path`]: 'Repository folder is not available' });
@@ -526,13 +605,14 @@ export const createWorkspaceService = (dependencies) => {
     for (const reference of references) {
       try {
         const layers = readConfigLayers(primaryPath);
-        const configError = configReadError(layers);
+        const lower = readLowerConfigs(primaryPath);
+        const configError = configReadError(layers, lower);
         if (configError) {
           results.push({ alias: reference.alias, status: 'failed', message: configError.message });
           continue;
         }
 
-        const state = classifyReference(reference, layers);
+        const state = classifyReference(reference, layers, lower);
         if (state.status === 'ok') {
           results.push({ alias: reference.alias, status: 'unchanged' });
           continue;
@@ -575,6 +655,7 @@ export const createWorkspaceService = (dependencies) => {
     readConfigLayers,
     getLayerError,
     getProjectConfigPath,
+    readLowerConfigs,
   });
 
   /**
@@ -752,9 +833,10 @@ export const createWorkspaceService = (dependencies) => {
     const primary = primaryProjectOf(workspace, nextProjects);
     // Read before the write: once the target exists, the root file is no
     // longer what `getProjectConfigPath` reports.
-    const configTarget = describeConfigTarget(primary.path, getProjectConfigPath);
+    const configTarget = await describeConfigTarget(primary.path, fsPromises);
     const layers = readConfigLayers(primary.path);
-    const configError = configReadError(layers);
+    const lower = readLowerConfigs(primary.path);
+    const configError = configReadError(layers, lower);
     if (configError) throw configErrorResponse(configError);
 
     const projectsById = new Map(nextProjects.map((project) => [project.id, project]));
@@ -762,7 +844,7 @@ export const createWorkspaceService = (dependencies) => {
     const toWrite = [];
     for (const reference of references) {
       await assertWritableReference(reference);
-      const state = classifyReference(reference, layers);
+      const state = classifyReference(reference, layers, lower);
       if (state.status === 'ok') continue;
       if (state.status !== 'missing' && !confirmed.has(reference.alias)) {
         throw conflictResponse(reference.alias, state.current);
@@ -824,9 +906,10 @@ export const createWorkspaceService = (dependencies) => {
     const projects = sanitizeProjects(settings.projects) || [];
     const projectsById = new Map(projects.map((project) => [project.id, project]));
     const primary = primaryProjectOf(workspace, projects);
-    const configTarget = describeConfigTarget(primary.path, getProjectConfigPath);
+    const configTarget = await describeConfigTarget(primary.path, fsPromises);
     const layers = readConfigLayers(primary.path);
-    const configError = configReadError(layers);
+    const lower = readLowerConfigs(primary.path);
+    const configError = configReadError(layers, lower);
     if (configError) throw configErrorResponse(configError);
 
     const references = expectedReferences(workspace, projectsById);
@@ -843,13 +926,13 @@ export const createWorkspaceService = (dependencies) => {
       // Pending means an owned reference the last attempt did not write. An
       // alias the user added or edited elsewhere is not pending.
       selected = references.filter((reference) => (
-        reference.owned && reference.path !== null && classifyReference(reference, layers).status === 'missing'
+        reference.owned && reference.path !== null && classifyReference(reference, layers, lower).status === 'missing'
       ));
     }
 
     const toWrite = [];
     for (const reference of selected) {
-      const state = classifyReference(reference, layers);
+      const state = classifyReference(reference, layers, lower);
       if (state.status === 'ok') continue;
       if (state.status !== 'missing' && !confirmed.has(reference.alias)) {
         throw conflictResponse(reference.alias, state.current);
@@ -891,7 +974,7 @@ export const createWorkspaceService = (dependencies) => {
 
     return withRefsLock(async () => {
       const layers = readConfigLayers(primary.path);
-      const layersError = configReadError(layers);
+      const layersError = configReadError(layers, readLowerConfigs(primary.path));
       if (layersError) throw configErrorResponse(layersError);
 
       const targetPath = refsConfigPath(primary.path);
@@ -1019,7 +1102,7 @@ export const createWorkspaceService = (dependencies) => {
     const nextPrimary = primaryProjectOf(workspace, nextProjects);
     // Read before any write: the root file stops being what
     // `getProjectConfigPath` reports once `.opencode/` exists.
-    const configTarget = describeConfigTarget(nextPrimary.path, getProjectConfigPath);
+    const configTarget = await describeConfigTarget(nextPrimary.path, fsPromises);
 
     const oldProjectsById = new Map(projects.map((project) => [project.id, project]));
     const oldReferences = expectedReferences(existing, oldProjectsById);
@@ -1042,7 +1125,8 @@ export const createWorkspaceService = (dependencies) => {
     // anything. A conflict found after the removal would leave the old config
     // edited with the workspace still unchanged.
     const layers = readConfigLayers(nextPrimary.path);
-    const configError = configReadError(layers);
+    const lower = readLowerConfigs(nextPrimary.path);
+    const configError = configReadError(layers, lower);
     if (configError) throw configErrorResponse(configError);
 
     const toWrite = [];
@@ -1051,7 +1135,7 @@ export const createWorkspaceService = (dependencies) => {
       // keeps reading as `missing`.
       if (!reference.project) continue;
       await assertWritableReference(reference);
-      const state = classifyReference(reference, layers);
+      const state = classifyReference(reference, layers, lower);
       if (state.status === 'ok') continue;
       // An owned entry that still is exactly what the old workspace wrote can
       // change with the workspace itself; only a hand-edited entry needs a

@@ -36,7 +36,9 @@ const createApp = (overrides = {}) => {
       projectConfig: state.projectConfig,
       mergedConfig: state.projectConfig,
     })),
-    readConfigFile: vi.fn(() => state.projectConfig),
+    readConfigFile: vi.fn((filePath) => (
+      filePath === '/repos/api/.opencode/opencode.json' ? state.projectConfig : {}
+    )),
     writeConfig: vi.fn(async (config) => { state.projectConfig = config; }),
     getLayerError: vi.fn(() => null),
     getProjectConfigPath: vi.fn((directory) => path.join(directory, '.opencode', 'opencode.json')),
@@ -252,7 +254,9 @@ describe('workspace routes', () => {
         projectConfig,
         mergedConfig: projectConfig,
       })),
-      readConfigFile: vi.fn(() => projectConfig),
+      readConfigFile: vi.fn((filePath) => (
+        filePath === '/repos/api/.opencode/opencode.json' ? projectConfig : {}
+      )),
     });
 
     const response = await request(app)
@@ -301,7 +305,9 @@ describe('workspace routes', () => {
         projectConfig,
         mergedConfig: projectConfig,
       })),
-      readConfigFile: vi.fn(() => projectConfig),
+      readConfigFile: vi.fn((filePath) => (
+        filePath === '/repos/api/.opencode/opencode.json' ? projectConfig : {}
+      )),
     });
 
     const response = await request(app)
@@ -345,7 +351,9 @@ describe('workspace routes', () => {
         projectConfig: storedConfig,
         mergedConfig: storedConfig,
       })),
-      readConfigFile: vi.fn(() => storedConfig),
+      readConfigFile: vi.fn((filePath) => (
+        filePath === '/repos/api/.opencode/opencode.json' ? storedConfig : {}
+      )),
       writeConfig: vi.fn(async (config) => {
         writes += 1;
         if (writes > 1) throw new Error('permission denied');
@@ -450,7 +458,9 @@ describe('workspace routes', () => {
         projectConfig,
         mergedConfig: projectConfig,
       })),
-      readConfigFile: vi.fn(() => projectConfig),
+      readConfigFile: vi.fn((filePath) => (
+        filePath === '/repos/api/.opencode/opencode.json' ? projectConfig : {}
+      )),
       writeConfig: vi.fn(async () => { throw new Error('permission denied'); }),
     });
 

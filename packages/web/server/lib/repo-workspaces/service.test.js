@@ -80,7 +80,9 @@ const createService = (overrides = {}) => {
     fsPromises: { mkdir: vi.fn(async () => undefined) },
     crypto: { randomUUID: () => 'fixed-uuid' },
     readConfigLayers: vi.fn(layers),
-    readConfigFile: vi.fn(() => state.projectConfig),
+    readConfigFile: vi.fn((filePath) => (
+      filePath.endsWith('/.opencode/opencode.json') ? state.projectConfig : {}
+    )),
     writeConfig: vi.fn(async (config) => {
       state.projectConfig = config;
       state.writes.push(config);
@@ -590,6 +592,10 @@ const fixtureService = (settings, overrides = {}) => createService({
   writeConfig: vi.fn(writeConfig),
   getLayerError,
   getProjectConfigPath,
+  fsPromises: {
+    mkdir: vi.fn(async () => undefined),
+    stat: fs.promises.stat.bind(fs.promises),
+  },
   ...overrides,
 });
 
@@ -708,6 +714,101 @@ describe('workspace service: reference states', () => {
     ]);
     expect(result.refsError).toBeNull();
     expect(custom.content).toContain('Custom value');
+  });
+
+  it('classifies a root-config alias below an existing .opencode layer as outside, never missing', async () => {
+    const root = caseRoot('root-layer-only');
+    const primary = projectAt(root, 'primary', 'Primary');
+    const web = projectAt(root, 'web', 'Web');
+    writeProjectConfig(primary, JSON.stringify({ keybinds: { leader: 'ctrl+x' } }));
+    writeJson(path.join(primary.path, 'opencode.json'), {
+      references: { web: { path: web.path, description: 'From the root' } },
+    });
+    const stored = workspace({
+      primaryProjectId: 'primary',
+      repos: [
+        { projectId: 'primary', alias: 'primary', description: 'Primary', branch: '' },
+        { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+      ],
+    });
+    const { service } = fixtureService({
+      projects: [primary, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.list();
+
+    expect(result.refs).toEqual([{
+      alias: 'web',
+      path: path.resolve(web.path),
+      description: 'Web',
+      status: 'outside',
+      owned: false,
+      current: { path: web.path, description: 'From the root' },
+    }]);
+  });
+
+  it('classifies an alias both the .opencode layer and the root config define as overridden', async () => {
+    const root = caseRoot('root-layer-both');
+    const primary = projectAt(root, 'primary', 'Primary');
+    const web = projectAt(root, 'web', 'Web');
+    writeProjectConfig(primary, JSON.stringify({
+      references: { web: { path: '/project/web', description: 'Project web' } },
+    }));
+    writeJson(path.join(primary.path, 'opencode.json'), {
+      references: { web: { path: '/root/web', description: 'Root web' } },
+    });
+    const stored = workspace({
+      primaryProjectId: 'primary',
+      repos: [
+        { projectId: 'primary', alias: 'primary', description: 'Primary', branch: '' },
+        { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+      ],
+    });
+    const { service } = fixtureService({
+      projects: [primary, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.list();
+
+    expect(result.refs).toEqual([{
+      alias: 'web',
+      path: path.resolve(web.path),
+      description: 'Web',
+      status: 'overridden',
+      owned: false,
+      current: { path: '/project/web', description: 'Project web' },
+    }]);
+  });
+
+  it('treats a malformed lower root config as unknown, never as missing', async () => {
+    const root = caseRoot('root-layer-malformed');
+    const primary = projectAt(root, 'primary', 'Primary');
+    const web = projectAt(root, 'web', 'Web');
+    writeProjectConfig(primary, '{}');
+    const rootConfig = path.join(primary.path, 'opencode.json');
+    fs.writeFileSync(rootConfig, '{\n  "references": {');
+    const stored = workspace({
+      primaryProjectId: 'primary',
+      repos: [
+        { projectId: 'primary', alias: 'primary', description: 'Primary', branch: '' },
+        { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+      ],
+    });
+    const { service } = fixtureService({
+      projects: [primary, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.list();
+
+    expect(result.refs[0]).toMatchObject({ alias: 'web', status: 'unknown', current: null });
+    expect(result.refsError).toMatchObject({ path: rootConfig });
+    expect(result.refsError.message).toMatch(/invalid JSONC/);
   });
 
   it('answers unknown for every ref, with one parse error, when a layer cannot be parsed', async () => {
@@ -992,6 +1093,48 @@ describe('workspace service: list reference states per workspace', () => {
 });
 
 describe('workspace service: write references', () => {
+  it('refuses to shadow a root-config alias without confirmation and writes nothing', async () => {
+    const root = caseRoot('write-root-conflict');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    writeProjectConfig(api, '{}');
+    const rootConfig = writeJson(path.join(api.path, 'opencode.json'), {
+      references: { web: { path: '/root/web', description: 'Root web' } },
+    });
+    const { service, dependencies } = fixtureService({ projects: [api, web], workspaces: [], activeWorkspaceId: null });
+
+    await expect(service.create(createPayloadWith(api, [web]))).rejects.toMatchObject({
+      status: 409,
+      conflict: { alias: 'web', path: '/root/web' },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(dependencies.writeConfig).not.toHaveBeenCalled();
+    expect(fs.readFileSync(rootConfig.file, 'utf8')).toBe(rootConfig.content);
+  });
+
+  it('writes over a root-config alias only with an explicit confirmation', async () => {
+    const root = caseRoot('write-root-confirmed');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    writeProjectConfig(api, '{}');
+    const rootConfig = writeJson(path.join(api.path, 'opencode.json'), {
+      references: { web: { path: '/root/web', description: 'Root web' } },
+    });
+    const { service } = fixtureService({ projects: [api, web], workspaces: [], activeWorkspaceId: null });
+
+    const result = await service.create({
+      ...createPayloadWith(api, [web]),
+      confirmRefs: ['web'],
+    });
+
+    expect(result.refWrites).toEqual([{ alias: 'web', status: 'written' }]);
+    expect(readConfigFile(path.join(api.path, '.opencode', 'opencode.json')).references.web).toEqual({
+      path: path.resolve(web.path),
+      description: 'Web',
+    });
+    expect(fs.readFileSync(rootConfig.file, 'utf8')).toBe(rootConfig.content);
+  });
+
   it('writes a missing secondary reference into the .opencode layer, preserving comments and foreign keys', async () => {
     const root = caseRoot('write-create');
     const api = projectAt(root, 'api', 'API');
@@ -1630,6 +1773,30 @@ describe('workspace service: update', () => {
     expect(result.refs.map((reference) => [reference.alias, reference.status])).toEqual([['api', 'ok']]);
     expect(dependencies.persistSettings).toHaveBeenCalledOnce();
     expect(dependencies.persistSettings.mock.calls[0][0].workspaces[0].primaryProjectId).toBe('web');
+  });
+
+  it('refuses to write a root-config alias on edit without confirmation', async () => {
+    const root = caseRoot('update-root-conflict');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    writeProjectConfig(api, '{}');
+    const rootConfig = writeJson(path.join(api.path, 'opencode.json'), {
+      references: { web: { path: '/root/web', description: 'Root web' } },
+    });
+    const stored = storedWorkspaceFor(api, [], []);
+    const { service, dependencies } = fixtureService({
+      projects: [api, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    await expect(service.update('ws_1', updatePayloadWith(api, [web]))).rejects.toMatchObject({
+      status: 409,
+      conflict: { alias: 'web', path: '/root/web' },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(dependencies.writeConfig).not.toHaveBeenCalled();
+    expect(fs.readFileSync(rootConfig.file, 'utf8')).toBe(rootConfig.content);
   });
 
   it('removes every owned entry from the old primary when the primary changes', async () => {
