@@ -41,7 +41,11 @@ const RepoWorkspaceManageList: React.FC<ManageListProps> = ({
       {workspaces.map((workspace) => {
         const active = workspace.id === activeWorkspaceId;
         return (
-          <li key={workspace.id} className="flex min-h-10 items-center gap-2 rounded-md px-2 py-1">
+          <li
+            key={workspace.id}
+            aria-current={active ? 'true' : undefined}
+            className="flex min-h-10 items-center gap-2 rounded-md px-2 py-1"
+          >
             <span className="inline-flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
               {active ? <Icon name="check" className="h-4 w-4 text-interactive-selection-foreground" /> : null}
             </span>

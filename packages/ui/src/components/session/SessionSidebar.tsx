@@ -895,7 +895,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         <button
           type="button"
           onClick={() => setWorkspaceReviewOpen(true)}
-          className="mx-2.5 mt-1 flex min-h-7 shrink-0 items-center rounded-md px-1.5 text-start typography-meta text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="mx-2.5 mt-1 flex min-h-7 shrink-0 items-center rounded-md px-1.5 text-start typography-meta text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground"
         >
           {t('sessions.sidebar.workspace.review')}
         </button>

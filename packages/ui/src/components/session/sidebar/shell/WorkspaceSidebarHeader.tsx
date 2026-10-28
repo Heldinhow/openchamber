@@ -50,8 +50,7 @@ const WorkspaceSidebarHeader: React.FC<Props> = ({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex min-w-0 items-center gap-1 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={t('sessions.sidebar.workspace.menuLabel')}
+              className="flex min-h-7 min-w-0 items-center gap-1 rounded-md px-1 -ms-1 text-start"
             >
               <span className="truncate typography-ui-section font-semibold text-foreground">
                 {activeWorkspace ? activeWorkspace.name : t('sessions.sidebar.workspace.allProjects')}
@@ -65,6 +64,8 @@ const WorkspaceSidebarHeader: React.FC<Props> = ({
               return (
                 <DropdownMenuItem
                   key={workspace.id}
+                  role="menuitemradio"
+                  aria-checked={active}
                   disabled={activating}
                   onClick={() => onSelect(nextActiveWorkspaceId(workspace.id, activeWorkspace?.id ?? null))}
                   className="flex items-center justify-between gap-3"
@@ -81,6 +82,8 @@ const WorkspaceSidebarHeader: React.FC<Props> = ({
             })}
             <DropdownMenuSeparator />
             <DropdownMenuItem
+              role="menuitemradio"
+              aria-checked={activeWorkspace === null}
               disabled={activating}
               onClick={() => onSelect(null)}
               className="flex items-center gap-2"

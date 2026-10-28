@@ -53,6 +53,7 @@ beforeEach(async () => {
     Node: dom.Node, Element: dom.Element, HTMLElement: dom.HTMLElement,
     SVGElement: dom.SVGElement, Document: dom.Document, DocumentFragment: dom.DocumentFragment,
     Event: dom.Event, CustomEvent: dom.CustomEvent, MouseEvent: dom.MouseEvent,
+    PointerEvent: dom.PointerEvent, KeyboardEvent: dom.KeyboardEvent,
     DOMRect: dom.DOMRect, MutationObserver: dom.MutationObserver, ResizeObserver: dom.ResizeObserver,
     getComputedStyle: dom.getComputedStyle.bind(dom),
     requestAnimationFrame: dom.requestAnimationFrame.bind(dom),
@@ -109,6 +110,26 @@ describe('workspace sidebar slot', () => {
     await render({ status: 'ready', workspaces: [workspace], activeWorkspace: workspace });
     expect(document.body.textContent).toContain('Shop Platform');
     expect(document.body.textContent).toContain('2 repos');
-    expect(document.querySelector('[aria-label="Workspaces"]')).not.toBeNull();
+    const trigger = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Shop Platform'));
+    expect(trigger?.getAttribute('aria-label')).toBeNull();
+    expect(trigger?.textContent).toContain('Shop Platform');
+  });
+
+  test('the workspace menu marks the active entry as a checked radio item', async () => {
+    await render({ status: 'ready', workspaces: [workspace], activeWorkspace: workspace });
+    const trigger = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Shop Platform'))!;
+    await act(async () => {
+      trigger.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0 }));
+      trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    });
+
+    const items = [...document.querySelectorAll('[role="menuitemradio"]')];
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toContain('Shop Platform');
+    expect(items[1].textContent).toBe('All projects');
+    expect(items[0].getAttribute('aria-checked')).toBe('true');
+    expect(items[1].getAttribute('aria-checked')).toBe('false');
   });
 });

@@ -113,6 +113,10 @@ describe('manage workspaces list', () => {
     expect(text).toContain('1 repo');
     expect(text).toContain('Active');
 
+    const currentRows = document.querySelectorAll('li[aria-current="true"]');
+    expect(currentRows).toHaveLength(1);
+    expect(currentRows[0].textContent).toContain('Shop Platform');
+
     const edit = [...document.querySelectorAll('button')]
       .find((button) => button.getAttribute('aria-label') === 'Edit Shop Platform');
     expect(edit !== undefined).toBe(true);
