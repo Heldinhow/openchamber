@@ -700,7 +700,7 @@ export const dict = {
   "sessions.sidebar.workspace.reviewPrimary": "ראשי",
   "sessions.sidebar.workspace.reviewPartial": "חלקי",
   "sessions.sidebar.workspace.reviewPartialHint": "לא ניתן היה לקרוא מאגר, ולכן השינויים שלו לא נכללים בסכום הזה.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "ענף נוכחי: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "ענף שמור: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} לפני, {behind} אחרי",
   "sessions.sidebar.workspace.reviewReadFailed": "לא ניתן היה לקרוא את המאגר הזה.",
   "sessions.sidebar.workspace.viewDiff": "הצג diff",

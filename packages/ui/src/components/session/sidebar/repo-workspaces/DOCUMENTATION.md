@@ -129,8 +129,9 @@ total, partial flag and branch divergence come from
 - The review panel reads each repo on open and keeps a read failure in that
   repo's card; the other cards and the total stay. A repo without git is shown
   as "No git", a missing project as "Project not found", and neither becomes a
-  silent zero. A diverged live branch adds a muted "current branch" line and
-  leaves the saved snapshot alone. "View diff" opens the existing diff on the
+  silent zero. A diverged live branch is the card's branch line and a muted
+  "saved branch" line names the snapshot; nothing checks it out or rewrites it.
+  "View diff" opens the existing diff on the
   repo whose card was clicked. "Open session" targets the primary and "Edit
   workspace" opens the edit dialog.
 

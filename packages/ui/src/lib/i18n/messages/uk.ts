@@ -756,7 +756,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.reviewPrimary": "головний",
   "sessions.sidebar.workspace.reviewPartial": "частково",
   "sessions.sidebar.workspace.reviewPartialHint": "Не вдалося прочитати репозиторій, тому його зміни не входять до цієї суми.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "поточна гілка: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "збережена гілка: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} попереду, {behind} позаду",
   "sessions.sidebar.workspace.reviewReadFailed": "Не вдалося прочитати цей репозиторій.",
   "sessions.sidebar.workspace.viewDiff": "Переглянути diff",

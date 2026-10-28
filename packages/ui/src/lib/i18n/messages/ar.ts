@@ -700,7 +700,7 @@ export const dict = {
   "sessions.sidebar.workspace.reviewPrimary": "الرئيسي",
   "sessions.sidebar.workspace.reviewPartial": "جزئي",
   "sessions.sidebar.workspace.reviewPartialHint": "تعذّرت قراءة مستودع، لذا لا تدخل تغييراته في هذا الإجمالي.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "الفرع الحالي: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "الفرع المحفوظ: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} متقدّم، {behind} متأخر",
   "sessions.sidebar.workspace.reviewReadFailed": "تعذّرت قراءة هذا المستودع.",
   "sessions.sidebar.workspace.viewDiff": "عرض الفرق",

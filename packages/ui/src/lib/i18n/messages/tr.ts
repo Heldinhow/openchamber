@@ -667,7 +667,7 @@ export const dict = {
   "sessions.sidebar.workspace.reviewPrimary": "birincil",
   "sessions.sidebar.workspace.reviewPartial": "kısmi",
   "sessions.sidebar.workspace.reviewPartialHint": "Bir depo okunamadı, bu yüzden değişiklikleri bu toplama dahil değil.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "geçerli dal: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "kaydedilen dal: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} ileride, {behind} geride",
   "sessions.sidebar.workspace.reviewReadFailed": "Bu depo okunamadı.",
   "sessions.sidebar.workspace.viewDiff": "Diff'i görüntüle",

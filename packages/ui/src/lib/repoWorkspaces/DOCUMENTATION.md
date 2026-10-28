@@ -98,8 +98,9 @@ workspace document and never stores one locally.
   `false`. While disabled it neither reads nor subscribes and keeps the last map
   it returned, so a closing surface does not lose its lines.
 - The review reads each repo once per open through the existing git store and
-  shows the live branch beside the saved snapshot. A divergence adds a muted
-  "current branch" line; nothing checks out or rewrites the snapshot.
+  shows the live branch, falling back to the saved snapshot. A divergence adds a
+  muted "saved branch" line naming the snapshot; nothing checks out or rewrites
+  the snapshot.
 - The session header shows the active workspace only when the session's
   directory lands in that workspace's primary repo
   (`sessionPlacement.ts`; the deepest project root wins, so a nested secondary

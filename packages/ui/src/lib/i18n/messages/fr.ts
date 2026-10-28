@@ -580,7 +580,7 @@ export const dict = {
   "sessions.sidebar.workspace.reviewPrimary": "principal",
   "sessions.sidebar.workspace.reviewPartial": "partiel",
   "sessions.sidebar.workspace.reviewPartialHint": "Un dépôt n'a pas pu être lu, donc ses modifications ne sont pas dans ce total.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "branche actuelle : {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "branche enregistrée : {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} en avance, {behind} en retard",
   "sessions.sidebar.workspace.reviewReadFailed": "Impossible de lire ce dépôt.",
   "sessions.sidebar.workspace.viewDiff": "Voir le diff",

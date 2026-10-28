@@ -746,7 +746,7 @@ export const dict = {
   "sessions.sidebar.workspace.reviewPrimary": "primary",
   "sessions.sidebar.workspace.reviewPartial": "partial",
   "sessions.sidebar.workspace.reviewPartialHint": "A repository could not be read, so its changes are not in this total.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "current branch: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "saved branch: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} ahead, {behind} behind",
   "sessions.sidebar.workspace.reviewReadFailed": "Could not read this repository.",
   "sessions.sidebar.workspace.viewDiff": "View diff",

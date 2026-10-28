@@ -747,7 +747,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.reviewPrimary": "기본",
   "sessions.sidebar.workspace.reviewPartial": "일부",
   "sessions.sidebar.workspace.reviewPartialHint": "저장소를 읽지 못해 해당 변경 사항이 이 합계에 포함되지 않았습니다.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "현재 브랜치: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "저장된 브랜치: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} 앞섬, {behind} 뒤짐",
   "sessions.sidebar.workspace.reviewReadFailed": "이 저장소를 읽지 못했습니다.",
   "sessions.sidebar.workspace.viewDiff": "diff 보기",

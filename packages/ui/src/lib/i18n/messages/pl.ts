@@ -588,7 +588,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.reviewPrimary": "główny",
   "sessions.sidebar.workspace.reviewPartial": "częściowy",
   "sessions.sidebar.workspace.reviewPartialHint": "Nie udało się odczytać repozytorium, więc jego zmiany nie są w tej sumie.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "bieżąca gałąź: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "zapisana gałąź: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} do przodu, {behind} do tyłu",
   "sessions.sidebar.workspace.reviewReadFailed": "Nie udało się odczytać tego repozytorium.",
   "sessions.sidebar.workspace.viewDiff": "Pokaż diff",

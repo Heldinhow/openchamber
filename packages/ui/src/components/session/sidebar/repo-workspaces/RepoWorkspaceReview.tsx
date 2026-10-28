@@ -135,7 +135,7 @@ const RepoReviewCard: React.FC<{
   onOpenDiff: (path: string) => void;
 }> = ({ repo, refsError, onOpenDiff }) => {
   const { t } = useI18n();
-  const branch = repo.branchSnapshot || (repo.git.state === 'ready' ? repo.git.branch : null);
+  const branch = repo.currentBranch ?? (repo.branchSnapshot || null);
   const ahead = repo.git.state === 'ready' ? repo.git.ahead : 0;
   const behind = repo.git.state === 'ready' ? repo.git.behind : 0;
   const repositoryPath = repo.path;
@@ -169,9 +169,9 @@ const RepoReviewCard: React.FC<{
               ) : null}
             </div>
           ) : null}
-          {repo.branchDiverged && repo.currentBranch ? (
+          {repo.branchDiverged ? (
             <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">
-              {t('sessions.sidebar.workspace.reviewCurrentBranch', { branch: repo.currentBranch })}
+              {t('sessions.sidebar.workspace.reviewSavedBranch', { branch: repo.branchSnapshot })}
             </p>
           ) : null}
         </div>

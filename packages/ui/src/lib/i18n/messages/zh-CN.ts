@@ -747,7 +747,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.reviewPrimary": "主仓库",
   "sessions.sidebar.workspace.reviewPartial": "部分",
   "sessions.sidebar.workspace.reviewPartialHint": "无法读取某个仓库，因此它的更改不计入此总数。",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "当前分支：{branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "已保存分支：{branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} 领先，{behind} 落后",
   "sessions.sidebar.workspace.reviewReadFailed": "无法读取此仓库。",
   "sessions.sidebar.workspace.viewDiff": "查看差异",

@@ -756,7 +756,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.reviewPrimary": "principal",
   "sessions.sidebar.workspace.reviewPartial": "parcial",
   "sessions.sidebar.workspace.reviewPartialHint": "No se pudo leer un repositorio, así que sus cambios no entran en este total.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "rama actual: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "rama guardada: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} por delante, {behind} por detrás",
   "sessions.sidebar.workspace.reviewReadFailed": "No se pudo leer este repositorio.",
   "sessions.sidebar.workspace.viewDiff": "Ver diff",

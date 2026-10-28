@@ -747,7 +747,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.reviewPrimary": "プライマリ",
   "sessions.sidebar.workspace.reviewPartial": "一部",
   "sessions.sidebar.workspace.reviewPartialHint": "リポジトリを読み取れなかったため、その変更はこの合計に含まれていません。",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "現在のブランチ: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "保存済みブランチ: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} 先行、{behind} 遅れ",
   "sessions.sidebar.workspace.reviewReadFailed": "このリポジトリを読み取れませんでした。",
   "sessions.sidebar.workspace.viewDiff": "差分を表示",

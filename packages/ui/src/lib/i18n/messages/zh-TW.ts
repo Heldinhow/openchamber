@@ -772,7 +772,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.reviewPrimary": "主要",
   "sessions.sidebar.workspace.reviewPartial": "部分",
   "sessions.sidebar.workspace.reviewPartialHint": "無法讀取某個儲存庫，因此它的變更不計入此總數。",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "目前分支：{branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "已儲存分支：{branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} 領先，{behind} 落後",
   "sessions.sidebar.workspace.reviewReadFailed": "無法讀取此儲存庫。",
   "sessions.sidebar.workspace.viewDiff": "檢視差異",

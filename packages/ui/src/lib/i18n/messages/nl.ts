@@ -746,7 +746,7 @@ export const dict = {
   "sessions.sidebar.workspace.reviewPrimary": "primair",
   "sessions.sidebar.workspace.reviewPartial": "gedeeltelijk",
   "sessions.sidebar.workspace.reviewPartialHint": "Een repository kon niet worden gelezen, dus de wijzigingen ervan zitten niet in dit totaal.",
-  "sessions.sidebar.workspace.reviewCurrentBranch": "huidige branch: {branch}",
+  "sessions.sidebar.workspace.reviewSavedBranch": "opgeslagen branch: {branch}",
   "sessions.sidebar.workspace.reviewAheadBehind": "{ahead} voor, {behind} achter",
   "sessions.sidebar.workspace.reviewReadFailed": "Deze repository kon niet worden gelezen.",
   "sessions.sidebar.workspace.viewDiff": "Diff bekijken",
