@@ -2120,6 +2120,15 @@ const findBranchInUse = async (primaryWorktree, localBranchName) => {
   }) || null;
 };
 
+// Removing a worktree never deletes the repository's default branch or a
+// branch another checkout holds. A worktree can end up on `main` (an agent's
+// `git checkout -B main`), and deleting its branch would then delete main.
+const isBranchKeptOnWorktreeRemoval = async (primaryWorktree, branchName) => {
+  if (await findBranchInUse(primaryWorktree, branchName)) return true;
+  const { git } = await createRepositoryGitContext(primaryWorktree);
+  return Object.values(await getRemoteDefaultBranches(git)).includes(branchName);
+};
+
 const runWorktreeStartCommand = async (directory, command) => {
   const text = String(command || '').trim();
   if (!text) {
@@ -6624,7 +6633,7 @@ export async function removeWorktree(directory, input = {}, { bootstrapStore } =
 
   if (deleteLocalBranch) {
     const branchName = cleanBranchName(String(matchedEntry.branchRef || matchedEntry.branch || '').trim());
-    if (branchName) {
+    if (branchName && !(await isBranchKeptOnWorktreeRemoval(context.primaryWorktree, branchName))) {
       await runGitCommandOrThrow(
         context.primaryWorktree,
         ['branch', '-D', branchName],
