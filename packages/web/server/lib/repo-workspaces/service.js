@@ -215,14 +215,20 @@ const readBoundedText = async (fsPromises, filePath, limit = DESCRIPTION_READ_LI
   }
 };
 
+const packageJsonSchema = z.object({
+  description: z.string().optional().catch(undefined),
+  name: z.string().optional().catch(undefined),
+});
+
 /** package.json `description`, then `name`; any read or parse failure is empty. */
 const packageDescription = async (fsPromises, folderPath) => {
   const content = await readBoundedText(fsPromises, path.join(folderPath, 'package.json'));
   if (content === null) return '';
   try {
-    const parsed = JSON.parse(content);
-    if (typeof parsed?.description === 'string' && parsed.description.trim()) return parsed.description;
-    if (typeof parsed?.name === 'string') return parsed.name;
+    const parsed = packageJsonSchema.safeParse(JSON.parse(content));
+    if (!parsed.success) return '';
+    if (parsed.data.description?.trim()) return parsed.data.description;
+    if (parsed.data.name !== undefined) return parsed.data.name;
   } catch {
     // Invalid or truncated JSON: the next source wins.
   }
@@ -385,16 +391,21 @@ const describeReference = (reference, state) => ({
   current: state.current,
 });
 
+const permissionEntrySchema = z.record(z.string(), z.unknown());
+const permissionRuleSchema = z.strictObject({
+  action: z.string(),
+  resource: z.string(),
+  effect: z.string(),
+});
+
 /** A config entry this workspace wrote, matched on exactly its three fields. */
-const samePermissionRule = (entry, rule) => (
-  entry !== null
-  && typeof entry === 'object'
-  && !Array.isArray(entry)
-  && Object.keys(entry).length === 3
-  && entry.action === 'edit'
-  && entry.resource === rule.resource
-  && entry.effect === rule.effect
-);
+const samePermissionRule = (entry, rule) => {
+  const parsed = permissionRuleSchema.safeParse(entry);
+  return parsed.success
+    && parsed.data.action === 'edit'
+    && parsed.data.resource === rule.resource
+    && parsed.data.effect === rule.effect;
+};
 
 const expectedReferences = (workspace, projectsById) => workspace.repos
   .filter((repo) => repo.projectId !== workspace.primaryProjectId)
@@ -807,7 +818,7 @@ export const createWorkspaceService = (dependencies) => {
         return { status: 'failed', path: targetPath, message: 'The "permissions" section must be an array' };
       }
       const current = Array.isArray(config.permissions) ? config.permissions : [];
-      if (current.some((entry) => entry === null || typeof entry !== 'object' || Array.isArray(entry))) {
+      if (current.some((entry) => !permissionEntrySchema.safeParse(entry).success)) {
         return { status: 'failed', path: targetPath, message: 'The "permissions" section must contain rule objects' };
       }
 
