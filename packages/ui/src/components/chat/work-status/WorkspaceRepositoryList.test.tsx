@@ -154,6 +154,17 @@ describe('WorkspaceRepositoryList', () => {
     const text = section().textContent ?? '';
     expect(text).toContain('@api');
     expect(text).toContain('(primary)');
+    expect(section().querySelector('[title="@api"]')).not.toBeNull();
+  });
+
+  test('a missing primary names its alias once and reads missing', async () => {
+    await render(new Map<string, WorkspaceGitRepoStatus>(), [
+      repo({ projectId: 'api', alias: 'api', primary: true, path: null }),
+    ]);
+
+    const text = section().textContent ?? '';
+    expect(text.match(/@api/g)?.length).toBe(1);
+    expect(text).toContain('missing');
   });
 
   test('a secondary alias carries its full text as a title', async () => {

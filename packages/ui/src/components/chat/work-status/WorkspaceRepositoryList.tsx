@@ -78,6 +78,10 @@ export const WorkspaceRepositoryList: React.FC<WorkspaceRepositoryListProps> = (
           <span className="text-muted-foreground">{` ${t('chat.workStatus.repository.primary')}`}</span>
         ) : null;
         const aliasLabel = `@${repo.alias}`;
+        // A missing row already shows the alias in its leading slot.
+        const primaryFallback = missing ? null : (
+          <span title={aliasLabel} className="truncate font-mono">{aliasLabel}</span>
+        );
         const savedBranchNote = t('chat.workStatus.repository.savedBranch', { branch: repo.savedBranch });
 
         return (
@@ -87,7 +91,7 @@ export const WorkspaceRepositoryList: React.FC<WorkspaceRepositoryListProps> = (
               leading={repo.primary && !missing ? undefined : (
                 <span title={aliasLabel} className="truncate font-mono text-muted-foreground">{aliasLabel}</span>
               )}
-              label={repo.primary ? <>{branch ?? aliasLabel}{primarySuffix}</> : branch}
+              label={repo.primary ? <>{branch ?? primaryFallback}{primarySuffix}</> : branch}
               muted={missing}
               onClick={!missing && path !== null && onOpenRepo ? () => onOpenRepo(path) : undefined}
               ariaLabel={t('chat.workStatus.action.openChanges')}
