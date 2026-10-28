@@ -10,6 +10,9 @@ import { useSessionMessages } from '@/sync/sync-context';
 import { useContextWindowLimits } from '@/hooks/useContextWindowLimits';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useRepoWorkspaces } from '@/hooks/useRepoWorkspaces';
+import { repoWorkspaceSessionPlacement } from '@/lib/repoWorkspaces/sessionPlacement';
+import { useWorkspaceGitStatuses } from '@/lib/repoWorkspaces/useWorkspaceGitStatuses';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useSpaceProjectDirectory } from '@/lib/spaces/spaces-store';
 import { useDraftSpaceTarget } from '@/lib/spaces/useDraftSpaceTarget';
@@ -43,6 +46,7 @@ import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useOpenTrackerItem } from '@/components/sourceBoard/openTrackerItem';
 import { useLeaveWorkStatus } from './leaveWorkStatus';
 import { prChecksTooltip } from './prChecks';
+import { WorkspaceRepositoryList, type WorkspaceRepositoryRow } from './WorkspaceRepositoryList';
 
 type Props = {
   sessionId: string | null;
@@ -91,6 +95,42 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   const draftSpace = useDraftSpaceTarget();
   const repositoryDirectory = sessionId ? directory : panelContentDirectory(draftSpace, directory);
   const { gitDirectory } = useNestedGitDirectory(repositoryDirectory, { enabled: showRepository });
+
+  // The session's workspace, resolved by this session's own directory rather
+  // than the active project: another repos' session can stay open beside the
+  // workspace the sidebar points at.
+  const repositoryWorkspaces = useRepoWorkspaces({ enabled: showRepository && !mobile });
+  const workspaceProjects = useProjectsStore((state) => state.projects);
+  const workspacePlacement = repoWorkspaceSessionPlacement(
+    repositoryWorkspaces.activeWorkspace,
+    repositoryDirectory,
+    workspaceProjects,
+  );
+  // More than one repo in the workspace this session lands in is what turns
+  // the single-repo readouts into the repo list. A one-repo workspace keeps
+  // the section exactly as it was.
+  const workspaceRepositories = React.useMemo<readonly WorkspaceRepositoryRow[]>(() => {
+    const workspace = repositoryWorkspaces.activeWorkspace;
+    if (!workspace || workspace.repos.length <= 1) return [];
+    if (workspacePlacement !== 'primary' && workspacePlacement !== 'secondary') return [];
+    const primary = workspace.repos.find((repo) => repo.projectId === workspace.primaryProjectId) ?? null;
+    const ordered = primary
+      ? [primary, ...workspace.repos.filter((repo) => repo !== primary)]
+      : workspace.repos;
+    return ordered.map((repo) => ({
+      projectId: repo.projectId,
+      alias: repo.alias,
+      primary: repo.projectId === workspace.primaryProjectId,
+      path: repo.project?.path ?? null,
+      savedBranch: repo.branch,
+    }));
+  }, [repositoryWorkspaces.activeWorkspace, workspacePlacement]);
+
+  const repositoryStatuses = useWorkspaceGitStatuses({
+    repos: workspaceRepositories,
+    git,
+    enabled: showRepository,
+  });
 
   const gitStatus = useGitStore(
     React.useCallback(
@@ -240,6 +280,14 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     else openContextPanelTab(directory, { mode: 'diff', diffScope: 'working' });
   }, [directory, mobile, openContextPanelTab]);
 
+  // A workspace row opens that repo's working diff through the panel's own
+  // directory, so a repo beside the primary opens without moving the session.
+  const openRepositoryChanges = React.useCallback((path: string) => {
+    if (!directory) return;
+    if (mobile) mobile.openChanges();
+    else openContextPanelTab(directory, { mode: 'diff', diffScope: 'working', targetDirectory: path });
+  }, [directory, mobile, openContextPanelTab]);
+
   // Working-tree changes, from the same git status the Git panel reads.
   //
   // `Session.summary` looks like the natural source and is not: OpenCode resets
@@ -294,7 +342,10 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   // restate the number directly above it.
   const showCostBreakdown = cost !== null && subagentCount > 0 && subagentCost > 0;
   const hasSession = showSession && (contextUsage !== null || cost !== null || Boolean(goalRow));
-  const hasRepository = showRepository && Boolean(branch || changed || prSummary || attentionLabel || projectActionsContext);
+  const hasRepository = showRepository && (
+    workspaceRepositories.length > 0
+    || Boolean(branch || changed || prSummary || attentionLabel || projectActionsContext)
+  );
 
   useReportWorkStatusPresence('session-repository', hasSession || hasRepository);
 
@@ -353,56 +404,68 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
         >
           {attentionLabel ? <WorkStatusCallout>{attentionLabel}</WorkStatusCallout> : null}
 
-          {/* Branch first: the changes below are the changes *on it*, and the
-              row reads as a caption to the branch rather than a loose number. */}
-          {branch ? (
-            <WorkStatusRow
-              icon="git-branch"
-              onClick={directory ? () => openSurface('git') : undefined}
-              ariaLabel={t('chat.workStatus.action.openGit')}
-              label={branch}
-              value={(gitStatus?.ahead ?? 0) > 0 || (gitStatus?.behind ?? 0) > 0 ? (
-                <>
-                  {(gitStatus?.ahead ?? 0) > 0
-                    ? <WorkStatusValue tone="muted">{`↑${gitStatus?.ahead}`}</WorkStatusValue> : null}
-                  {(gitStatus?.behind ?? 0) > 0
-                    ? <WorkStatusValue tone="muted">{`↓${gitStatus?.behind}`}</WorkStatusValue> : null}
-                </>
-              ) : undefined}
+          {/* One workspace repo row per repo, replacing the single-repo
+              readouts. A session outside the active workspace keeps them. */}
+          {workspaceRepositories.length > 0 ? (
+            <WorkspaceRepositoryList
+              repos={workspaceRepositories}
+              statuses={repositoryStatuses}
+              onOpenRepo={directory ? openRepositoryChanges : undefined}
             />
-          ) : null}
+          ) : (
+            <>
+              {/* Branch first: the changes below are the changes *on it*, and the
+                  row reads as a caption to the branch rather than a loose number. */}
+              {branch ? (
+                <WorkStatusRow
+                  icon="git-branch"
+                  onClick={directory ? () => openSurface('git') : undefined}
+                  ariaLabel={t('chat.workStatus.action.openGit')}
+                  label={branch}
+                  value={(gitStatus?.ahead ?? 0) > 0 || (gitStatus?.behind ?? 0) > 0 ? (
+                    <>
+                      {(gitStatus?.ahead ?? 0) > 0
+                        ? <WorkStatusValue tone="muted">{`↑${gitStatus?.ahead}`}</WorkStatusValue> : null}
+                      {(gitStatus?.behind ?? 0) > 0
+                        ? <WorkStatusValue tone="muted">{`↓${gitStatus?.behind}`}</WorkStatusValue> : null}
+                    </>
+                  ) : undefined}
+                />
+              ) : null}
 
-          {nestedRepoLabel ? (
-            <WorkStatusRow
-              icon="folder"
-              onClick={directory ? () => openSurface('git') : undefined}
-              ariaLabel={t('chat.workStatus.action.openGit')}
-              label={nestedRepoLabel}
-              muted
-            />
-          ) : null}
+              {nestedRepoLabel ? (
+                <WorkStatusRow
+                  icon="folder"
+                  onClick={directory ? () => openSurface('git') : undefined}
+                  ariaLabel={t('chat.workStatus.action.openGit')}
+                  label={nestedRepoLabel}
+                  muted
+                />
+              ) : null}
 
-          {changed ? (
-            <WorkStatusRow
-              icon="file-edit"
-              onClick={directory ? openChanges : undefined}
-              ariaLabel={t('chat.workStatus.action.openChanges')}
-              // The count names the row, matching the composer's changed-files
-              // bar; the diffstat stays the trailing value.
-              label={changed.files === 1
-                ? t('chat.workStatus.git.changedFileSingle', { count: changed.files })
-                : t('chat.workStatus.git.changedFilePlural', { count: changed.files })}
-              value={changed.hasStats && (changed.additions > 0 || changed.deletions > 0) ? (
-                <>
-                  <WorkStatusValue tone="success">{`+${changed.additions}`}</WorkStatusValue>
-                  {/* Neutral separator: colouring it would imply it carries a
-                      status of its own. */}
-                  <WorkStatusValue tone="muted">/</WorkStatusValue>
-                  <WorkStatusValue tone="error">{`−${changed.deletions}`}</WorkStatusValue>
-                </>
-              ) : undefined}
-            />
-          ) : null}
+              {changed ? (
+                <WorkStatusRow
+                  icon="file-edit"
+                  onClick={directory ? openChanges : undefined}
+                  ariaLabel={t('chat.workStatus.action.openChanges')}
+                  // The count names the row, matching the composer's changed-files
+                  // bar; the diffstat stays the trailing value.
+                  label={changed.files === 1
+                    ? t('chat.workStatus.git.changedFileSingle', { count: changed.files })
+                    : t('chat.workStatus.git.changedFilePlural', { count: changed.files })}
+                  value={changed.hasStats && (changed.additions > 0 || changed.deletions > 0) ? (
+                    <>
+                      <WorkStatusValue tone="success">{`+${changed.additions}`}</WorkStatusValue>
+                      {/* Neutral separator: colouring it would imply it carries a
+                          status of its own. */}
+                      <WorkStatusValue tone="muted">/</WorkStatusValue>
+                      <WorkStatusValue tone="error">{`−${changed.deletions}`}</WorkStatusValue>
+                    </>
+                  ) : undefined}
+                />
+              ) : null}
+            </>
+          )}
 
           {prSummary ? (
             <>

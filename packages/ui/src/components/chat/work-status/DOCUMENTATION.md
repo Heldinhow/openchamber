@@ -182,6 +182,7 @@ which requests only providers enabled for this panel.
 |---|---|---|
 | Context + cost | `contextUsage.ts` over `useSessionMessages`; cost via `useSubagentCostRollup` (own cost + every descendant subagent, recursively) | see below — the store getters cannot serve this |
 | Branch, ahead/behind, attention | `useGitStore` directory state | warmed via `runBackgroundNetworkTask(ensureStatus)` and refreshed from Git mutation hints |
+| Workspace repo list | `useWorkspaceGitStatuses` over the active workspace from `useRepoWorkspaces`, keyed by project id | only while the session lands in a workspace of more than one repo; the shared git store is the one source |
 | Changed files | `useGitStore` status `files` + `diffStats` | working tree, not session-authored edits |
 | PR + checks | `useFreshestSourceControlVisualSummaryForBranch` | **read-only**; follows the freshest bound-identity entry for the branch |
 | Subagents | child sessions from `useAllLiveSessions` (`parentID`) + `useAllSessionStatuses`; per-row cost from `computeRollup`'s `perChildCost` (each child's own subtree total, so nested subagent-of-subagent cost rolls up under its immediate parent row) | |
@@ -366,6 +367,35 @@ request list uses, so the number reads the same in both places. The row once
 showed "1 failed" or "2 running" alone, which gave no sense of how far the run
 was; the per-state counts now live in the row's tooltip.
 
+### The workspace repo list
+
+When the session's directory lands in the primary or a secondary repo of the
+active workspace and the workspace holds more than one repo, the Project
+section lists every repo instead of the single branch, nested-repo and changed
+rows. `WorkspaceRepositoryList` renders the rows and owns nothing else:
+`WorkStatusPrimaryGroup` reads the workspace, places the session
+(`repoWorkspaceSessionPlacement`) and feeds the list the live statuses.
+
+Primary first, then the workspace's own repo order. A row reads its live
+branch, ahead/behind and changed count from the shared git store; a repo whose
+status has not arrived shows no branch and no count, never a false clean. A
+repo without git reads "not a Git repository", and a repo whose project left
+the catalog keeps its alias row as `missing`, unclickable and never fetched.
+A live branch that differs from the branch saved on the workspace adds a
+`saved branch: …` note; nothing checks out or rewrites the snapshot.
+
+Clicking a row opens that repo's working diff through the panel's own
+directory with `targetDirectory` set to the repo's project path, so a
+secondary repo opens without moving the session. On the phone it opens the
+Changes tab.
+
+The summary counts the repos, and adds the changed total only when every
+listed repo answered: a missing, unknown or non-git repo hides the total
+rather than letting a partial sum read as the workspace's count.
+
+The list is the `repository-repos` collapsible; its expansion lives in the
+same persisted `workStatusExpandedSections` map and defaults to expanded.
+
 ### Changed files come from git status, not the session
 
 `Session.summary` looks like the obvious source and does not work. OpenCode's
@@ -422,8 +452,9 @@ saved order, so it comes back where the user put it.
 
 The default order is by durability:
 
-1. **Session** (goal, context, cost), **Project** (attention, branch,
-   changes, PR, checks), **Usage**, and **Turn stats** (session telemetry:
+1. **Session** (goal, context, cost), **Project** (attention, the workspace's
+   repo list, branch, changes, PR, checks), **Usage**, and **Turn stats**
+   (session telemetry:
    throughput, duration, TTFT, cache hit rate) — true for as long as the session
    is open. Usage sits here rather than lower down because a spent quota stops the
    work outright;
@@ -793,7 +824,8 @@ Git context surface being opened first.
 Expanded sections (`workStatusExpandedSections`, keyed by a stable section id)
 and the scroll offset (`workStatusScrollTop`) live in the persisted
 `useUIStore`. Component state would not do: the content unmounts every time the
-context panel opens, which would silently discard the user's arrangement.
+context panel opens, which would silently discard the user's arrangement. The
+Project section's repo list persists under `repository-repos` in the same map.
 
 The scroll offset is restored in the scroller's callback ref, at the moment it
 attaches, and read through `useUIStore.getState()` rather than a subscription —
