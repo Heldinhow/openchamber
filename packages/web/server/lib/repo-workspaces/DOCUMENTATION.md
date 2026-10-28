@@ -20,11 +20,14 @@ OpenCode `references` are read through the injected `readConfigLayers`,
 through the injected `writeConfig` from `../opencode/shared.js` — the atomic
 writer that preserves comments and foreign keys. This module has no second
 writer. The write target is always `<primary>/.opencode/opencode.json`; a root
-`opencode.json` is reported in `configTarget.rootConfigPath` so the dialog can
-warn that the new layer overrides it, and is never edited. Because
-`readConfigLayers` parses only the highest-priority project file, the service
-reads `.opencode/opencode.jsonc` and the root `opencode.json`/`opencode.jsonc`
-itself as lower layers; the shared reader's merge order stays unchanged.
+config (`opencode.jsonc` when both root files exist) is reported in
+`configTarget.rootConfigPath` so the dialog can warn that the new layer
+overrides it, and is never edited. Because `readConfigLayers` parses only the
+highest-priority project file, the service reads `.opencode/opencode.jsonc` and
+the root `opencode.json`/`opencode.jsonc` itself as lower layers for
+classification on read; the shared reader's merge order stays unchanged.
+Removal never reads those lower files: `removeCreatedRefs` only reads and writes
+the target layer.
 
 ## Invariants
 
@@ -75,9 +78,12 @@ itself as lower layers; the shared reader's merge order stays unchanged.
   folder that may not be a project yet: the folder must be absolute and exist,
   an unreadable config is 422 `configError`, and the answer is
   `{ path, rootConfigPath }` where `path` is always
-  `<folder>/.opencode/opencode.json`. `rootConfigPath` names the existing
-  `<folder>/opencode.json` (or `.jsonc`) even when `.opencode/opencode.json`
-  already exists, because the dialog warns before writing over that layer.
+  `<folder>/.opencode/opencode.json`. `rootConfigPath` names the root file the
+  new layer would shadow, checked by existence even when
+  `.opencode/opencode.json` already exists. `.jsonc` wins over `.json` when both
+  are present, matching OpenCode's load order. Only a missing file (`ENOENT`)
+  leaves it null; any other stat error still names the candidate, because it may
+  exist and be shadowed.
 - Create validates every secondary's config and folder before persisting
   settings. An unreadable config is 422 with `configError: { path, message }`;
   an alias already defined in any layer — including a lower project file — is
@@ -101,7 +107,9 @@ itself as lower layers; the shared reader's merge order stays unchanged.
   entries, only from the workspace's own target file, and only when the current
   value equals the one the workspace wrote. A user-edited owned entry needs
   `confirmRefs`; a reference outside `createdRefs` is never touched, and an
-  entry a lower project file defines is never removed or renamed. All
+  entry a lower project file defines is never removed or renamed. Removal reads
+  only `readConfigLayers` and the target file, never the lower project files, so
+  a malformed root config cannot block it; a malformed target still does. All
   removals of one call land in one atomic write, so a failed write removes
   nothing. The whole request is preflighted first: an owned alias whose project
   or path is gone cannot be verified, so it blocks every removal (`removed: []`,
@@ -260,8 +268,23 @@ the user's root file. `configTarget.rootConfigPath` names the root file that
 the new layer starts to override, tested by existence rather than by
 `getProjectConfigPath`, because that helper stops reporting the root as soon as
 the target exists. The dialog can then warn on every save, not only the first.
-Rejected alternative: writing the root when it is the only project file, which
-is a silent edit of a file the contract does not own.
+The check reads `opencode.jsonc` before `opencode.json`, because OpenCode loads
+the `.jsonc` later and it wins when both exist; only `ENOENT` suppresses the
+warning, since any other stat error still means a file may be there and
+shadowed. Rejected alternative: writing the root when it is the only project
+file, which is a silent edit of a file the contract does not own.
+
+### Why removal does not read the lower project files
+
+The lower project files exist to classify aliases on read: without them an
+alias only the root defines would read as `missing`. Removal does no such
+classification. It only proves a `createdRefs` entry is still the value this
+workspace wrote in its target and then deletes it there, so reading a lower
+file could only turn an unrelated broken file into a refusal to delete. The
+read path keeps reporting that file as `unknown` with `refsError`; the delete
+path now deletes. Rejected alternative: keeping the shared read helper, which
+made deleting a workspace with references depend on a file the deletion never
+touches.
 
 ### Why the service reads the lower project files itself
 

@@ -77,7 +77,10 @@ const createService = (overrides = {}) => {
     sanitizeProjects: (value) => (Array.isArray(value) ? value : undefined),
     sanitizeRepoWorkspaces: (value) => (Array.isArray(value) ? { workspaces: value, discarded: 0 } : undefined),
     validateDirectoryPath: vi.fn(async (directory) => ({ ok: true, directory })),
-    fsPromises: { mkdir: vi.fn(async () => undefined) },
+    fsPromises: {
+      mkdir: vi.fn(async () => undefined),
+      stat: vi.fn(async () => ({ isFile: () => false })),
+    },
     crypto: { randomUUID: () => 'fixed-uuid' },
     readConfigLayers: vi.fn(layers),
     readConfigFile: vi.fn((filePath) => (
@@ -1127,6 +1130,44 @@ describe('workspace service: write references', () => {
     });
   });
 
+  it('names the jsonc root config that wins when both root files exist', async () => {
+    const root = caseRoot('config-target-both');
+    const api = projectAt(root, 'api', 'API');
+    writeJson(path.join(api.path, 'opencode.json'), {});
+    const jsonc = writeJson(path.join(api.path, 'opencode.jsonc'), {});
+    const { service } = fixtureService({ projects: [], workspaces: [], activeWorkspaceId: null });
+
+    await expect(service.configTarget({ path: api.path })).resolves.toEqual({
+      path: path.join(api.path, '.opencode', 'opencode.json'),
+      rootConfigPath: jsonc.file,
+    });
+  });
+
+  it('names a root config it cannot stat instead of hiding the warning', async () => {
+    const root = caseRoot('config-target-stat-error');
+    const api = projectAt(root, 'api', 'API');
+    writeJson(path.join(api.path, 'opencode.json'), {});
+    const denied = path.join(api.path, 'opencode.jsonc');
+    const error = Object.assign(new Error(`EACCES: permission denied, stat '${denied}'`), { code: 'EACCES' });
+    const { service } = fixtureService(
+      { projects: [], workspaces: [], activeWorkspaceId: null },
+      {
+        fsPromises: {
+          mkdir: vi.fn(async () => undefined),
+          stat: vi.fn(async (candidate) => {
+            if (candidate === denied) throw error;
+            return fs.promises.stat(candidate);
+          }),
+        },
+      },
+    );
+
+    await expect(service.configTarget({ path: api.path })).resolves.toEqual({
+      path: path.join(api.path, '.opencode', 'opencode.json'),
+      rootConfigPath: denied,
+    });
+  });
+
   it('refuses to shadow a root-config alias without confirmation and writes nothing', async () => {
     const root = caseRoot('write-root-conflict');
     const api = projectAt(root, 'api', 'API');
@@ -1736,6 +1777,71 @@ describe('workspace service: delete', () => {
     });
 
     const result = await service.remove('ws_1', { removeCreatedRefs: true, confirmRefs: ['web'] });
+
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(readConfigFile(file).references).toEqual({});
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
+  });
+
+  it('removes a hand-edited owned entry even when a lower root config is malformed', async () => {
+    const { api, file, projects, stored } = deleteFixture('delete-malformed-root', ['web']);
+    const edited = {
+      references: {
+        web: { path: '/user/edited', description: 'Edited web' },
+        docs: { path: '/user/docs', description: 'User docs' },
+      },
+    };
+    fs.writeFileSync(file, JSON.stringify(edited));
+    // Removal reads only its own target; this lower file neither describes nor blocks it.
+    fs.writeFileSync(path.join(api.path, 'opencode.json'), '{\n  "references": {');
+    const { service, dependencies } = fixtureService({
+      projects,
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', { removeCreatedRefs: true, confirmRefs: ['web'] });
+
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(readConfigFile(file).references).toEqual({
+      docs: { path: '/user/docs', description: 'User docs' },
+    });
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the workspace when the target config is malformed', async () => {
+    const { file, projects, stored } = deleteFixture('delete-malformed-target', ['web']);
+    fs.writeFileSync(file, '{\n  "references": {');
+    const { service, dependencies } = fixtureService({
+      projects,
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', { removeCreatedRefs: true });
+
+    expect(result).toMatchObject({ removed: false, failedAlias: null, configError: { path: file } });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
+  it('removes two confirmed hand-edited owned entries in one delete', async () => {
+    const { file, projects, stored } = deleteFixture('delete-multi-confirmed', ['web', 'docs']);
+    fs.writeFileSync(file, JSON.stringify({
+      references: {
+        web: { path: '/user/web', description: 'Edited web' },
+        docs: { path: '/user/docs', description: 'Edited docs' },
+      },
+    }));
+    const { service, dependencies } = fixtureService({
+      projects,
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', {
+      removeCreatedRefs: true,
+      confirmRefs: ['web', 'docs'],
+    });
 
     expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
     expect(readConfigFile(file).references).toEqual({});

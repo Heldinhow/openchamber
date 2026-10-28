@@ -469,20 +469,27 @@ const lowerProjectConfigs = (projectPath, projectConfigPath, readConfigFile) => 
 /**
  * The dialog needs to warn when the `.opencode/` layer overrides a root config.
  * The root file is reported whenever it exists, including when the write target
- * already exists and `getProjectConfigPath` no longer points at it.
+ * already exists and `getProjectConfigPath` no longer points at it. `.jsonc` is
+ * checked first because OpenCode loads it after `.json`, so it is the file that
+ * wins when both exist. Only a missing file means there is nothing to warn
+ * about; any other stat error still names the candidate, which may exist and be
+ * shadowed by the new layer.
  */
 const describeConfigTarget = async (projectPath, fsPromises) => {
   const root = path.resolve(projectPath);
   let rootConfigPath = null;
-  for (const file of ['opencode.json', 'opencode.jsonc']) {
+  for (const file of ['opencode.jsonc', 'opencode.json']) {
     const candidate = path.join(root, file);
     try {
       if ((await fsPromises.stat(candidate)).isFile()) {
         rootConfigPath = candidate;
         break;
       }
-    } catch {
-      // No readable file there; only an existing root config earns the warning.
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        rootConfigPath = candidate;
+        break;
+      }
     }
   }
   return { path: refsConfigPath(projectPath), rootConfigPath };
@@ -1000,8 +1007,11 @@ export const createWorkspaceService = (dependencies) => {
     const references = new Map(expectedReferences(workspace, projectsById).map((reference) => [reference.alias, reference]));
 
     return withRefsLock(async () => {
+      // Removal only reads and writes the target layer. The lower project files
+      // classify aliases on read, but nothing here classifies: a malformed one
+      // must not block deleting the entry this workspace wrote.
       const layers = readConfigLayers(primary.path);
-      const layersError = configReadError(layers, readLowerConfigs(primary.path));
+      const layersError = configReadError(layers);
       if (layersError) throw configErrorResponse(layersError);
 
       const targetPath = refsConfigPath(primary.path);

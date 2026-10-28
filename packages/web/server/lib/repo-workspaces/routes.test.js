@@ -1,9 +1,23 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { registerCommonRequestMiddleware } from '../opencode/core-routes.js';
+import { createProjectDirectoryRuntime } from '../opencode/project-directory-runtime.js';
 import { registerWorkspaceRoutes } from './routes.js';
+
+// The real directory rule, so a file or a symlink is checked against the disk
+// rather than against a stub that always says yes.
+const directoryRuntime = createProjectDirectoryRuntime({
+  fsPromises: fs.promises,
+  path,
+  normalizeDirectoryPath: (value) => value,
+  readSettingsFromDiskMigrated: async () => ({}),
+  getReadSettingsFromDiskMigrated: () => async () => ({}),
+  sanitizeProjects: (input) => input,
+});
 
 const emptyLayers = () => ({
   userConfig: {},
@@ -173,6 +187,73 @@ describe('workspace routes', () => {
       error: 'OpenCode configuration cannot be read',
       configError: { path: projectConfigPath, message },
     });
+  });
+
+  it('refuses a relative config-target path without touching the disk', async () => {
+    const { app, dependencies } = createApp({
+      validateDirectoryPath: vi.fn(async (directory) => ({ ok: true, directory })),
+    });
+
+    const response = await request(app)
+      .get('/api/workspaces/config-target')
+      .query({ path: 'relative/api' })
+      .expect(422);
+
+    expect(response.body).toEqual({
+      error: 'Workspace is invalid',
+      fields: { path: 'Folder path must be absolute' },
+    });
+    expect(dependencies.validateDirectoryPath).not.toHaveBeenCalled();
+  });
+
+  it('refuses a config-target path that is a file, not a directory', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-target-file-'));
+    const filePath = path.join(root, 'api.json');
+    fs.writeFileSync(filePath, '{}');
+    const { app } = createApp({
+      validateDirectoryPath: directoryRuntime.validateDirectoryPath,
+      fsPromises: { stat: fs.promises.stat.bind(fs.promises) },
+    });
+
+    try {
+      const response = await request(app)
+        .get('/api/workspaces/config-target')
+        .query({ path: filePath })
+        .expect(422);
+
+      expect(response.body).toEqual({
+        error: 'Workspace is invalid',
+        fields: { path: 'Specified path is not a directory' },
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('answers the canonical path for a symlinked config-target directory', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-target-link-'));
+    const real = path.join(root, 'repos', 'api');
+    const link = path.join(root, 'api-link');
+    fs.mkdirSync(real, { recursive: true });
+    fs.symlinkSync(real, link, 'dir');
+    const { app } = createApp({
+      validateDirectoryPath: directoryRuntime.validateDirectoryPath,
+      fsPromises: { stat: fs.promises.stat.bind(fs.promises) },
+    });
+
+    try {
+      const response = await request(app)
+        .get('/api/workspaces/config-target')
+        .query({ path: link })
+        .expect(200);
+
+      expect(response.body).toEqual({
+        path: path.join(fs.realpathSync(real), '.opencode', 'opencode.json'),
+        rootConfigPath: null,
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('serializes the active workspace reference states and one config parse error', async () => {
