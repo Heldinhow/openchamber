@@ -419,15 +419,23 @@ the user can save.
 The `references[alias].path` value is written absolute and normalized. That was
 verified against the installed CLI on 2026-10-28:
 
-- Version: `opencode v2.1.4` (repo pin is 2.2.0).
-- Fixture: two git repositories under
-  `/private/var/folders/n4/bjx54c1d3_d7438735kj02sr0000gn/T/opencode/ws-ref-gate/`,
-  `repo-a/.opencode/opencode.json` pointing `references.b.path` at the
-  absolute path of `repo-b`.
-- Command (run in `repo-a`):
-  `opencode run --standalone --auto --format json --model opencode-go/deepseek-v4.1-flash "Crie o arquivo b-edit.txt dentro de @b/ com o texto ok. Depois leia o arquivo e confirme o caminho."`
-- Result: accepted. The tool wrote and read
-  `/private/var/folders/n4/bjx54c1d3_d7438735kj02sr0000gn/T/opencode/ws-ref-gate/repo-b/b-edit.txt`.
-- Conclusion: an absolute `path` works; no relative fallback is needed.
+- Version: `opencode v2.2.0`, the version the repo pins (the machine's CLI is
+  `v2.1.4`). The check was repeated on 2026-10-28 with the pinned binary.
+- Fixture: two git repositories under `/tmp/oc-ws-e2e/p5-abs/`,
+  `primary/.opencode/opencode.json` pointing `references.web.path` at the
+  absolute path of `secondary`, with an isolated `HOME`.
+- Commands (run in `primary`): `opencode serve --port 3911`, then
+  `GET /api/reference` with the server's basic auth.
+- Result: accepted. The route returned
+  `{"name":"web","path":"/tmp/oc-ws-e2e/p5-abs/secondary","source":{"type":"local","path":"/tmp/oc-ws-e2e/p5-abs/secondary"}}`.
+- Control: the same entry with `"path": "../secondary"` was also accepted but
+  resolved to `<primary>/secondary`, because OpenCode resolves a relative path
+  against the config file's directory (`.opencode/`), not the project root.
+  That base is exactly what the app does not want to depend on when the file
+  moves between the root and `.opencode/`, so absolute remains the contract.
+- Conclusion: an absolute `path` works on 2.2.0; no relative fallback is needed.
 
-The fixture lives outside the repository and is not committed.
+The absolute-path fixture lives outside the repository and is not committed.
+The earlier v2.1.4 check (a real model writing through `@b/` under
+`/private/var/folders/.../ws-ref-gate/`) reached the same conclusion; it is
+history only, since the repo pins 2.2.0.
