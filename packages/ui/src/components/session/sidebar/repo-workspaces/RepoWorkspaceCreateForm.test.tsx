@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React, { act } from 'react';
 import type { Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
-import type { CreateRepoWorkspaceResult, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
+import type { CreateRepoWorkspaceResult, RepoWorkspaceImportDraft, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import type { RepoWorkspaceDraft } from './repoWorkspaceDraft';
 
 let Form: typeof import('./RepoWorkspaceCreateForm').RepoWorkspaceCreateForm;
@@ -170,6 +170,106 @@ describe('workspace create form', () => {
     expect(retried).toEqual(['web']);
     expect(retryConfirmations).toEqual(['web']);
     expect(cancelled).toBe(1);
+  });
+
+  test('an untouched name field shows no error until it is blurred', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          initialDraft={{ name: '', rows: [], primaryKey: null }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    const nameInput = document.querySelector<HTMLInputElement>('input')!;
+    expect(document.body.textContent).not.toContain('Enter a name.');
+    expect(nameInput.getAttribute('aria-invalid')).toBe('false');
+
+    await act(async () => {
+      nameInput.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+
+    expect(document.body.textContent).toContain('Enter a name.');
+    expect(nameInput.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  test('submitting an empty form shows the name error and sends nothing', async () => {
+    let calls = 0;
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          initialDraft={{ name: '', rows: [], primaryKey: null }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          createWorkspace={async () => {
+            calls += 1;
+            return pendingResult();
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).not.toContain('Enter a name.');
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(document.body.textContent).toContain('Enter a name.');
+    expect(document.querySelector<HTMLInputElement>('input')?.getAttribute('aria-invalid')).toBe('true');
+    expect(document.querySelector<HTMLButtonElement>('form button[type="submit"]')?.disabled).toBe(true);
+    expect(calls).toBe(0);
+  });
+
+  test('create stays disabled while an import is running', async () => {
+    let resolveImport: (value: RepoWorkspaceImportDraft) => void = () => undefined;
+    let calls = 0;
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          importWorkspace={() => new Promise((resolve) => { resolveImport = resolve; })}
+          createWorkspace={async () => {
+            calls += 1;
+            return pendingResult();
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    const submit = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
+    expect(submit?.disabled).toBe(false);
+
+    const pathInput = document.querySelector<HTMLInputElement>('input[placeholder="~/project.code-workspace"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      setValue!.call(pathInput, '/work/shop.code-workspace');
+      pathInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const importButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Import .code-workspace')!;
+    await act(async () => {
+      importButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(submit?.disabled).toBe(true);
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(calls).toBe(0);
+
+    await act(async () => {
+      resolveImport({ name: 'Shop Platform', folders: [] });
+    });
   });
 
   test('an invalid draft keeps the create button disabled and sends nothing', async () => {

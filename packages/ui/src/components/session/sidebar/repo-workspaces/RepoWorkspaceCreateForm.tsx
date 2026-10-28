@@ -77,6 +77,8 @@ type RepoWorkspaceCreateFormProps = {
   importWorkspace?: (filePath: string) => Promise<RepoWorkspaceImportDraft>;
 };
 
+const ROW_GRID_COLS = 'grid-cols-[4.5rem_minmax(4.5rem,7rem)_minmax(0,1fr)_7rem_1.75rem]';
+
 const configFilePath = (projectPath: string): string => {
   const base = normalizePath(projectPath) ?? projectPath.trim();
   return base === '/' ? '/.opencode/opencode.json' : `${base}/.opencode/opencode.json`;
@@ -126,7 +128,7 @@ const RepoRow: React.FC<{
                 : null;
 
   return (
-    <div className="grid grid-cols-[4.5rem_4.5rem_minmax(0,1fr)_7rem_1.75rem] items-start gap-2">
+    <div className={`grid ${ROW_GRID_COLS} items-start gap-2`}>
       <div className="flex h-8 items-center justify-center">
         <Radio
           checked={isPrimary}
@@ -174,6 +176,7 @@ const RepoRow: React.FC<{
         id={aliasErrorId}
         role={errorText ? 'alert' : undefined}
         className={`col-start-2 col-span-4 min-h-4 truncate typography-micro ${errorText ? 'text-status-error' : 'text-muted-foreground'}`}
+        title={errorText ?? undefined}
       >
         {errorText ?? (registered || row.missing ? '' : t('sessions.sidebar.workspace.unregisteredProject'))}
       </p>
@@ -204,6 +207,8 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
     editing ? draftFromWorkspace(editing.workspace) : (initialDraft ?? emptyRepoWorkspaceDraft())
   ));
   const [submitErrors, setSubmitErrors] = React.useState<SubmitErrors>(emptySubmitErrors);
+  const [nameTouched, setNameTouched] = React.useState(false);
+  const [submitAttempted, setSubmitAttempted] = React.useState(false);
   const [configError, setConfigError] = React.useState<{ path: string; message: string } | null>(
     editing?.refsError ?? null,
   );
@@ -223,6 +228,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const nextRowKey = React.useRef(draft.rows.length);
   const nameId = React.useId();
   const nameErrorId = React.useId();
+  const contentId = React.useId();
   const importErrorId = React.useId();
   const primaryErrorId = React.useId();
 
@@ -315,12 +321,15 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const neededConfirmations = [...overwriteAliases, ...removeDifferent];
   const pendingConfirmation = neededConfirmations.some((alias) => !confirmations[alias]);
 
+  const showNameError = (nameTouched || submitAttempted) && nameError;
+
   const canSubmit = !nameError
     && !primaryError
     && Object.keys(rowErrors).length === 0
     && !pendingConfirmation
     && !configError
-    && !submitting;
+    && !submitting
+    && !importing;
 
   const updateDraft = (next: (current: RepoWorkspaceDraft) => RepoWorkspaceDraft) => {
     setSubmitErrors(emptySubmitErrors());
@@ -387,6 +396,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setSubmitAttempted(true);
     if (!canSubmit) return;
     setSubmitting(true);
     setSubmitErrors(emptySubmitErrors());
@@ -508,7 +518,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-start gap-2">
-          <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
+          <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-status-warning" />
           <h2 id={titleId} className="typography-ui-header font-semibold leading-none text-foreground">
             {t(editing ? 'sessions.sidebar.workspace.pendingTitleEdit' : 'sessions.sidebar.workspace.pendingTitle')}
           </h2>
@@ -518,13 +528,13 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         {pending.configError ? (
           <div className="rounded-lg bg-[var(--status-error)]/10 p-3" role="alert">
             <p className="break-all font-mono typography-micro">{pending.configError.path}</p>
-            <p className="mt-1 typography-meta text-muted-foreground">{t('sessions.sidebar.workspace.configUnreadable')}</p>
+            <p className="mt-1 typography-meta text-foreground">{t('sessions.sidebar.workspace.configUnreadable')}</p>
           </div>
         ) : null}
         <ul className="flex flex-col gap-2">
           {pending.aliases.map((alias) => (
             <li key={alias} className="flex items-center gap-2">
-              <code className="rounded bg-interactive-hover px-1.5 py-0.5 font-mono typography-micro">{`@${alias}`}</code>
+              <code className="rounded bg-[var(--surface-muted)] px-1.5 py-0.5 font-mono typography-micro">{`@${alias}`}</code>
               <Button
                 variant="default"
                 size="sm"
@@ -563,11 +573,12 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           id={nameId}
           value={draft.name}
           onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
+          onBlur={() => setNameTouched(true)}
           disabled={submitting}
-          aria-invalid={nameError}
-          aria-describedby={nameError ? nameErrorId : undefined}
+          aria-invalid={showNameError}
+          aria-describedby={showNameError ? nameErrorId : undefined}
         />
-        {nameError ? (
+        {showNameError ? (
           <p id={nameErrorId} role="alert" className="typography-micro text-status-error">
             {t('sessions.sidebar.workspace.nameRequired')}
           </p>
@@ -622,7 +633,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
 
       <fieldset className="min-w-0" aria-describedby={primaryError ? primaryErrorId : undefined}>
         <legend className="sr-only">{t('sessions.sidebar.workspace.primary')}</legend>
-        <div className="grid grid-cols-[4.5rem_4.5rem_minmax(0,1fr)_7rem_1.75rem] items-center gap-2 pb-1 typography-micro uppercase tracking-wide text-muted-foreground">
+        <div className={`grid ${ROW_GRID_COLS} items-center gap-2 pb-1 text-[0.6875rem] uppercase tracking-wide text-muted-foreground`}>
           <span>{t('sessions.sidebar.workspace.primaryColumn')}</span>
           <span>{t('sessions.sidebar.workspace.aliasColumn')}</span>
           <span>{t('sessions.sidebar.workspace.folderColumn')}</span>
@@ -679,12 +690,12 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         editing ? (
           <div className="rounded-lg bg-[var(--status-warning)]/10 p-3">
             <div className="flex min-w-0 items-center gap-2">
-              <Icon name="error-warning" className="size-3.5 shrink-0 text-[var(--status-warning)]" />
+              <Icon name="error-warning" className="size-3.5 shrink-0 text-status-warning" />
               <p className="min-w-0 flex-1 typography-ui-label font-medium">
                 {t('sessions.sidebar.workspace.diffTitle')}
               </p>
             </div>
-            <p className="mt-1 break-all font-mono typography-micro text-muted-foreground">{targetPath}</p>
+            <p className="mt-1 break-all font-mono typography-micro text-foreground">{targetPath}</p>
             <ul className="mt-1 flex flex-col gap-0.5 font-mono typography-micro text-foreground">
               {diff?.removed.map((alias) => (
                 <li key={`removed-${alias}`}>{`- ${t('sessions.sidebar.workspace.diffRemoved', { alias })}`}</li>
@@ -697,7 +708,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
               ))}
             </ul>
             {hasUnregistered ? (
-              <p className="mt-1 typography-micro text-muted-foreground">
+              <p className="mt-1 typography-micro text-foreground">
                 {t('sessions.sidebar.workspace.noticeUnregistered')}
               </p>
             ) : null}
@@ -740,11 +751,11 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           </div>
         ) : secondaryRows.length === 0 ? (
           <div className="rounded-lg bg-[var(--status-info)]/10 p-3">
-            <p className="typography-meta text-muted-foreground">
+            <p className="typography-meta text-foreground">
               {t('sessions.sidebar.workspace.oneRepoNotice')}
             </p>
             {hasUnregistered ? (
-              <p className="mt-1 typography-micro text-muted-foreground">
+              <p className="mt-1 typography-micro text-foreground">
                 {t('sessions.sidebar.workspace.noticeUnregistered')}
               </p>
             ) : null}
@@ -752,7 +763,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         ) : (
           <div className="rounded-lg bg-[var(--status-warning)]/10 p-3">
             <div className="flex min-w-0 items-center gap-2">
-              <Icon name="error-warning" className="size-3.5 shrink-0 text-[var(--status-warning)]" />
+              <Icon name="error-warning" className="size-3.5 shrink-0 text-status-warning" />
               <p className="min-w-0 flex-1 typography-ui-label font-medium">
                 {secondaryRows.length === 1
                   ? t('sessions.sidebar.workspace.noticeSingle', { count: secondaryRows.length })
@@ -763,26 +774,27 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
                 size="sm"
                 className="h-auto shrink-0 p-0"
                 aria-expanded={showContent}
+                aria-controls={showContent ? contentId : undefined}
                 onClick={() => setShowContent((current) => !current)}
               >
                 {t('sessions.sidebar.workspace.showContent')}
               </Button>
             </div>
-            <p className="mt-1 break-all font-mono typography-micro text-muted-foreground">{targetPath}</p>
+            <p className="mt-1 break-all font-mono typography-micro text-foreground">{targetPath}</p>
             <div className="mt-1 flex flex-wrap gap-1.5">
               {secondaryRows.map((row) => (
-                <code key={row.key} className="rounded bg-interactive-hover px-1.5 py-0.5 font-mono typography-micro">
+                <code key={row.key} className="rounded bg-[var(--surface-muted)] px-1.5 py-0.5 font-mono typography-micro">
                   {`@${row.alias.trim()}`}
                 </code>
               ))}
             </div>
             {hasUnregistered ? (
-              <p className="mt-1 typography-micro text-muted-foreground">
+              <p className="mt-1 typography-micro text-foreground">
                 {t('sessions.sidebar.workspace.noticeUnregistered')}
               </p>
             ) : null}
             {showContent ? (
-              <pre className="mt-2 max-h-40 overflow-auto rounded bg-[var(--surface-elevated)] p-2 font-mono typography-micro text-foreground">
+              <pre id={contentId} className="mt-2 max-h-40 overflow-auto rounded bg-[var(--surface-elevated)] p-2 font-mono typography-micro text-foreground">
                 {JSON.stringify({
                   references: Object.fromEntries(secondaryRows.map((row) => {
                     const path = normalizePath(row.path) ?? row.path;
@@ -801,7 +813,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       {configError ? (
         <div className="rounded-lg bg-[var(--status-error)]/10 p-3" role="alert">
           <p className="break-all font-mono typography-micro">{configError.path}</p>
-          <p className="mt-1 typography-meta text-muted-foreground">
+          <p className="mt-1 typography-meta text-foreground">
             {t('sessions.sidebar.workspace.configUnreadable')}
           </p>
         </div>
