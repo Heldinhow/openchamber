@@ -1246,6 +1246,39 @@ describe('getStatus', () => {
     expect(status.diffStats.working['staged.txt']).toBeUndefined();
   });
 
+  it('keeps the app config backups out of the working-tree status', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+
+    // The writer (opencode/shared.js) leaves this beside the config it edits.
+    fs.mkdirSync(path.join(repo, '.opencode'), { recursive: true });
+    fs.writeFileSync(path.join(repo, '.opencode', 'opencode.json.openchamber.backup'), '{}\n');
+    fs.writeFileSync(path.join(repo, 'untracked.txt'), 'user work\n');
+
+    for (const options of [{}, { mode: 'light' }]) {
+      const status = await getStatus(repo, options);
+      expect(status.files).toEqual([
+        expect.objectContaining({ path: 'untracked.txt', working_dir: '?' }),
+      ]);
+      expect(status.isClean).toBe(false);
+    }
+
+    // The change count follows: with only the backup left, nothing changed.
+    fs.rmSync(path.join(repo, 'untracked.txt'));
+    for (const options of [{}, { mode: 'light' }]) {
+      const status = await getStatus(repo, options);
+      expect(status.files).toEqual([]);
+      expect(status.isClean).toBe(true);
+    }
+  });
+
   it('keys diff stats for non-ASCII paths by the same path status reports', async () => {
     if (!canRunGit()) return;
 

@@ -2877,6 +2877,11 @@ const listUntrackedFilesBounded = async (repoRoot, dirPath, limit) => {
   });
 };
 
+// The app writes `<config>.openchamber.backup` beside every config it edits
+// (opencode/shared.js), which lands inside the repository. It is app state, not
+// the user's work; a tracked file with this suffix is hidden too.
+const isAppBackupPath = (filePath) => filePath.endsWith('.openchamber.backup');
+
 // Replaces each untracked `dir/` entry from `-unormal` with one entry per file
 // inside it, the listing `-uall` would have produced, unless the directory
 // holds more than the bound; then the `dir/` entry stays. A nested repository
@@ -3050,6 +3055,9 @@ async function readStatus(normalizedDirectory, lightMode) {
       runGitCommand(repoRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'], { timeoutMs: GIT_PROBE_TIMEOUT_MS }),
     ]);
     status.files = await expandUntrackedDirectories(repoRoot, status.files);
+    // One filter before any file list, stat or clean answer is built, so every
+    // status reader (review panel, changes list, diff list) sees the same set.
+    status.files = status.files.filter((file) => !isAppBackupPath(file.path));
 
     // Light mode: skip numstat + new-file line counting for faster response.
     // Staged (`--cached`: HEAD -> index) and working (`--numstat`: index -> worktree)
