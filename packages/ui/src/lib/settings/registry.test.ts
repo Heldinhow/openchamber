@@ -103,10 +103,11 @@ describe('settings registry', () => {
       name: 'Shop Platform',
       primaryProjectId: 'proj_api',
       repos: [
-        { projectId: 'proj_api', alias: 'api', description: 'API', branch: 'main' },
-        { projectId: 'proj_missing', alias: 'web', description: 'Frontend', branch: 'feat/tokens' },
+        { projectId: 'proj_api', alias: 'api', description: 'API', branch: 'main', readOnly: false },
+        { projectId: 'proj_missing', alias: 'web', description: 'Frontend', branch: 'feat/tokens', readOnly: false },
       ],
       createdRefs: ['web'],
+      editRules: [],
     }];
 
     expect(parsed?.workspaces).toEqual(expectedWorkspaces);
