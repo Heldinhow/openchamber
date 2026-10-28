@@ -3992,4 +3992,11 @@ export const dict: Record<I18nKey, string> = {
   'notifications.question.bodyFallback': '智慧體正在等待你的回覆',
   'notifications.permission.bodyFallback': '智慧體正在等待你的核准',
   'notifications.permission.title': '需要權限',
+  'header.repoWorkspace.subtitle': "工作階段已在主儲存庫中開啟",
+  'header.repoWorkspace.refsAria': "工作區參照",
+  'header.repoWorkspace.refMissing': "缺少",
+  'header.repoWorkspace.refDifferent': "與工作區不同",
+  'header.repoWorkspace.refOutside': "在此工作區之外定義",
+  'header.repoWorkspace.refOverridden': "另一層也定義了這個別名",
+  'header.repoWorkspace.refUnknown': "設定無法讀取",
 };

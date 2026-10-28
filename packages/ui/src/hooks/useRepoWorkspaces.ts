@@ -5,11 +5,21 @@ import {
   activateRepoWorkspace,
   fetchRepoWorkspaces,
   RepoWorkspacesUnavailableError,
+  retryRepoWorkspaceRefs,
   type RepoWorkspaceRef,
   type RepoWorkspaceResolved,
 } from '@/lib/repoWorkspaces/client';
 
 type RepoWorkspacesStatus = 'loading' | 'ready' | 'error' | 'unavailable';
+
+/** One retry answer is authoritative for every hook instance showing that workspace. */
+const REPO_WORKSPACE_REFS_UPDATED_EVENT = 'openchamber:workspace-refs-updated';
+
+type RepoWorkspaceRefsUpdatedDetail = {
+  workspaceId: string;
+  refs: RepoWorkspaceRef[];
+  refsError: { path: string; message: string } | null;
+};
 
 type State = {
   status: RepoWorkspacesStatus;
@@ -41,6 +51,7 @@ const initialState = (enabled: boolean): State => ({
  */
 export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
   const [state, setState] = React.useState<State>(() => initialState(enabled));
+  const [retryingRefs, setRetryingRefs] = React.useState<ReadonlySet<string>>(() => new Set());
   const requestGenerationRef = React.useRef(0);
   const selectionGenerationRef = React.useRef(0);
   const settingsSignatureRef = React.useRef<string | null>(null);
@@ -106,10 +117,20 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       settingsSignatureRef.current = signature;
       void load({ silent: true });
     };
+    const onRefsUpdated = (event: Event) => {
+      // SAFETY: retryRefs dispatches this event with RepoWorkspaceRefsUpdatedDetail.
+      const detail = (event as CustomEvent<RepoWorkspaceRefsUpdatedDetail>).detail;
+      if (!detail) return;
+      setState((current) => current.activeWorkspaceId === detail.workspaceId
+        ? { ...current, refs: detail.refs, refsError: detail.refsError }
+        : current);
+    };
     window.addEventListener('openchamber:settings-synced', onSettingsSynced);
+    window.addEventListener(REPO_WORKSPACE_REFS_UPDATED_EVENT, onRefsUpdated);
     return () => {
       unsubscribeRuntime();
       window.removeEventListener('openchamber:settings-synced', onSettingsSynced);
+      window.removeEventListener(REPO_WORKSPACE_REFS_UPDATED_EVENT, onRefsUpdated);
     };
   }, [enabled, load]);
 
@@ -140,10 +161,29 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       : null
   ), [state.activeWorkspaceId, state.status, state.workspaces]);
 
+  /** Rewrites the named pending aliases and replaces the reference states with the answer. */
+  const retryRefs = React.useCallback(async (aliases: string[]) => {
+    const workspaceId = state.activeWorkspaceId;
+    if (!enabled || !workspaceId || aliases.length === 0) return;
+    const runtimeKey = getRuntimeKey();
+    setRetryingRefs(new Set(aliases));
+    try {
+      const result = await retryRepoWorkspaceRefs(workspaceId, aliases);
+      if (runtimeKey !== getRuntimeKey()) return;
+      window.dispatchEvent(new CustomEvent<RepoWorkspaceRefsUpdatedDetail>(REPO_WORKSPACE_REFS_UPDATED_EVENT, {
+        detail: { workspaceId, refs: result.refs, refsError: result.refsError },
+      }));
+    } finally {
+      setRetryingRefs(new Set());
+    }
+  }, [enabled, state.activeWorkspaceId]);
+
   return {
     ...state,
     activeWorkspace,
+    retryingRefs,
     reload,
     selectWorkspace,
+    retryRefs,
   };
 };

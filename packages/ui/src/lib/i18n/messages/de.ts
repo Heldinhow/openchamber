@@ -3990,4 +3990,11 @@ export const dict = {
   'notifications.question.bodyFallback': 'Der Agent wartet auf deine Antwort',
   'notifications.permission.bodyFallback': 'Der Agent wartet auf deine Freigabe',
   'notifications.permission.title': 'Berechtigung erforderlich',
+  'header.repoWorkspace.subtitle': "Sitzung im Haupt-Repository geöffnet",
+  'header.repoWorkspace.refsAria': "Workspace-Referenzen",
+  'header.repoWorkspace.refMissing': "fehlt",
+  'header.repoWorkspace.refDifferent': "weicht vom Workspace ab",
+  'header.repoWorkspace.refOutside': "außerhalb dieses Workspace definiert",
+  'header.repoWorkspace.refOverridden': "eine andere Ebene definiert diesen Alias ebenfalls",
+  'header.repoWorkspace.refUnknown': "Konfiguration nicht lesbar",
 };

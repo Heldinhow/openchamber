@@ -3992,4 +3992,11 @@ export const dict: Record<I18nKey, string> = {
   'notifications.question.bodyFallback': 'エージェントが回答を待っています',
   'notifications.permission.bodyFallback': 'エージェントが承認を待っています',
   'notifications.permission.title': '権限が必要です',
+  'header.repoWorkspace.subtitle': "プライマリでセッションを開いています",
+  'header.repoWorkspace.refsAria': "ワークスペースの参照",
+  'header.repoWorkspace.refMissing': "見つかりません",
+  'header.repoWorkspace.refDifferent': "ワークスペースと異なります",
+  'header.repoWorkspace.refOutside': "このワークスペースの外で定義されています",
+  'header.repoWorkspace.refOverridden': "別のレイヤーでもこのエイリアスを定義しています",
+  'header.repoWorkspace.refUnknown': "設定を読み取れません",
 };

@@ -3993,4 +3993,11 @@ export const dict: Record<I18nKey, string> = {
   'notifications.question.bodyFallback': 'O agente está aguardando sua resposta',
   'notifications.permission.bodyFallback': 'O agente está aguardando sua aprovação',
   'notifications.permission.title': 'Permissão necessária',
+  'header.repoWorkspace.subtitle': "Sessão aberta no principal",
+  'header.repoWorkspace.refsAria': "References do workspace",
+  'header.repoWorkspace.refMissing': "ausente",
+  'header.repoWorkspace.refDifferent': "difere do workspace",
+  'header.repoWorkspace.refOutside': "definida fora deste workspace",
+  'header.repoWorkspace.refOverridden': "outra camada também define este alias",
+  'header.repoWorkspace.refUnknown': "config ilegível",
 };

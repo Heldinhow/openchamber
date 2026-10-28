@@ -3993,4 +3993,11 @@ export const dict: Record<I18nKey, string> = {
   'notifications.question.bodyFallback': 'Агент чекає на вашу відповідь',
   'notifications.permission.bodyFallback': 'Агент чекає на ваше схвалення',
   'notifications.permission.title': 'Потрібен дозвіл',
+  'header.repoWorkspace.subtitle': "Сесію відкрито в основному репозиторії",
+  'header.repoWorkspace.refsAria': "Посилання робочого простору",
+  'header.repoWorkspace.refMissing': "відсутнє",
+  'header.repoWorkspace.refDifferent': "відрізняється від робочого простору",
+  'header.repoWorkspace.refOutside': "визначено поза цим робочим простором",
+  'header.repoWorkspace.refOverridden': "інший шар також визначає цей псевдонім",
+  'header.repoWorkspace.refUnknown': "конфігурацію не прочитано",
 };

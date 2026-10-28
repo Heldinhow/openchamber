@@ -3992,6 +3992,13 @@ export const dict = {
   'notifications.question.bodyFallback': 'Agent is waiting for your response',
   'notifications.permission.bodyFallback': 'Agent is waiting for your approval',
   'notifications.permission.title': 'Permission required',
+  'header.repoWorkspace.subtitle': "Session open in the primary",
+  'header.repoWorkspace.refsAria': "Workspace references",
+  'header.repoWorkspace.refMissing': "missing",
+  'header.repoWorkspace.refDifferent': "differs from the workspace",
+  'header.repoWorkspace.refOutside': "defined outside this workspace",
+  'header.repoWorkspace.refOverridden': "another layer also defines this alias",
+  'header.repoWorkspace.refUnknown': "configuration unreadable",
 } as const;
 
 export type I18nKey = keyof typeof dict;

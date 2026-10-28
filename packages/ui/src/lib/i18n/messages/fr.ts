@@ -3991,4 +3991,11 @@ export const dict = {
   'notifications.question.bodyFallback': 'L\'agent attend votre réponse',
   'notifications.permission.bodyFallback': 'L\'agent attend votre autorisation',
   'notifications.permission.title': 'Autorisation requise',
+  'header.repoWorkspace.subtitle': "Session ouverte dans le dépôt principal",
+  'header.repoWorkspace.refsAria': "Références de l'espace de travail",
+  'header.repoWorkspace.refMissing': "manquant",
+  'header.repoWorkspace.refDifferent': "diffère de l'espace de travail",
+  'header.repoWorkspace.refOutside': "définie en dehors de cet espace de travail",
+  'header.repoWorkspace.refOverridden': "une autre couche définit aussi cet alias",
+  'header.repoWorkspace.refUnknown': "configuration illisible",
 } as const;

@@ -3990,4 +3990,11 @@ export const dict = {
   'notifications.question.bodyFallback': 'Ajan yanıtınızı bekliyor',
   'notifications.permission.bodyFallback': 'Ajan onayınızı bekliyor',
   'notifications.permission.title': 'İzin gerekiyor',
+  'header.repoWorkspace.subtitle': "Oturum birincil depoda açık",
+  'header.repoWorkspace.refsAria': "Çalışma alanı referansları",
+  'header.repoWorkspace.refMissing': "eksik",
+  'header.repoWorkspace.refDifferent': "çalışma alanından farklı",
+  'header.repoWorkspace.refOutside': "bu çalışma alanının dışında tanımlı",
+  'header.repoWorkspace.refOverridden': "başka bir katman da bu takma adı tanımlıyor",
+  'header.repoWorkspace.refUnknown': "yapılandırma okunamıyor",
 };

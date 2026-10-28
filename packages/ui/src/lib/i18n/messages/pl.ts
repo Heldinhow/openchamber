@@ -3997,4 +3997,11 @@ export const dict: Record<I18nKey, string> = {
   'notifications.question.bodyFallback': 'Agent czeka na Twoją odpowiedź',
   'notifications.permission.bodyFallback': 'Agent czeka na Twoją zgodę',
   'notifications.permission.title': 'Wymagane uprawnienie',
+  'header.repoWorkspace.subtitle': "Sesja otwarta w repozytorium głównym",
+  'header.repoWorkspace.refsAria': "Odwołania przestrzeni roboczej",
+  'header.repoWorkspace.refMissing': "brak",
+  'header.repoWorkspace.refDifferent': "różni się od przestrzeni roboczej",
+  'header.repoWorkspace.refOutside': "zdefiniowane poza tą przestrzenią roboczą",
+  'header.repoWorkspace.refOverridden': "inna warstwa również definiuje ten alias",
+  'header.repoWorkspace.refUnknown': "nie można odczytać konfiguracji",
 } as const;

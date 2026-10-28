@@ -4017,4 +4017,11 @@ export const dict = {
   'notifications.question.bodyFallback': 'الوكيل بانتظار ردك',
   'notifications.permission.bodyFallback': 'الوكيل بانتظار موافقتك',
   'notifications.permission.title': 'مطلوب إذن',
+  'header.repoWorkspace.subtitle': "الجلسة مفتوحة في المستودع الرئيسي",
+  'header.repoWorkspace.refsAria': "مراجع مساحة العمل",
+  'header.repoWorkspace.refMissing': "مفقود",
+  'header.repoWorkspace.refDifferent': "يختلف عن مساحة العمل",
+  'header.repoWorkspace.refOutside': "معرّف خارج مساحة العمل هذه",
+  'header.repoWorkspace.refOverridden': "طبقة أخرى تعرّف هذا الاسم المستعار أيضًا",
+  'header.repoWorkspace.refUnknown': "تعذّرت قراءة الإعدادات",
 } as const;

@@ -3993,4 +3993,11 @@ export const dict: Record<I18nKey, string> = {
   'notifications.question.bodyFallback': '智能体正在等待你的回复',
   'notifications.permission.bodyFallback': '智能体正在等待你的批准',
   'notifications.permission.title': '需要权限',
+  'header.repoWorkspace.subtitle': "会话已在主仓库中打开",
+  'header.repoWorkspace.refsAria': "工作区引用",
+  'header.repoWorkspace.refMissing': "缺失",
+  'header.repoWorkspace.refDifferent': "与工作区不同",
+  'header.repoWorkspace.refOutside': "在此工作区之外定义",
+  'header.repoWorkspace.refOverridden': "另一层也定义了这个别名",
+  'header.repoWorkspace.refUnknown': "配置无法读取",
 };

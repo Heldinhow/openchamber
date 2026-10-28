@@ -3992,4 +3992,11 @@ export const dict = {
   'notifications.question.bodyFallback': 'De agent wacht op je antwoord',
   'notifications.permission.bodyFallback': 'De agent wacht op je goedkeuring',
   'notifications.permission.title': 'Toestemming vereist',
+  'header.repoWorkspace.subtitle': "Sessie geopend in de primaire repository",
+  'header.repoWorkspace.refsAria': "Workspace-referenties",
+  'header.repoWorkspace.refMissing': "ontbreekt",
+  'header.repoWorkspace.refDifferent': "wijkt af van de workspace",
+  'header.repoWorkspace.refOutside': "buiten deze workspace gedefinieerd",
+  'header.repoWorkspace.refOverridden': "een andere laag definieert deze alias ook",
+  'header.repoWorkspace.refUnknown': "configuratie onleesbaar",
 } as const;

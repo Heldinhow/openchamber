@@ -4017,4 +4017,11 @@ export const dict = {
   'notifications.question.bodyFallback': 'הסוכן ממתין לתשובתך',
   'notifications.permission.bodyFallback': 'הסוכן ממתין לאישורך',
   'notifications.permission.title': 'נדרשת הרשאה',
+  'header.repoWorkspace.subtitle': "השיחה פתוחה במאגר הראשי",
+  'header.repoWorkspace.refsAria': "הפניות מרחב העבודה",
+  'header.repoWorkspace.refMissing': "חסר",
+  'header.repoWorkspace.refDifferent': "שונה ממרחב העבודה",
+  'header.repoWorkspace.refOutside': "מוגדר מחוץ למרחב העבודה הזה",
+  'header.repoWorkspace.refOverridden': "שכבה נוספת מגדירה גם היא את הכינוי הזה",
+  'header.repoWorkspace.refUnknown': "לא ניתן לקרוא את התצורה",
 } as const;

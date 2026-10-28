@@ -68,6 +68,9 @@ import { titlebarControlsWidthReaderRef } from './titlebarControlsWidth';
 import { useLayoutAnimationMs } from '@/hooks/useLayoutAnimationMs';
 import { LAYOUT_ANIMATION_EASING } from '@/lib/layoutAnimation';
 import { findWorktreeHoldingDirectory } from '@/lib/worktrees/worktreePaths';
+import { useRepoWorkspaces } from '@/hooks/useRepoWorkspaces';
+import { repoWorkspaceSessionPlacement } from '@/lib/repoWorkspaces/sessionPlacement';
+import { RepoWorkspaceSessionMeta } from './RepoWorkspaceSessionMeta';
 
 // Like the icon rail: muted at rest, full strength on hover, while its menu is
 // open or while what it controls is on, and no hover fill.
@@ -126,6 +129,7 @@ export const Header: React.FC = () => {
     const project = state.projects.find((candidate) => candidate.id === state.activeProjectId);
     return project ? { id: project.id, path: project.path, label: project.label } : null;
   }));
+  const allProjects = useProjectsStore((state) => state.projects);
   const activeProjectLabel = React.useMemo(() => {
     if (!activeProject) {
       return null;
@@ -197,6 +201,9 @@ export const Header: React.FC = () => {
   }, []);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+  // Desktop and web only, as the sidebar: the route is absent in VS Code and on
+  // the phone surfaces that render their own header.
+  const repoWorkspaces = useRepoWorkspaces({ enabled: !isVSCode && !isMobile });
   // While the work-status panel is on screen it already reports the project
   // and the branch — three paces away in the same window. The meta row under
   // the title yields to it rather than saying the same thing twice, and
@@ -642,6 +649,23 @@ export const Header: React.FC = () => {
     }
     return null;
   }, [guestPage, isArchiveSurfaceOpen, isIntegrationsCatalogSurfaceOpen, overviewRunTitle, runOverviewKey, isScheduledSurfaceOpen, isSourceBoardSurfaceOpen, isOverviewSurfaceOpen, isUsageStatsSurfaceOpen, spacesSurfaceProjectId, surfaceProjectLabel, t, worktreesSurfaceProjectId]);
+
+  // The workspace names the session only while the session is in its primary;
+  // a session in another project or repo keeps the plain header.
+  const workspaceSession = React.useMemo(() => {
+    if (activeSurfaceHeader) return null;
+    const workspace = repoWorkspaces.activeWorkspace;
+    return workspace && repoWorkspaceSessionPlacement(workspace, openDirectory, allProjects) === 'primary'
+      ? workspace
+      : null;
+  }, [activeSurfaceHeader, allProjects, openDirectory, repoWorkspaces.activeWorkspace]);
+
+  const retryRepoWorkspaceRef = repoWorkspaces.retryRefs;
+  const retryWorkspaceRef = React.useCallback((alias: string) => {
+    void retryRepoWorkspaceRef([alias]).catch(() => {
+      toast.error(t('sessions.sidebar.workspace.pendingRetryFailed'));
+    });
+  }, [retryRepoWorkspaceRef, t]);
 
 
   const currentSessionOpenDirectory = sessionDirectory || normalize(selectedSessionDirectory || '') || worktreeDirectory;
@@ -1298,6 +1322,16 @@ export const Header: React.FC = () => {
             </SessionTabsStrip>
           </div>
         )}
+
+        {workspaceSession ? (
+          <RepoWorkspaceSessionMeta
+            workspaceName={workspaceSession.name}
+            refs={repoWorkspaces.refs}
+            refsError={repoWorkspaces.refsError}
+            retryingAliases={repoWorkspaces.retryingRefs}
+            onRetry={retryWorkspaceRef}
+          />
+        ) : null}
 
         {activeSurfaceHeader || isVSCode || !sessionTabsEnabled ? <div className="flex-1" /> : null}
 

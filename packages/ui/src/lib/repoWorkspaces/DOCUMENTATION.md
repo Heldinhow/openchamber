@@ -8,9 +8,9 @@
 `POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
 `useRepoWorkspaces` holds the resolved list, the active pointer, the count of
 discarded workspaces and the active workspace's reference states for the
-sidebar; the workspace dialogs use `createRepoWorkspace`, `updateRepoWorkspace`,
-`deleteRepoWorkspace` and `retryRepoWorkspaceRefs` and parse every response at
-the boundary.
+sidebar and the session header; the workspace dialogs use
+`createRepoWorkspace`, `updateRepoWorkspace`, `deleteRepoWorkspace` and
+`retryRepoWorkspaceRefs` and parse every response at the boundary.
 
 The server owns both writes and the project catalog. The client never writes a
 workspace document and never stores one locally.
@@ -46,6 +46,17 @@ workspace document and never stores one locally.
   config. They are cleared when the active pointer moves, and read again for the
   newly active workspace, so the edit dialog never diffs against another
   workspace's references.
+- The session header shows the active workspace only when the session's
+  directory lands in that workspace's primary repo
+  (`sessionPlacement.ts`; the deepest project root wins, so a nested secondary
+  or a project outside the workspace is not mistaken for the primary). Only `ok`
+  references become `@alias` chips;
+  `missing`, `different`, `outside`, `overridden` and `unknown` stay text states,
+  and only an owned `missing` reference offers retry. The header retry replaces
+  the reference states with the route's answer; it does not rewrite settings or
+  config on its own. Every mounted copy of the hook applies that answer through
+  `openchamber:workspace-refs-updated`, so the sidebar's edit dialog and the
+  header never show different states for the same workspace.
 
 ## Decisions
 
@@ -62,3 +73,10 @@ that save.
 Those runtimes do not register the route in this version. Asking anyway would
 show a load failure on every sidebar mount; the feature is hidden and the
 sidebar behaves exactly as before.
+
+### Why the header places a session by directory instead of the active project
+
+The active project follows the workspace pointer, but a session opened in
+another project stays open beside it. Reading the session's own directory (and
+the repo roots the route resolved) keeps the workspace name and its references
+off that session, even while the pointer still names the workspace.
