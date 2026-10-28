@@ -10,7 +10,8 @@ let dom: Window;
 let root: Root;
 let host: HTMLElement;
 const realFetch = globalThis.fetch;
-let fetchResponse: () => Promise<Response>;
+let fetchResponse: (input: string, init?: RequestInit) => Promise<Response>;
+let seen: Array<{ active: string | null; refs: number }> = [];
 
 const documentPayload = {
   workspaces: [
@@ -53,21 +54,53 @@ const documentPayload = {
 
 const Probe = () => {
   const workspaces = useRepoWorkspaces({ enabled: true });
+  seen.push({ active: workspaces.activeWorkspace?.id ?? null, refs: workspaces.refs.length });
   return (
-    <span data-id="state">
-      {JSON.stringify({
-        status: workspaces.status,
-        ids: workspaces.workspaces.map((workspace) => workspace.id),
-        active: workspaces.activeWorkspace?.id ?? null,
-        docsRefs: workspaces.workspaces.find((workspace) => workspace.id === 'ws_2')?.refs.length ?? null,
-      })}
-    </span>
+    <>
+      <span data-id="state">
+        {JSON.stringify({
+          status: workspaces.status,
+          ids: workspaces.workspaces.map((workspace) => workspace.id),
+          active: workspaces.activeWorkspace?.id ?? null,
+          name: workspaces.activeWorkspace?.name ?? null,
+          refs: workspaces.refs.map((ref) => ref.alias),
+          docsRefs: workspaces.workspaces.find((workspace) => workspace.id === 'ws_2')?.refs.length ?? null,
+        })}
+      </span>
+      <button type="button" onClick={() => void workspaces.selectWorkspace('ws_2')}>switch</button>
+    </>
   );
 };
 
-const state = (): { status: string; ids: string[]; active: string | null; docsRefs: number | null } => {
+type ProbeState = {
+  status: string;
+  ids: string[];
+  active: string | null;
+  name: string | null;
+  refs: string[];
+  docsRefs: number | null;
+};
+
+const state = (): ProbeState => {
   const text = host.querySelector('[data-id="state"]')?.textContent ?? '{}';
   return JSON.parse(text);
+};
+
+const pressSwitch = async () => {
+  const button = [...document.querySelectorAll('button')].find((entry) => entry.textContent === 'switch');
+  expect(button !== undefined).toBe(true);
+  await act(async () => {
+    button!.click();
+  });
+};
+
+const docsRef = {
+  alias: 'docs',
+  path: '/repos/docs',
+  description: 'docs',
+  status: 'ok',
+  owned: false,
+  current: { path: '/repos/docs', description: 'docs' },
 };
 
 beforeEach(async () => {
@@ -89,7 +122,8 @@ beforeEach(async () => {
   }
   ({ useRepoWorkspaces } = await import('./useRepoWorkspaces'));
   fetchResponse = async () => Response.json({});
-  globalThis.fetch = async () => fetchResponse();
+  globalThis.fetch = async (input, init) => fetchResponse(String(input), init);
+  seen = [];
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -131,6 +165,58 @@ describe('useRepoWorkspaces', () => {
       ids: ['ws_1', 'ws_2'],
       active: 'ws_1',
       docsRefs: 1,
+    });
+  });
+
+  test('a switch changes the workspace name and its references together', async () => {
+    fetchResponse = async () => Response.json(documentPayload);
+    await act(async () => root.render(<Probe />));
+    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
+
+    // The switch's read stays open so the intermediate state can be inspected.
+    let resolveRead: (response: Response) => void = () => undefined;
+    const read = new Promise<Response>((resolve) => { resolveRead = resolve; });
+    fetchResponse = async (input) => {
+      if (String(input).endsWith('/api/workspaces')) return read;
+      return Response.json({ activeWorkspaceId: 'ws_2' });
+    };
+
+    await pressSwitch();
+    // The previous complete view stays until the read answers: no new name
+    // paired with the old, empty reference list.
+    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
+
+    await act(async () => {
+      resolveRead(Response.json({
+        ...documentPayload,
+        activeWorkspaceId: 'ws_2',
+        refs: [docsRef],
+      }));
+    });
+
+    expect(state()).toMatchObject({ status: 'ready', active: 'ws_2', name: 'Docs', refs: ['docs'] });
+    expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
+  });
+
+  test('a failed switch read applies the activated pointer with that workspace\'s last refs', async () => {
+    fetchResponse = async () => Response.json(documentPayload);
+    await act(async () => root.render(<Probe />));
+    expect(state()).toMatchObject({ status: 'ready', active: 'ws_1' });
+
+    fetchResponse = async (input) => {
+      if (String(input).endsWith('/api/workspaces')) throw new Error('offline');
+      return Response.json({ activeWorkspaceId: 'ws_2' });
+    };
+
+    await pressSwitch();
+
+    // The old workspace is not claimed and the new one is not shown as having
+    // no references: the last document's own refs for it are used, with Retry.
+    expect(state()).toMatchObject({
+      status: 'error',
+      active: 'ws_2',
+      name: 'Docs',
+      refs: ['docs'],
     });
   });
 });

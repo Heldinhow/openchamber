@@ -93,10 +93,12 @@ const RepoRow: React.FC<{
   error: RepoWorkspaceRowError | undefined;
   suggestion: string | null;
   disabled: boolean;
+  /** 0 for the group's single Tab stop, -1 for the other rows. */
+  tabIndex: number;
   onPrimary: () => void;
   onAlias: (alias: string) => void;
   onRemove: () => void;
-}> = ({ row, isPrimary, registered, error, suggestion, disabled, onPrimary, onAlias, onRemove }) => {
+}> = ({ row, isPrimary, registered, error, suggestion, disabled, tabIndex, onPrimary, onAlias, onRemove }) => {
   const { t } = useI18n();
   const status = useGitStatus(row.path);
   const branch = status?.current ?? row.branch ?? '';
@@ -131,6 +133,7 @@ const RepoRow: React.FC<{
           checked={isPrimary}
           onChange={onPrimary}
           disabled={disabled}
+          tabIndex={tabIndex}
           ariaLabel={t(
             isPrimary ? 'sessions.sidebar.workspace.primaryFor' : 'sessions.sidebar.workspace.secondaryFor',
             { path: row.path },
@@ -242,6 +245,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const contentId = React.useId();
   const importErrorId = React.useId();
   const primaryErrorId = React.useId();
+  const primaryGroupLabelId = React.useId();
 
   const registeredPaths = React.useMemo(() => new Set(
     projects.map((project) => normalizePath(project.path)).filter((path): path is string => Boolean(path)),
@@ -259,6 +263,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const primaryError = validation.primaryError || submitErrors.primary;
 
   const primaryRow = draft.rows.find((row) => row.key === draft.primaryKey) ?? null;
+  const tabStopKey = primaryRow?.key ?? draft.rows[0]?.key ?? null;
   const secondaryRows = draft.rows.filter((row) => row.key !== draft.primaryKey && row.alias.trim());
   const primaryPath = primaryRow?.path ? (normalizePath(primaryRow.path) ?? primaryRow.path) : '';
   const [configTarget, setConfigTarget] = React.useState<{
@@ -377,6 +382,35 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
     setSubmitErrors(emptySubmitErrors());
     setConflictAlias(null);
     setDraft(next);
+  };
+
+  /**
+   * Roving focus for the primary column: a radio group moves its selection on
+   * the arrow keys, so these rows are one group rather than N Tab stops.
+   */
+  const handlePrimaryKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const key = event.key;
+    if (key !== 'ArrowDown' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowLeft'
+      && key !== 'Home' && key !== 'End') return;
+    const radios = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+    const current = radios.findIndex((radio) => radio === event.target);
+    const enabled = radios.flatMap((radio, index) => (radio.disabled ? [] : [index]));
+    if (current < 0 || enabled.length === 0) return;
+    event.preventDefault();
+    const position = enabled.indexOf(current);
+    const next = key === 'Home'
+      ? enabled[0]
+      : key === 'End'
+        ? enabled[enabled.length - 1]
+        : key === 'ArrowDown' || key === 'ArrowRight'
+          ? enabled[(Math.max(position, -1) + 1) % enabled.length]
+          : enabled[(Math.max(position, 0) - 1 + enabled.length) % enabled.length];
+    const row = draft.rows[next];
+    if (!row) return;
+    if (row.key !== draft.primaryKey) {
+      updateDraft((currentDraft) => ({ ...currentDraft, primaryKey: row.key }));
+    }
+    radios[next].focus();
   };
 
   const addFolder = (pickedPath: string) => {
@@ -674,14 +708,19 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       ) : null}
 
       <fieldset className="min-w-0" aria-describedby={primaryError ? primaryErrorId : undefined}>
-        <legend className="sr-only">{t('sessions.sidebar.workspace.primary')}</legend>
+        <legend id={primaryGroupLabelId} className="sr-only">{t('sessions.sidebar.workspace.primary')}</legend>
         <div className={`grid ${ROW_GRID_COLS} items-center gap-2 pb-1 text-[0.6875rem] uppercase tracking-wide text-muted-foreground`}>
           <span>{t('sessions.sidebar.workspace.primaryColumn')}</span>
           <span>{t('sessions.sidebar.workspace.aliasColumn')}</span>
           <span>{t('sessions.sidebar.workspace.folderColumn')}</span>
           <span>{t('sessions.sidebar.workspace.branchColumn')}</span>
         </div>
-        <div className="flex flex-col gap-2">
+        <div
+          role="radiogroup"
+          aria-labelledby={primaryGroupLabelId}
+          className="flex flex-col gap-2"
+          onKeyDown={handlePrimaryKeyDown}
+        >
           {draft.rows.map((row) => (
             <RepoRow
               key={row.key}
@@ -693,6 +732,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
                 ? suggestedAlias(row.alias.trim(), draft.rows.filter((entry) => entry.key !== row.key).map((entry) => entry.alias.trim()))
                 : null}
               disabled={submitting}
+              tabIndex={row.key === tabStopKey ? 0 : -1}
               onPrimary={() => updateDraft((current) => ({ ...current, primaryKey: row.key }))}
               onAlias={(alias) => updateDraft((current) => ({
                 ...current,

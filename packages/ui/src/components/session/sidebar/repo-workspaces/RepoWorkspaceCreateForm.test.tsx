@@ -125,6 +125,18 @@ afterEach(async () => {
 });
 
 describe('workspace create form', () => {
+  const radios = () => [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+
+  const radioFor = (path: string) => radios().find((radio) => (
+    radio.getAttribute('aria-label') === `Primary repository: ${path}`
+    || radio.getAttribute('aria-label') === `Secondary repository: ${path}`
+  ));
+
+  const press = async (target: Element, key: string) => {
+    await act(async () => {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    });
+  };
   test('a failed reference write replaces the form with the pending card and retries one alias', async () => {
     let created = 0;
     let cancelled = 0;
@@ -331,6 +343,116 @@ describe('workspace create form', () => {
     expect(describedBy).toBeTruthy();
     const error = document.getElementById(describedBy!);
     expect(error?.textContent).toBe('Add at least one folder.');
+  });
+
+  test('the primary column is one radiogroup with a single Tab stop', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    const group = document.querySelector('[role="radiogroup"]');
+    expect(group !== null).toBe(true);
+    const legend = document.getElementById(group!.getAttribute('aria-labelledby') ?? '');
+    expect(legend?.textContent).toBe('Primary repository');
+    expect(radios()).toHaveLength(2);
+    expect(radios()[0].tabIndex).toBe(0);
+    expect(radios()[1].tabIndex).toBe(-1);
+  });
+
+  test('arrow keys move the primary and focus with the selection', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    const api = radioFor('/repos/api')!;
+    const web = radioFor('/repos/web')!;
+    api.focus();
+
+    await press(api, 'ArrowDown');
+    expect(web.getAttribute('aria-checked')).toBe('true');
+    expect(api.getAttribute('aria-checked')).toBe('false');
+    expect(document.activeElement).toBe(web);
+    expect(api.tabIndex).toBe(-1);
+    expect(web.tabIndex).toBe(0);
+
+    await press(web, 'ArrowUp');
+    expect(api.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(api);
+
+    await press(api, 'ArrowUp');
+    expect(web.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(web);
+
+    await press(web, 'Home');
+    expect(api.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(api);
+
+    await press(api, 'End');
+    expect(web.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(web);
+  });
+
+  test('the first row is the Tab stop when no row is primary', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          initialDraft={{ ...draft, primaryKey: null }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(radios()[0].getAttribute('aria-checked')).toBe('false');
+    expect(radios()[0].tabIndex).toBe(0);
+    expect(radios()[1].tabIndex).toBe(-1);
+  });
+
+  test('arrow keys leave a submitting group alone', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          createWorkspace={() => new Promise(() => undefined)}
+        />
+      </I18nProvider>,
+    ));
+
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    const api = radioFor('/repos/api')!;
+    expect(radios().every((radio) => radio.disabled)).toBe(true);
+    await press(api, 'ArrowDown');
+    expect(api.getAttribute('aria-checked')).toBe('true');
+    expect(radioFor('/repos/web')!.getAttribute('aria-checked')).toBe('false');
   });
 
   test('editing shows the reference diff and requires confirmation before overwriting an edited entry', async () => {

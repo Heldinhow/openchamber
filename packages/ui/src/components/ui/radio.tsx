@@ -6,6 +6,7 @@ interface RadioProps {
   onChange: () => void;
   disabled?: boolean;
   ariaLabel?: string;
+  tabIndex?: number;
   className?: string;
   iconClassName?: string;
 }
@@ -15,6 +16,7 @@ export const Radio = React.memo<RadioProps>(function Radio({
   onChange,
   disabled = false,
   ariaLabel,
+  tabIndex,
   className,
   iconClassName,
 }) {
@@ -50,6 +52,7 @@ export const Radio = React.memo<RadioProps>(function Radio({
       disabled={disabled}
       aria-checked={checked}
       aria-label={ariaLabel}
+      tabIndex={tabIndex}
       className={cn(
         'group/radio relative flex size-3.5 min-h-3.5 min-w-3.5 shrink-0 self-center items-center justify-center rounded-full outline-none',
         // Match checkbox outlines without strengthening borders across the app.

@@ -30,13 +30,19 @@ workspace document and never stores one locally.
   resolves its workspace. A 404 means the route is absent in this runtime and
   the whole feature is hidden rather than shown as a failure.
 - The resolved route payload is authoritative for repos, including a repo whose
-  project is gone (`missing: true`). The merged settings document contributes
-  only the active pointer; a reload then reads the resolved state again.
-- Selection applies only the `activeWorkspaceId` the server echoes. Clicking the
-  active workspace, or "All projects", sends `{ id: null }`.
+  project is gone (`missing: true`). The merged settings document only tells
+  this window that the pointer moved; the reload then reads the resolved
+  pointer and state.
+- Selection applies only the active pointer the route reports. The activation
+  answer alone does not move it: the hook reads again and applies the new
+  pointer together with its top-level reference pair, and the activation answer
+  is only the fallback of a failed read. Clicking the active workspace, or "All
+  projects", sends `{ id: null }`.
 - Requests are generation-guarded and keyed to the runtime that started them:
   a late response from another runtime or from before a selection can neither
-  replace the list nor re-activate the old workspace.
+  replace the list nor re-activate the old workspace. A settings-synced pointer
+  from another window only triggers that read, and is ignored while this hook's
+  own activation is in flight.
 - Create, update and retry answers are parsed at the boundary. A 4xx is a
   `RepoWorkspaceRequestError` carrying the field key, config path or conflict
   alias the dialog puts inline; a failed reference write is a successful create
@@ -57,8 +63,12 @@ workspace document and never stores one locally.
 - The document's top-level `refs` and `refsError` describe the active
   workspace's primary config for the session header. Each resolved workspace
   also carries its own pair, which the edit dialog reads for any workspace;
-  neither is ever borrowed from the active one. The top-level pair is cleared
-  when the active pointer moves and read again for the newly active workspace.
+  neither is ever borrowed from the active one. The pointer and the top-level
+  pair move together, from one route answer: a switch keeps the previous
+  complete view until the read reports the new workspace and its references.
+  A failed switch read applies the activated pointer from the last resolved
+  document, with that workspace's own pair, and keeps the `error` status; it
+  never shows the old workspace or a fabricated empty list.
 - A retry names the aliases it retries and may carry `confirmRefs`; retrying
   from the pending card confirms the alias the user clicked, so a user-edited
   entry can be written instead of answering `409` forever.
@@ -110,3 +120,17 @@ The active project follows the workspace pointer, but a session opened in
 another project stays open beside it. Reading the session's own directory (and
 the repo roots the route resolved) keeps the workspace name and its references
 off that session, even while the pointer still names the workspace.
+
+### Why a switch applies the pointer with the reference read
+
+The header pairs the workspace name (from the resolved list and the pointer)
+with the top-level `refs`, so moving the pointer before the read showed the new
+name beside the previous workspace's chip row for one round-trip. The hook
+holds the previous complete view and applies the read's pointer and both
+reference fields in one state update. The same applies to a settings-synced
+pointer from another window, which now only triggers the read. Rejected
+alternative: clearing `refs` on the pointer change and showing a loading state,
+which adds a third view of the header for a switch that is already in flight.
+A failed read applies the activated pointer from the last document's
+per-workspace pair, so the old workspace is not claimed and a workspace the
+last document described is never shown as having no references.

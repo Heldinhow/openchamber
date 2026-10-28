@@ -42,6 +42,11 @@ total, partial flag and branch divergence come from
   valid alias, two rows share an alias, or two rows point at the same folder.
   The server repeats these checks; the client check is what makes the block
   visible without a request.
+- The primary column is one radiogroup named by its legend. Only the checked
+  row is in the Tab order (`0`, or the first enabled row when none is checked);
+  ArrowDown/ArrowRight and ArrowUp/ArrowLeft move the selection and focus to the
+  next or previous row, Home and End to the first and last, both wrapping at the
+  ends. A submitting form has every row disabled and takes no keys.
 - Edit opens on the saved name, repos, aliases, primary and branch snapshots.
   A repo whose project is gone shows "Project not found" and keeps its id.
 - The create warning is part of the form, not a toast, and stays visible until
@@ -148,6 +153,14 @@ contents, which cannot resolve relative folders and would duplicate the parser.
 folder policy. A second picker would drift from it. The `onPickDirectory` prop
 turns off project registration, bulk add and clone, so the workspace dialog gets
 a path and nothing else.
+
+### Why the primary group's keys live in the form
+
+The shared `Radio` is one control, also used in places that are not a group;
+teaching it arrow keys would make every caller build the focus targets. The form
+owns the rows, their order, selection and enabled state, so the roving tabindex
+and keys live there and `Radio` gains only `tabIndex`. Rejected alternative: a
+generic radio-group component with a single caller.
 
 ### Why the pending card replaces the form instead of a toast
 
