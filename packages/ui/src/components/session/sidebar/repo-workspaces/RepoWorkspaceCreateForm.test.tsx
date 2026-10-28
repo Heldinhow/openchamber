@@ -680,6 +680,8 @@ describe('workspace create form', () => {
       .map((input) => input.value)
       .filter((value) => value === 'api' || value === 'web');
     expect(aliases).toEqual(['api', 'web']);
+    // An imported repo starts editable, like one added by picking a folder.
+    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Editable: @web');
     expect(document.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('aria-label'))
       .toBe('Primary repository: /repos/api');
 
@@ -941,6 +943,66 @@ describe('workspace create form', () => {
     expect(accessControl('api')).toBeUndefined();
     expect(accessControl('web')?.getAttribute('aria-label')).toBe('Editable: @web');
     expect(document.body.textContent).toContain('Write');
+
+    // The primary row states its fixed permission instead of leaving the
+    // column empty, and offers no control to change it.
+    const primaryRow = radioFor('/repos/api')?.closest('.grid');
+    expect(primaryRow?.textContent).toContain('Editable');
+    expect(primaryRow?.querySelector('[role="checkbox"]')).toBeNull();
+  });
+
+  test('switching the primary leaves both repos editable', async () => {
+    const sent: Array<Array<{ alias: string; readOnly: boolean }>> = [];
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={targetFor}
+          initialDraft={{
+            ...draft,
+            rows: [
+              { key: 'a', path: '/repos/api', alias: 'api', readOnly: false },
+              { key: 'b', path: '/repos/web', alias: 'web', readOnly: true },
+            ],
+          }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          createWorkspace={async (input) => {
+            sent.push(input.repos.map(({ alias, readOnly }) => ({ alias, readOnly })));
+            return pendingResult();
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    const webRadio = radioFor('/repos/web')!;
+    await act(async () => {
+      webRadio.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    // The old primary is now a secondary and stays editable; the new primary
+    // shows the fixed label with no control.
+    expect(accessControl('api')?.getAttribute('aria-label')).toBe('Editable: @api');
+    expect(accessControl('web')).toBeUndefined();
+    const webRow = radioFor('/repos/web')?.closest('.grid');
+    expect(webRow?.textContent).toContain('Editable');
+
+    // A repo promoted from read-only stays editable when it becomes secondary
+    // again, instead of taking back the old read-only choice.
+    await act(async () => {
+      radioFor('/repos/api')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(accessControl('web')?.getAttribute('aria-label')).toBe('Editable: @web');
+
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(sent).toEqual([[
+      { alias: 'api', readOnly: false },
+      { alias: 'web', readOnly: false },
+    ]]);
   });
 
   test('toggling the row control sends readOnly and leaves the primary editable', async () => {

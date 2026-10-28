@@ -1689,6 +1689,35 @@ describe('workspace service: permission rules', () => {
     });
   });
 
+  it('gives a repo added by an edit an allow rule by default', async () => {
+    const root = caseRoot('permission-update-add');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const docs = projectAt(root, 'docs', 'Docs');
+    const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {}).file;
+    const settings = { projects: [api, web, docs], workspaces: [], activeWorkspaceId: null };
+    const { service } = fixtureService(settings);
+
+    const created = await service.create(createPayloadWith(api, [web]));
+    settings.workspaces = [created.workspace];
+
+    const result = await service.update(created.workspace.id, createPayloadWith(api, [web, docs]));
+
+    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
+      ['api', false],
+      ['web', false],
+      ['docs', false],
+    ]);
+    expect(result.workspace.editRules).toEqual([
+      ...storedPermissionRules(web.path, 'web', 'allow'),
+      ...storedPermissionRules(docs.path, 'docs', 'allow'),
+    ]);
+    expect(readConfigFile(file).permissions).toEqual([
+      ...configPermissionRules(web.path, 'allow'),
+      ...configPermissionRules(docs.path, 'allow'),
+    ]);
+  });
+
   it('removes the rules it wrote before and appends the new ones on edit', async () => {
     const root = caseRoot('permission-update');
     const api = projectAt(root, 'api', 'API');

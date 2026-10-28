@@ -52,13 +52,15 @@ total, partial flag and branch divergence come from
   disabled and takes no keys.
 - Edit opens on the saved name, repos, aliases, primary and branch snapshots.
   A repo whose project is gone shows "Project not found" and keeps its id.
-- Only secondary rows show the edit-permission control; the primary row has
-  none, and every payload names the primary `readOnly: false` because the
-  session always runs there. The checkbox is checked when the folder may be
-  edited, its visible label names the state (`Editable` or `Read-only`) and its
-  accessible name adds the alias. Toggling changes only that row. A row that
-  becomes primary sends `false`; if it becomes secondary again it takes back
-  the draft value it had, which is editable for a new or imported row.
+- Only secondary rows show the edit-permission control; the primary row shows
+  a static `Editable` label and no control, and every payload names the primary
+  `readOnly: false` because the session always runs there. The checkbox is
+  checked when the folder may be edited, its visible label names the state
+  (`Editable` or `Read-only`) and its accessible name adds the alias. Toggling
+  changes only that row. A repo starts editable, whether it is created with the
+  workspace or added to it later. A row that becomes primary is set editable in
+  the draft and sends `false`; when it becomes secondary again it stays
+  editable rather than taking back an earlier read-only choice.
 - A saved workspace whose edit-permission rule could not be written still
   counts as saved: the dialog closes and refreshes as usual, after an error
   toast that names the config path. It is not the pending-references card,

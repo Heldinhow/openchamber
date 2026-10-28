@@ -105,9 +105,11 @@ const RepoRow: React.FC<{
   const status = useGitStatus(row.path);
   const branch = status?.current ?? row.branch ?? '';
   const aliasErrorId = `workspace-alias-error-${row.key}`;
-  const accessLabel = row.readOnly
-    ? t('sessions.sidebar.workspace.readOnlyAccess')
-    : t('sessions.sidebar.workspace.editAccess');
+  // The primary is always editable: it runs the session, so it has no control
+  // and shows the state as fixed text.
+  const accessLabel = isPrimary || !row.readOnly
+    ? t('sessions.sidebar.workspace.editAccess')
+    : t('sessions.sidebar.workspace.readOnlyAccess');
 
   React.useEffect(() => {
     const git = getRegisteredRuntimeAPIs()?.git;
@@ -166,7 +168,11 @@ const RepoRow: React.FC<{
         </span>
       </div>
       <div className="flex h-8 min-w-0 items-center">
-        {isPrimary ? null : (
+        {isPrimary ? (
+          <span className="truncate typography-micro text-muted-foreground" title={accessLabel}>
+            {accessLabel}
+          </span>
+        ) : (
           <label className="flex min-w-0 items-center gap-1.5">
             <Checkbox
               checked={!row.readOnly}
@@ -768,7 +774,13 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
                 : null}
               disabled={submitting}
               tabIndex={row.key === tabStopKey ? 0 : -1}
-              onPrimary={() => updateDraft((current) => ({ ...current, primaryKey: row.key }))}
+              onPrimary={() => updateDraft((current) => ({
+                ...current,
+                primaryKey: row.key,
+                // Becoming primary makes the repo editable, and it stays that
+                // way if it later returns to a secondary row.
+                rows: current.rows.map((entry) => entry.key === row.key ? { ...entry, readOnly: false } : entry),
+              }))}
               onAlias={(alias) => updateDraft((current) => ({
                 ...current,
                 rows: current.rows.map((entry) => entry.key === row.key ? { ...entry, alias } : entry),
