@@ -169,6 +169,35 @@ export const updatePayloadFromDraft = (
   keepRefs,
 });
 
+/**
+ * The `PATCH` body that relocates one missing repo: that repo travels by path
+ * and loses its dead project id, every other repo keeps its id, alias and
+ * branch untouched.
+ */
+export const relocateWorkspaceRepoPayload = (
+  workspace: RepoWorkspaceResolved,
+  alias: string,
+  path: string,
+  branch: string,
+) => ({
+  name: workspace.name,
+  repos: workspace.repos.map((repo) => (
+    repo.alias === alias
+      ? {
+        alias: repo.alias,
+        path: normalizedRowPath(path),
+        branch,
+        primary: repo.projectId === workspace.primaryProjectId,
+      }
+      : {
+        projectId: repo.projectId,
+        alias: repo.alias,
+        branch: repo.branch,
+        primary: repo.projectId === workspace.primaryProjectId,
+      }
+  )),
+});
+
 type RepoWorkspaceRefDiff = {
   removed: string[];
   added: string[];

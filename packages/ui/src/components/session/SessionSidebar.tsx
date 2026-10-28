@@ -22,11 +22,14 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { SidebarHeader } from './sidebar/shell/SidebarHeader';
 import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
-import { WorkspaceDiscardedNotice, WorkspaceEmptyCard, WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
+import { WorkspaceSidebarSlot } from './sidebar/shell/WorkspaceSidebarHeader';
 import { RepoWorkspaceDialog } from './sidebar/repo-workspaces/RepoWorkspaceDialog';
 import { RepoWorkspaceReview } from './sidebar/repo-workspaces/RepoWorkspaceReview';
 import { RepoWorkspaceDeleteDialog, RepoWorkspaceManageDialog } from './sidebar/repo-workspaces/RepoWorkspaceManageDialogs';
 import { updateRepoWorkspace, type RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
+import { relocateWorkspaceRepoPayload } from './sidebar/repo-workspaces/repoWorkspaceDraft';
+import { DirectoryExplorerDialog } from './DirectoryExplorerDialog';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
 import type { SessionProjectListProps } from './sidebar/projects/SessionProjectScroller';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -518,6 +521,29 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     }
   }, [activeRepoWorkspace, handleWorkspaceRefsChanged, t]);
 
+  // Relocation picks a folder for the repo that lost its project, then saves
+  // that repo by path; the alias, the primary and every other repo stay.
+  const [relocatingWorkspaceRepoAlias, setRelocatingWorkspaceRepoAlias] = React.useState<string | null>(null);
+  const handleRelocateWorkspaceRepo = React.useCallback(async (pickedPath: string) => {
+    const alias = relocatingWorkspaceRepoAlias;
+    setRelocatingWorkspaceRepoAlias(null);
+    const workspace = activeRepoWorkspace;
+    if (!workspace || !alias) return;
+    const path = normalizePath(pickedPath) ?? pickedPath.trim();
+    if (!path) return;
+    const git = getRegisteredRuntimeAPIs()?.git;
+    if (git) {
+      await useGitStore.getState().ensureStatus(path, git).catch(() => undefined);
+    }
+    const branch = useGitStore.getState().directories.get(path)?.status?.current ?? '';
+    try {
+      await updateRepoWorkspace(workspace.id, relocateWorkspaceRepoPayload(workspace, alias, path, branch));
+      handleWorkspaceRefsChanged();
+    } catch {
+      toast.error(t('sessions.sidebar.workspace.editFailed'));
+    }
+  }, [activeRepoWorkspace, handleWorkspaceRefsChanged, relocatingWorkspaceRepoAlias, t]);
+
   const handleEditWorkspaceFromReview = React.useCallback(() => {
     setWorkspaceReviewOpen(false);
     openWorkspaceEditDialog();
@@ -759,8 +785,8 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         lastRepoStatus: lastRepoStatusRef.current,
       }}
       workspace={{
-        workspaces: repoWorkspaces.status === 'ready' ? repoWorkspaces.workspaces : [],
-        activeWorkspaceId: repoWorkspaces.status === 'ready' ? repoWorkspaces.activeWorkspaceId : null,
+        workspaces: repoWorkspaces.workspaces,
+        activeWorkspaceId: repoWorkspaces.activeWorkspaceId,
       }}
       view={{
         isVisible,
@@ -804,6 +830,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         removeWorkspaceRepo: activeRepoWorkspace && activeRepoWorkspace.repos.length > 1
           ? handleRemoveWorkspaceRepo
           : undefined,
+        relocateWorkspaceRepo: setRelocatingWorkspaceRepoAlias,
         reorderProjects,
         startSessionWorktreeMenuLoad: handleSessionWorktreeMenuLoad,
         initialActiveSessionByProject,
@@ -851,40 +878,28 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         workspaceActive={workspaceActive}
       />
 
-      {repoWorkspaces.status === 'loading' ? (
-        <WorkspaceSidebarSkeleton />
-      ) : (
-        <>
-          {repoWorkspaces.status === 'error' ? <WorkspaceSidebarError onRetry={repoWorkspaces.reload} /> : null}
-          {repoWorkspaces.status === 'ready' && repoWorkspaces.workspaces.length === 0 ? (
-            <WorkspaceEmptyCard onCreate={openWorkspaceDialog} />
-          ) : null}
-          {repoWorkspaces.status === 'ready' && repoWorkspaces.workspaces.length > 0 ? (
-            <WorkspaceSidebarHeader
-              workspaces={repoWorkspaces.workspaces}
-              activeWorkspace={repoWorkspaces.activeWorkspace}
-              activating={repoWorkspaces.activating}
-              onSelect={handleSelectWorkspace}
-              onCreate={openWorkspaceDialog}
-              onEdit={openWorkspaceEditDialog}
-              onManage={openWorkspaceManageDialog}
-            />
-          ) : null}
-          {repoWorkspaces.status === 'ready' && repoWorkspaces.discarded > 0 ? (
-            <WorkspaceDiscardedNotice count={repoWorkspaces.discarded} />
-          ) : null}
-          {collection}
-          {repoWorkspaces.status === 'ready' && repoWorkspaces.activeWorkspace ? (
-            <button
-              type="button"
-              onClick={() => setWorkspaceReviewOpen(true)}
-              className="mx-2.5 mt-1 flex min-h-7 shrink-0 items-center rounded-md px-1.5 text-start typography-meta text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {t('sessions.sidebar.workspace.review')}
-            </button>
-          ) : null}
-        </>
-      )}
+      <WorkspaceSidebarSlot
+        status={repoWorkspaces.status}
+        workspaces={repoWorkspaces.workspaces}
+        activeWorkspace={repoWorkspaces.activeWorkspace}
+        discarded={repoWorkspaces.discarded}
+        activating={repoWorkspaces.activating}
+        onRetry={repoWorkspaces.reload}
+        onSelect={handleSelectWorkspace}
+        onCreate={openWorkspaceDialog}
+        onEdit={openWorkspaceEditDialog}
+        onManage={openWorkspaceManageDialog}
+      />
+      {collection}
+      {repoWorkspaces.activeWorkspace ? (
+        <button
+          type="button"
+          onClick={() => setWorkspaceReviewOpen(true)}
+          className="mx-2.5 mt-1 flex min-h-7 shrink-0 items-center rounded-md px-1.5 text-start typography-meta text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {t('sessions.sidebar.workspace.review')}
+        </button>
+      ) : null}
 
       <SidebarFooter
         onOpenSettings={handleOpenSettings}
@@ -939,8 +954,8 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         }}
         editing={editingWorkspace ? {
           workspace: editingWorkspace,
-          refs: editingWorkspace.id === activeWorkspaceId ? repoWorkspaces.refs : [],
-          refsError: editingWorkspace.id === activeWorkspaceId ? repoWorkspaces.refsError : null,
+          refs: editingWorkspace.refs,
+          refsError: editingWorkspace.refsError,
         } : null}
         onCreated={handleWorkspaceCreated}
         onRefsChanged={handleWorkspaceRefsChanged}
@@ -966,6 +981,14 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
           if (!open) setWorkspaceDialog(null);
         }}
         onDeleted={handleWorkspaceCreated}
+      />
+
+      <DirectoryExplorerDialog
+        open={relocatingWorkspaceRepoAlias !== null}
+        onOpenChange={(open) => {
+          if (!open) setRelocatingWorkspaceRepoAlias(null);
+        }}
+        onPickDirectory={(path) => void handleRelocateWorkspaceRepo(path)}
       />
 
       <RepoWorkspaceReview

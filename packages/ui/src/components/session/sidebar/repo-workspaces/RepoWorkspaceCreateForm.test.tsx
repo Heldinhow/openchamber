@@ -29,6 +29,8 @@ const workspace = {
     { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
   ],
   createdRefs: ['web'],
+  refs: [],
+  refsError: null,
 };
 
 /** Base UI's hidden input is the element that actually changes; a synthetic
@@ -64,6 +66,8 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
     },
   ],
   createdRefs: ['web'],
+  refs: [],
+  refsError: null,
 };
 
 const pendingResult = (): CreateRepoWorkspaceResult => ({
@@ -95,6 +99,8 @@ beforeEach(async () => {
   }
   ({ RepoWorkspaceCreateForm: Form } = await import('./RepoWorkspaceCreateForm'));
   ({ I18nProvider } = await import('@/lib/i18n'));
+  const { useProjectsStore } = await import('@/stores/useProjectsStore');
+  useProjectsStore.setState({ projects: [], activeProjectId: null });
   const { createRoot } = await import('react-dom/client');
   const host = document.createElement('div');
   document.body.append(host);
@@ -117,6 +123,7 @@ describe('workspace create form', () => {
     let created = 0;
     let cancelled = 0;
     let retried: string[] = [];
+    let retryConfirmations: string[] = [];
 
     await act(async () => root.render(
       <I18nProvider>
@@ -127,8 +134,9 @@ describe('workspace create form', () => {
           onCreated={() => { created += 1; }}
           onRefsChanged={() => undefined}
           createWorkspace={async () => pendingResult()}
-          retryRefs={async (_id, aliases) => {
+          retryRefs={async (_id, aliases, confirmations) => {
             retried = aliases ?? [];
+            retryConfirmations = confirmations ?? [];
             return {
               refs: [],
               refWrites: [{ alias: 'web', status: 'written' }],
@@ -160,6 +168,7 @@ describe('workspace create form', () => {
     });
 
     expect(retried).toEqual(['web']);
+    expect(retryConfirmations).toEqual(['web']);
     expect(cancelled).toBe(1);
   });
 
@@ -190,6 +199,26 @@ describe('workspace create form', () => {
       document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
     expect(calls).toBe(0);
+  });
+
+  test('the primary error is referenced by the fieldset', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          initialDraft={{ name: 'Shop Platform', rows: [], primaryKey: null }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    const fieldset = document.querySelector('fieldset');
+    const describedBy = fieldset?.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    const error = document.getElementById(describedBy!);
+    expect(error?.textContent).toBe('Add at least one folder.');
   });
 
   test('editing shows the reference diff and requires confirmation before overwriting an edited entry', async () => {
@@ -256,6 +285,94 @@ describe('workspace create form', () => {
         { projectId: 'p_web', alias: 'web', primary: false },
       ],
     });
+  });
+
+  test('a changed alias defined outside the project config also needs confirmation', async () => {
+    const updates: Array<{ input: unknown }> = [];
+    const { useProjectsStore } = await import('@/stores/useProjectsStore');
+    useProjectsStore.setState({
+      projects: [{ id: 'p_web', path: '/repos/web', label: 'Web app' }],
+      activeProjectId: 'p_web',
+    });
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          editing={{
+            workspace: resolvedWorkspace,
+            refs: [{
+              alias: 'web',
+              path: '/repos/web',
+              description: 'web',
+              status: 'outside',
+              owned: true,
+              current: { path: '/repos/web', description: 'Web app' },
+            }],
+            refsError: null,
+          }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          updateWorkspace={async (_id, input) => {
+            updates.push({ input });
+            return {
+              workspace: resolvedWorkspace,
+              refs: [],
+              refWrites: [],
+              refsError: null,
+              configTarget: { path: '/repos/api/.opencode/opencode.json', rootConfigPath: null },
+            };
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).toContain('@web was edited outside the app. Overwrite it?');
+    const submit = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
+    expect(submit?.disabled).toBe(true);
+
+    const confirmation = [...document.querySelectorAll('[role="checkbox"]')]
+      .find((element) => element.getAttribute('aria-label')?.includes('Overwrite it?'));
+    await act(async () => {
+      setCheckbox(confirmation, true);
+    });
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].input).toMatchObject({ confirmRefs: ['web'] });
+  });
+
+  test('an unchanged alias defined outside the project config needs no checkbox', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          editing={{
+            workspace: resolvedWorkspace,
+            refs: [{
+              alias: 'web',
+              path: '/repos/web',
+              description: 'web',
+              status: 'overridden',
+              owned: true,
+              current: { path: '/repos/web', description: 'web' },
+            }],
+            refsError: null,
+          }}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    const overwrite = [...document.querySelectorAll('[role="checkbox"]')]
+      .find((element) => element.getAttribute('aria-label')?.includes('Overwrite it?'));
+    expect(overwrite).toBeUndefined();
+    expect(document.querySelector<HTMLButtonElement>('form button[type="submit"]')?.disabled).toBe(false);
   });
 
   test('importing a .code-workspace fills the rows and skips only the unsupported folder', async () => {

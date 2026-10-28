@@ -12,25 +12,6 @@ const projectRefSchema = z.object({
   label: z.string(),
 });
 
-const repoWorkspaceRepoSchema = z.object({
-  projectId: z.string().min(1),
-  alias: z.string().min(1),
-  description: z.string().catch(''),
-  branch: z.string().catch(''),
-  missing: z.boolean().catch(false),
-  project: projectRefSchema.nullable().catch(null),
-});
-
-const repoWorkspaceSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  primaryProjectId: z.string().min(1),
-  repos: z.array(repoWorkspaceRepoSchema),
-  createdRefs: z.array(z.string()).catch([]),
-});
-
-export type RepoWorkspaceResolved = z.infer<typeof repoWorkspaceSchema>;
-
 const referenceEntrySchema = z.object({
   path: z.string().nullable().catch(null),
   description: z.string().catch(''),
@@ -53,6 +34,28 @@ const refsErrorSchema = z.object({
   path: z.string(),
   message: z.string(),
 }).nullable().catch(null);
+
+const repoWorkspaceRepoSchema = z.object({
+  projectId: z.string().min(1),
+  alias: z.string().min(1),
+  description: z.string().catch(''),
+  branch: z.string().catch(''),
+  missing: z.boolean().catch(false),
+  project: projectRefSchema.nullable().catch(null),
+});
+
+const repoWorkspaceSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  primaryProjectId: z.string().min(1),
+  repos: z.array(repoWorkspaceRepoSchema),
+  createdRefs: z.array(z.string()).catch([]),
+  /** This workspace's own primary config, so the edit dialog never needs the active one. */
+  refs: z.array(repoWorkspaceRefSchema).catch([]),
+  refsError: refsErrorSchema,
+});
+
+export type RepoWorkspaceResolved = z.infer<typeof repoWorkspaceSchema>;
 
 const repoWorkspacesDocumentSchema = z.object({
   workspaces: z.array(repoWorkspaceSchema),
@@ -120,6 +123,11 @@ const requestErrorSchema = z.object({
 export type RepoWorkspaceConfigTarget = z.infer<typeof configTargetSchema>;
 export type CreateRepoWorkspaceResult = z.infer<typeof createRepoWorkspaceResultSchema>;
 export type RetryRepoWorkspaceRefsResult = z.infer<typeof retryRepoWorkspaceRefsResultSchema>;
+
+type RetryRepoWorkspaceRefsBody = {
+  aliases?: string[];
+  confirmRefs?: string[];
+};
 
 /**
  * A deletion that could not remove every owned reference answers `removed:
@@ -280,12 +288,22 @@ export const updateRepoWorkspace = async (
   return parsed.data;
 };
 
-/** Retries the named pending aliases; the route only rewrites what is not `ok`. */
-export const retryRepoWorkspaceRefs = async (id: string, aliases?: string[]): Promise<RetryRepoWorkspaceRefsResult> => {
+/**
+ * Retries the named pending aliases; the route only rewrites what is not `ok`.
+ * `confirmRefs` is what lets a retry of a user-edited alias through.
+ */
+export const retryRepoWorkspaceRefs = async (
+  id: string,
+  aliases?: string[],
+  confirmRefs?: string[],
+): Promise<RetryRepoWorkspaceRefsResult> => {
+  const body: RetryRepoWorkspaceRefsBody = {};
+  if (aliases) body.aliases = aliases;
+  if (confirmRefs && confirmRefs.length > 0) body.confirmRefs = confirmRefs;
   const response = await runtimeFetch(`/api/workspaces/${encodeURIComponent(id)}/refs/retry`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify(aliases ? { aliases } : {}),
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw await requestFailure(response);
   const parsed = retryRepoWorkspaceRefsResultSchema.safeParse(await readJson(response));

@@ -21,6 +21,8 @@ const workspaceWith = (overrides: Partial<RepoWorkspaceResolved>): RepoWorkspace
     { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
   ],
   createdRefs: ['web'],
+  refs: [],
+  refsError: null,
   ...overrides,
 });
 

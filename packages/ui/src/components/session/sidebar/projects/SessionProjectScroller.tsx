@@ -118,6 +118,7 @@ export type SessionProjectScrollerActions = {
   openProjectEditDialog: (id: string) => void;
   removeProject: (id: string) => void;
   removeWorkspaceRepo?: (alias: string) => void;
+  relocateWorkspaceRepo?: (alias: string) => void;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
   renderProjectStatusIndicator?: (projectId: string, groups: SessionGroup[]) => React.ReactNode;
   setSingleProjectId: (id: string) => void;
@@ -307,6 +308,9 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
           <MissingWorkspaceRepoItem
             alias={workspace.alias}
             primary={workspace.primary}
+            onRelocate={actions.relocateWorkspaceRepo
+              ? () => actions.relocateWorkspaceRepo?.(workspace.alias)
+              : undefined}
             onRemove={actions.removeWorkspaceRepo
               ? () => actions.removeWorkspaceRepo?.(workspace.alias)
               : undefined}

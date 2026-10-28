@@ -10,6 +10,8 @@ const workspace = (repos: Array<{ projectId: string; alias: string; branch?: str
   name: 'Shop Platform',
   primaryProjectId,
   createdRefs: repos.filter((repo) => repo.projectId !== primaryProjectId).map((repo) => repo.alias),
+  refs: [],
+  refsError: null,
   repos: repos.map((repo) => ({
     projectId: repo.projectId,
     alias: repo.alias,

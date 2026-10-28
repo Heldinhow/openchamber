@@ -52,12 +52,20 @@ total, partial flag and branch divergence come from
   repo from the workspace.
 - A `different` entry — edited outside the app — is listed as a confirmation.
   Save stays blocked until the user checks it, and a removal question for the
-  same alias already is that confirmation. Cancel writes nothing.
+  same alias already is that confirmation. An `outside` or `overridden` entry
+  is confirmed only when this edit changes the alias, path or description; an
+  unchanged one is skipped by the server, so it gets no checkbox. Cancel writes
+  nothing.
+- Every resolved workspace carries its own `refs`/`refsError`, so editing a
+  workspace that is not active still diffs and confirms against that
+  workspace's primary config, never another one's.
 - An unreadable config (`422 configError`, or `refsError` on open) shows its
   path, disables save, and keeps the dialog open; file content is never shown.
 - A saved workspace whose reference writes failed keeps the workspace and
   replaces the form with the pending card. Each affected alias has its own
-  retry; closing the dialog keeps the workspace and the pending references.
+  retry, carrying that alias as `confirmRefs` so a user-edited entry is not a
+  permanent 409; closing the dialog keeps the workspace and the pending
+  references.
 - A removal the server refuses (`409` with an alias) is shown with that alias
   and nothing is saved. The caller refreshes the project catalog and the filter
   after `onCreated`.
@@ -134,12 +142,11 @@ without guessing from a status code. `removed` is that single fact; the alias
 and the config path are the explanation. The server writes settings only after a
 clean removal, so the dialog never has to undo an optimistic close.
 
-### Why editing a non-active workspace opens without reference states
+### Why every workspace carries its reference state
 
-`GET /api/workspaces` returns the active workspace's `refs` because that is what
-the sidebar and session header show; reading every workspace's primary config on
-a list request is not part of the contract. The manage list can still open the
-same form: the draft and diff come from the stored workspace, and the server
-revalidates every change, answering `409` with the alias when a hand-edited entry
-needs a confirmation the client could not show in advance. Editing the active
-workspace keeps the full diff and confirmations.
+`GET /api/workspaces` reads each workspace's primary config, not only the active
+one's, because the manage list opens the same edit form on any workspace and that
+form must show the confirmation a hand-edited entry needs before the request.
+The alternative — reading refs only for the active workspace — left the form
+guessing, so a `different` entry edited from the manage list was a permanent
+`409` with no checkbox to clear it.

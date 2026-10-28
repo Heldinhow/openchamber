@@ -7,8 +7,8 @@
 `PATCH /api/workspaces/:id`, `DELETE /api/workspaces/:id`,
 `POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
 `useRepoWorkspaces` holds the resolved list, the active pointer, the count of
-discarded workspaces and the active workspace's reference states for the
-sidebar and the session header; the workspace dialogs use
+discarded workspaces and the reference states for the sidebar, the session
+header and every workspace's edit dialog; the workspace dialogs use
 `createRepoWorkspace`, `updateRepoWorkspace`, `deleteRepoWorkspace` and
 `retryRepoWorkspaceRefs` and parse every response at the boundary.
 
@@ -23,9 +23,10 @@ workspace document and never stores one locally.
 ## Invariants
 
 - A failed read is never an empty workspace list. The store keeps its last
-  resolved data, reports `error`, and the sidebar shows Retry; the project list
-  stays usable. A 404 means the route is absent in this runtime and the whole
-  feature is hidden rather than shown as a failure.
+  resolved data and active pointer, reports `error`, and the sidebar shows Retry
+  beside the last header; the project list stays usable and the filter still
+  resolves its workspace. A 404 means the route is absent in this runtime and
+  the whole feature is hidden rather than shown as a failure.
 - The resolved route payload is authoritative for repos, including a repo whose
   project is gone (`missing: true`). The merged settings document contributes
   only the active pointer; a reload then reads the resolved state again.
@@ -47,10 +48,14 @@ workspace document and never stores one locally.
   `invalid-json`) instead of file content.
 - The document's `discarded` count is read-only: it names stored workspaces the
   parser dropped so the sidebar can show them, and nothing writes them back.
-- The document's `refs` and `refsError` describe the active workspace's primary
-  config. They are cleared when the active pointer moves, and read again for the
-  newly active workspace, so the edit dialog never diffs against another
-  workspace's references.
+- The document's top-level `refs` and `refsError` describe the active
+  workspace's primary config for the session header. Each resolved workspace
+  also carries its own pair, which the edit dialog reads for any workspace;
+  neither is ever borrowed from the active one. The top-level pair is cleared
+  when the active pointer moves and read again for the newly active workspace.
+- A retry names the aliases it retries and may carry `confirmRefs`; retrying
+  from the pending card confirms the alias the user clicked, so a user-edited
+  entry can be written instead of answering `409` forever.
 - The review total sums only the repos whose git status was read. A repo whose
   project is gone, or whose read failed, keeps its own card and makes the total
   partial; it is never shown as a clean zero. A repo without git is its own

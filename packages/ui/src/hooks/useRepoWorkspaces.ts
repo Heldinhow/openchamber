@@ -78,7 +78,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
     } catch (error) {
       if (generation !== requestGenerationRef.current || runtimeKey !== getRuntimeKey()) return;
       if (error instanceof RepoWorkspacesUnavailableError) {
-        setState((current) => ({ ...current, status: 'unavailable' }));
+        setState((current) => ({ ...initialState(true), status: 'unavailable', activating: current.activating }));
         return;
       }
       setState((current) => ({ ...current, status: 'error' }));
@@ -155,11 +155,13 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
     }
   }, [enabled, load]);
 
+  // A failed reload keeps the last resolved list usable, so the pointer still
+  // resolves to the workspace it named.
   const activeWorkspace = React.useMemo(() => (
-    state.status === 'ready' && state.activeWorkspaceId
+    state.activeWorkspaceId
       ? state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? null
       : null
-  ), [state.activeWorkspaceId, state.status, state.workspaces]);
+  ), [state.activeWorkspaceId, state.workspaces]);
 
   /** Rewrites the named pending aliases and replaces the reference states with the answer. */
   const retryRefs = React.useCallback(async (aliases: string[]) => {

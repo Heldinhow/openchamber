@@ -73,7 +73,7 @@ type RepoWorkspaceCreateFormProps = {
   onRefsChanged: () => void;
   createWorkspace?: (input: CreateRepoWorkspaceInput) => Promise<CreateRepoWorkspaceResult>;
   updateWorkspace?: (id: string, input: UpdateRepoWorkspaceInput) => Promise<CreateRepoWorkspaceResult>;
-  retryRefs?: (id: string, aliases?: string[]) => Promise<RetryRepoWorkspaceRefsResult>;
+  retryRefs?: (id: string, aliases?: string[], confirmRefs?: string[]) => Promise<RetryRepoWorkspaceRefsResult>;
   importWorkspace?: (filePath: string) => Promise<RepoWorkspaceImportDraft>;
 };
 
@@ -224,6 +224,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const nameId = React.useId();
   const nameErrorId = React.useId();
   const importErrorId = React.useId();
+  const primaryErrorId = React.useId();
 
   const registeredPaths = React.useMemo(() => new Set(
     projects.map((project) => normalizePath(project.path)).filter((path): path is string => Boolean(path)),
@@ -249,6 +250,13 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
 
   const editingRefs = editing?.refs ?? [];
   const refsByAlias = new Map(editingRefs.map((reference) => [reference.alias, reference]));
+  const savedSecondaryRepos = new Map(
+    editing
+      ? editing.workspace.repos
+        .filter((repo) => repo.projectId !== editing.workspace.primaryProjectId)
+        .map((repo) => [repo.alias, repo] as const)
+      : [],
+  );
   const nextSecondaryAliases = React.useMemo(
     () => new Set(secondaryRows.map((row) => row.alias.trim())),
     [secondaryRows],
@@ -280,10 +288,31 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const overwriteDifferent = secondaryRows
     .map((row) => row.alias.trim())
     .filter((alias) => refsByAlias.get(alias)?.status === 'different');
+  // An `outside`/`overridden` entry the server skips when this edit writes the
+  // same expected value; changing the alias, path or description writes it and
+  // needs the same check.
+  const changedSecondaryAliases = new Set(secondaryRows.flatMap((row) => {
+    const alias = row.alias.trim();
+    const saved = savedSecondaryRepos.get(alias);
+    if (!saved) return [alias];
+    const savedPath = saved.project ? (normalizePath(saved.project.path) ?? saved.project.path) : '';
+    const nextPath = normalizePath(row.path) ?? row.path;
+    const nextDescription = projectLabels.has(nextPath)
+      ? (projectLabels.get(nextPath) ?? '')
+      : saved.description;
+    return savedPath !== nextPath || saved.description !== nextDescription ? [alias] : [];
+  }));
+  const overwriteLayered = secondaryRows
+    .map((row) => row.alias.trim())
+    .filter((alias) => {
+      const status = refsByAlias.get(alias)?.status;
+      return (status === 'outside' || status === 'overridden') && changedSecondaryAliases.has(alias);
+    });
+  const overwriteAliases = new Set([...overwriteDifferent, ...overwriteLayered]);
   const removeDifferent = removedOwnedAliases.filter((alias) => (
     refsByAlias.get(alias)?.status === 'different' && !keepQuestions.includes(alias)
   ));
-  const neededConfirmations = [...overwriteDifferent, ...removeDifferent];
+  const neededConfirmations = [...overwriteAliases, ...removeDifferent];
   const pendingConfirmation = neededConfirmations.some((alias) => !confirmations[alias]);
 
   const canSubmit = !nameError
@@ -450,7 +479,9 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
     setRetryingAlias(alias);
     setPending({ ...current, retryFailed: null });
     try {
-      const result = await retryRefs(current.workspaceId, [alias]);
+      // The user picked this alias in the pending card: that is the
+      // confirmation a user-edited entry needs to be written again.
+      const result = await retryRefs(current.workspaceId, [alias], [alias]);
       onRefsChanged();
       const failed = result.refWrites.some((write) => write.alias === alias && write.status === 'failed');
       const remaining = failed ? current.aliases : current.aliases.filter((entry) => entry !== alias);
@@ -589,7 +620,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         </div>
       ) : null}
 
-      <fieldset className="min-w-0">
+      <fieldset className="min-w-0" aria-describedby={primaryError ? primaryErrorId : undefined}>
         <legend className="sr-only">{t('sessions.sidebar.workspace.primary')}</legend>
         <div className="grid grid-cols-[4.5rem_4.5rem_minmax(0,1fr)_7rem_1.75rem] items-center gap-2 pb-1 typography-micro uppercase tracking-wide text-muted-foreground">
           <span>{t('sessions.sidebar.workspace.primaryColumn')}</span>
@@ -636,7 +667,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           {t('sessions.sidebar.workspace.addFolder')}
         </Button>
         {primaryError ? (
-          <p role={draft.rows.length === 0 ? undefined : 'alert'} className={`typography-micro ${draft.rows.length === 0 ? 'text-muted-foreground' : 'text-status-error'}`}>
+          <p id={primaryErrorId} role={draft.rows.length === 0 ? undefined : 'alert'} className={`typography-micro ${draft.rows.length === 0 ? 'text-muted-foreground' : 'text-status-error'}`}>
             {draft.rows.length === 0
               ? t('sessions.sidebar.workspace.noRepos')
               : t('sessions.sidebar.workspace.primaryRequired')}
@@ -690,7 +721,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
             {neededConfirmations.length > 0 ? (
               <div className="mt-2 flex flex-col gap-1">
                 {neededConfirmations.map((alias) => {
-                  const label = overwriteDifferent.includes(alias)
+                  const label = overwriteAliases.has(alias)
                     ? t('sessions.sidebar.workspace.confirmOverwrite', { alias })
                     : t('sessions.sidebar.workspace.confirmRemove', { alias });
                   return (

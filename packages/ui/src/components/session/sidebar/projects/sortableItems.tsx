@@ -16,7 +16,6 @@ import { cn, getRevealLabelKey } from '@/lib/utils';
 import { PROJECT_ICON_MAP, resolveProjectColor, ProjectIconImage } from '@/lib/projectMeta';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
-import { sessionEvents } from '@/lib/sessionEvents';
 import { CrossfadeZoneHeader } from './CrossfadeZoneHeaders';
 import { useProjectFolderMissing } from './useProjectFolderMissing';
 import type { ProjectSectionWorkspace } from './sessionProjectRender';
@@ -195,8 +194,9 @@ const WorkspaceGitState: React.FC<{ git: NonNullable<ProjectSectionWorkspace['gi
 export const MissingWorkspaceRepoItem: React.FC<{
   alias: string;
   primary: boolean;
+  onRelocate?: () => void;
   onRemove?: () => void;
-}> = ({ alias, primary, onRemove }) => {
+}> = ({ alias, primary, onRelocate, onRemove }) => {
   const { t } = useI18n();
   return (
     <div className="relative flex items-center gap-1.5 py-1 ps-4 pe-3.5">
@@ -220,7 +220,7 @@ export const MissingWorkspaceRepoItem: React.FC<{
           variant="link"
           size="xs"
           className="h-auto p-0 typography-micro"
-          onClick={() => sessionEvents.requestDirectoryDialog()}
+          onClick={onRelocate}
         >
           {t('sessions.sidebar.workspace.relocate')}
         </Button>

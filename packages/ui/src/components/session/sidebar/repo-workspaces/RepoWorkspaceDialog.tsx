@@ -8,7 +8,7 @@ type RepoWorkspaceDialogProps = {
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
   onRefsChanged: () => void;
-  /** Present when editing the active workspace; absent for a new one. */
+  /** Present when editing any workspace; absent for a new one. */
   editing?: {
     workspace: RepoWorkspaceResolved;
     refs: readonly RepoWorkspaceRef[];

@@ -29,7 +29,7 @@ type Props = {
  * leaves the filter. "New workspace" opens the create dialog; "Edit workspace"
  * opens the same dialog on the active one.
  */
-export const WorkspaceSidebarHeader: React.FC<Props> = ({
+const WorkspaceSidebarHeader: React.FC<Props> = ({
   workspaces,
   activeWorkspace,
   activating,
@@ -140,7 +140,7 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
 };
 
 /** Stored workspaces the parser dropped: a count, never a rewrite. */
-export const WorkspaceDiscardedNotice: React.FC<{ count: number }> = ({ count }) => {
+const WorkspaceDiscardedNotice: React.FC<{ count: number }> = ({ count }) => {
   const { t } = useI18n();
   return (
     <p role="status" className="px-2.5 pb-1 typography-micro text-muted-foreground">
@@ -155,7 +155,7 @@ export const WorkspaceDiscardedNotice: React.FC<{ count: number }> = ({ count })
  * The feature's empty state: a card above the projects, which stay usable
  * without a workspace. It is not the whole sidebar's empty state.
  */
-export const WorkspaceEmptyCard: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
+const WorkspaceEmptyCard: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-2 px-2.5 py-1">
@@ -193,7 +193,7 @@ export const WorkspaceEmptyCard: React.FC<{ onCreate: () => void }> = ({ onCreat
 };
 
 /** Three lines where the repo list will be, so the header does not jump in. */
-export const WorkspaceSidebarSkeleton: React.FC = () => {
+const WorkspaceSidebarSkeleton: React.FC = () => {
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-1.5 px-2.5 py-2" role="status" aria-label={t('sessions.sidebar.workspace.loading')}>
@@ -205,7 +205,7 @@ export const WorkspaceSidebarSkeleton: React.FC = () => {
 };
 
 /** The projects below stay usable; only the filter failed. */
-export const WorkspaceSidebarError: React.FC<{ onRetry: () => void }> = ({ onRetry }) => {
+const WorkspaceSidebarError: React.FC<{ onRetry: () => void }> = ({ onRetry }) => {
   const { t } = useI18n();
   return (
     <div className="flex items-center gap-2 px-2.5 py-1.5" role="status">
@@ -218,3 +218,51 @@ export const WorkspaceSidebarError: React.FC<{ onRetry: () => void }> = ({ onRet
     </div>
   );
 };
+
+type WorkspaceSidebarSlotProps = {
+  status: 'loading' | 'ready' | 'error' | 'unavailable';
+  workspaces: readonly RepoWorkspaceResolved[];
+  activeWorkspace: RepoWorkspaceResolved | null;
+  discarded: number;
+  activating: boolean;
+  onRetry: () => void;
+  onSelect: (id: string | null) => void;
+  onCreate: () => void;
+  onEdit: () => void;
+  onManage: () => void;
+};
+
+/**
+ * Only the header slot waits for the first read; the project list below is
+ * never replaced. A reload that fails keeps the last resolved header.
+ */
+export const WorkspaceSidebarSlot: React.FC<WorkspaceSidebarSlotProps> = ({
+  status,
+  workspaces,
+  activeWorkspace,
+  discarded,
+  activating,
+  onRetry,
+  onSelect,
+  onCreate,
+  onEdit,
+  onManage,
+}) => (
+  <>
+    {status === 'loading' && workspaces.length === 0 ? <WorkspaceSidebarSkeleton /> : null}
+    {workspaces.length > 0 ? (
+      <WorkspaceSidebarHeader
+        workspaces={workspaces}
+        activeWorkspace={activeWorkspace}
+        activating={activating}
+        onSelect={onSelect}
+        onCreate={onCreate}
+        onEdit={onEdit}
+        onManage={onManage}
+      />
+    ) : null}
+    {status === 'error' ? <WorkspaceSidebarError onRetry={onRetry} /> : null}
+    {status === 'ready' && workspaces.length === 0 ? <WorkspaceEmptyCard onCreate={onCreate} /> : null}
+    {discarded > 0 ? <WorkspaceDiscardedNotice count={discarded} /> : null}
+  </>
+);

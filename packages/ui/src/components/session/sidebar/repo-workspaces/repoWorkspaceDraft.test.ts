@@ -5,6 +5,7 @@ import {
   createPayloadFromDraft,
   diffRepoWorkspaceRefs,
   draftFromWorkspace,
+  relocateWorkspaceRepoPayload,
   suggestedAlias,
   updatePayloadFromDraft,
   validateRepoWorkspaceDraft,
@@ -111,6 +112,28 @@ describe('workspace create draft', () => {
     });
   });
 
+  test('relocating a missing repo swaps its project id for the picked path', () => {
+    const payload = relocateWorkspaceRepoPayload(
+      {
+        ...resolvedWorkspace,
+        repos: [
+          resolvedWorkspace.repos[0],
+          { ...resolvedWorkspace.repos[1], project: null, missing: true, branch: '' },
+        ],
+      },
+      'web',
+      '/repos/web-moved/',
+      'feat/moved',
+    );
+    expect(payload).toEqual({
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'p_api', alias: 'api', branch: 'main', primary: true },
+        { alias: 'web', path: '/repos/web-moved', branch: 'feat/moved', primary: false },
+      ],
+    });
+  });
+
   test('the diff names removed, added and changed reference aliases', () => {
     const loaded = draftFromWorkspace(resolvedWorkspace);
     const removed = diffRepoWorkspaceRefs({
@@ -144,6 +167,8 @@ const resolvedWorkspace: RepoWorkspaceResolved = {
   name: 'Shop Platform',
   primaryProjectId: 'p_api',
   createdRefs: ['web'],
+  refs: [],
+  refsError: null,
   repos: [
     {
       projectId: 'p_api',
