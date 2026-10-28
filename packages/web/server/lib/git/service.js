@@ -4549,8 +4549,9 @@ const withoutDetachedHeadEntry = (summary) => {
 
 /**
  * `remote: 'local'` answers from local refs alone, as `git branch -a` does: the
- * callers that only need the checked-out branch and its upstream (publishing,
- * worktree creation) must not wait on every remote's network round trip.
+ * callers that only need local facts (publishing and worktree creation read the
+ * checked-out branch and its upstream, the worktree delete dialog reads
+ * `defaultBranches`) must not wait on every remote's network round trip.
  */
 export async function getBranches(directory, { remote = 'live' } = {}) {
   const { git } = await createRepositoryGitContext(directory);
