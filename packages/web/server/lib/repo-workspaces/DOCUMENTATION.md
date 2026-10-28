@@ -53,8 +53,14 @@ warn that the new layer overrides it, and is never edited.
 - `status` is `ok`, `missing`, `different`, `outside`, `overridden` or
   `unknown`. A project whose id is gone makes its refs `missing` (and the
   primary's absence makes all of them `missing`) without failing the workspace.
-  A config layer that cannot be parsed makes every ref `unknown`, never
-  `missing`, and reports `{ path, message }` once in `refsError`.
+  A config layer that cannot be parsed, or whose `references` value is not an
+  object, makes every ref `unknown`, never `missing`, and reports
+  `{ path, message }` once in `refsError`.
+- A read of the reference state can fail after the workspace is already saved:
+  create, edit, retry and delete's refusal paths answer the saved state with
+  every expected ref `unknown` and `refsError: { path, message }` naming the
+  primary's `.opencode/opencode.json`. `GET` does the same per workspace, so one
+  unreadable config neither fails the request nor hides the other workspaces.
 - An expected alias is `owned` only when `createdRefs` lists it; ownership never
   changes the classification.
 - Create validates every secondary's config and folder before persisting
@@ -80,13 +86,17 @@ warn that the new layer overrides it, and is never edited.
   value equals the one the workspace wrote. A user-edited owned entry needs
   `confirmRefs`; a reference outside `createdRefs` is never touched. All
   removals of one call land in one atomic write, so a failed write removes
-  nothing.
+  nothing. The whole request is preflighted first: an owned alias whose project
+  or path is gone cannot be verified, so it blocks every removal (`removed: []`,
+  `blockedAlias`) instead of deleting the other aliases while one stays behind.
 - `PATCH /api/workspaces/:id` edits in this order: validate the payload and
   every new reference against the new primary's config, register new folders,
   remove the owned references that leave, persist the workspace, then write the
   new references best effort. A failed owned removal is 409 with the alias and
-  leaves both the workspace and the file untouched; a failed new write is a
-  saved workspace plus `refWrites[].status === 'failed'` for that alias.
+  leaves both the workspace and the file untouched; that includes an owned
+  alias the workspace can no longer locate, which is named before anything is
+  persisted. A failed new write is a saved workspace plus
+  `refWrites[].status === 'failed'` for that alias.
 - On edit, a next reference that still matches the stored workspace's entry for
   the same alias (same resolved path and description) needs neither a write nor
   a confirmation when it lives only in another layer (`outside`) or when another
@@ -114,15 +124,18 @@ warn that the new layer overrides it, and is never edited.
   is missing cannot remove references (there is no config to edit).
 - When the settings write fails after an owned removal, the removed entries are
   put back before the error is returned, so the unchanged workspace does not
-  lose references it still expects.
+  lose references it still expects. If the restore also fails, the request
+  answers 500 with `configError: { path, message }` naming the config file and
+  saying the entries could not be restored; the failure is never swallowed.
 - `DELETE /api/workspaces/:id` deletes in the contract order: remove the owned
   references first, then drop the workspace. Without `removeCreatedRefs` the
   primary's config and the projects are untouched; the pointer is cleared only
   when the deleted workspace was the active one. A failed owned removal answers
   `removed: false` with the current `refs`, the failing `failedAlias` and, for an
   unreadable config, `configError`; settings are not written, so the workspace
-  stays. An owned alias whose entry cannot be verified (`skipped`) is treated
-  the same way, because deleting the workspace would orphan it. A settings
+  stays. An owned alias whose entry cannot be verified blocks the whole removal
+  the same way, with `failedAlias` and the config untouched, because deleting
+  the workspace would orphan it. A settings
   write that fails after a successful removal restores the removed entries.
   `confirmRefs` lets the caller approve removing an owned entry the user
   edited; without it the answer stays `removed: false` with the failing alias.
@@ -193,11 +206,23 @@ slash as a conflict.
 
 `readConfigLayers` omits a layer it cannot parse from the merge, so classifying
 against the remaining layers would read a user reference as `missing` or
-`outside`, and the next write could then overwrite it. A file-wide parse failure
-cannot be attributed to one alias, so the read reports `unknown` for all of them
-and the same `{ path, message }` once in `refsError`. A malformed individual
-entry is different: it is `different` (with `current: null`) and its siblings
-keep their states.
+`outside`, and the next write could then overwrite it. A file-wide parse failure,
+or a `references` value that is not an object, cannot be attributed to one alias,
+so the read reports `unknown` for all of them and the same `{ path, message }`
+once in `refsError`. A malformed individual entry is different: it is `different`
+(with `current: null`) and its siblings keep their states.
+
+### Why a failed post-save refs read reports `unknown` instead of failing
+
+The workspace — and on create the reference writes — are already persisted when
+the response is built. An unexpected IO error there cannot undo them, and
+turning it into an error would tell the user nothing was saved. The read reports
+every expected ref `unknown` with the primary's target path in `refsError`, the
+same shape a bad layer produces, and `GET` applies it per workspace so the rest
+of the list survives. Rejected alternatives: letting the error escape, which
+answered 500 after a successful save and failed the whole `GET`; and reporting
+`missing`, which the next retry would treat as a pending reference and rewrite
+over an entry it did not read.
 
 ### Why `current` comes from the project layer, except for `outside`
 
@@ -276,13 +301,17 @@ truth for the UI; `failedAlias` and `configError` only say why nothing happened.
 An unknown workspace is still 404, and an unreadable settings document still
 throws, because in both cases there is no trustworthy workspace state to report.
 
-### Why an unverifiable owned alias blocks the deletion
+### Why an unverifiable owned alias blocks the removal
 
 `createdRefs` is the only ownership record. If an owned alias has no resolvable
 project path, the workspace cannot prove which config entry it wrote, so it
 cannot remove it safely. Deleting the workspace anyway would leave that entry in
-the file with no owner and no way to remove it later. The answer keeps the
-workspace and names the alias; the user can delete without removing references.
+the file with no owner and no way to remove it later; saving an edit would leave
+it in the old primary's file the same way. The preflight covers the whole
+request, so the other aliases are not removed either. The answer keeps the
+workspace and names the alias: deletion says `removed: false` with
+`failedAlias`, an edit answers 409 with `conflict.alias`. The user can delete
+without removing references, or fix the project first.
 
 ### Why removal is one write for all removed aliases
 
@@ -369,4 +398,3 @@ verified against the installed CLI on 2026-10-28:
 - Conclusion: an absolute `path` works; no relative fallback is needed.
 
 The fixture lives outside the repository and is not committed.
-

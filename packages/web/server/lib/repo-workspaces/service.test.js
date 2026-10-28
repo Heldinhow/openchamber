@@ -160,6 +160,49 @@ describe('workspace service: list', () => {
 
     await expect(service.list()).rejects.toThrow('Settings file is malformed');
   });
+
+  it('reports an unreadable config as unknown for one workspace without hiding the others', async () => {
+    const brokenConfigPath = path.join('/repos/broken', '.opencode', 'opencode.json');
+    const { service } = createService({
+      readSettings: vi.fn(async () => ({
+        projects: [...projects, { id: 'broken', path: '/repos/broken', label: 'Broken' }],
+        workspaces: [
+          workspace(),
+          workspace({
+            id: 'ws_2',
+            name: 'Broken Platform',
+            primaryProjectId: 'broken',
+            repos: [
+              { projectId: 'broken', alias: 'broken', description: 'Broken', branch: '' },
+              { projectId: 'web', alias: 'web', description: '', branch: '' },
+            ],
+          }),
+        ],
+        activeWorkspaceId: 'ws_1',
+      })),
+      readConfigLayers: vi.fn((directory) => {
+        if (directory === '/repos/broken') {
+          const error = new Error(`EACCES: permission denied, open '${brokenConfigPath}'`);
+          error.code = 'EACCES';
+          throw error;
+        }
+        return { ...emptyLayers(), projectConfig: {}, mergedConfig: {} };
+      }),
+    });
+
+    const result = await service.list();
+
+    expect(result.workspaces).toHaveLength(2);
+    expect(result.workspaces[0].refsError).toBeNull();
+    expect(result.workspaces[1].refs).toEqual([
+      { alias: 'web', path: '/repos/web', description: '', status: 'unknown', owned: false, current: null },
+    ]);
+    expect(result.workspaces[1].refsError).toEqual({
+      path: brokenConfigPath,
+      message: expect.stringContaining('EACCES'),
+    });
+    expect(result.refsError).toBeNull();
+  });
 });
 
 describe('workspace service: create', () => {
@@ -305,6 +348,29 @@ describe('workspace service: create', () => {
     });
 
     await expect(service.create(validPayload)).rejects.toThrow('Settings write failed');
+  });
+
+  it('returns unknown refs instead of failing a saved create when the config cannot be re-read', async () => {
+    let reads = 0;
+    const { service, dependencies } = createService({
+      readConfigLayers: vi.fn(() => {
+        reads += 1;
+        if (reads > 2) throw new Error('EACCES: permission denied');
+        return { ...emptyLayers(), projectConfig: {}, mergedConfig: {} };
+      }),
+    });
+
+    const result = await service.create(validPayload);
+
+    expect(result.refWrites).toEqual([{ alias: 'web', status: 'written' }]);
+    expect(result.refs).toEqual([
+      { alias: 'web', path: '/repos/web', description: '', status: 'unknown', owned: true, current: null },
+    ]);
+    expect(result.refsError).toEqual({
+      path: '/repos/api/.opencode/opencode.json',
+      message: 'EACCES: permission denied',
+    });
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
   });
 });
 
@@ -733,6 +799,32 @@ describe('workspace service: reference states', () => {
       ['docs', 'ok'],
     ]);
     expect(result.refs[0].current).toBeNull();
+  });
+
+  it('answers unknown for every ref when the references section is not an object', async () => {
+    const root = caseRoot('invalid-references');
+    const primary = projectAt(root, 'primary', 'Primary');
+    const web = projectAt(root, 'web', 'Web');
+    const file = writeProjectConfig(primary, JSON.stringify({ references: [] }));
+    const stored = workspace({
+      primaryProjectId: 'primary',
+      repos: [
+        { projectId: 'primary', alias: 'primary', description: 'Primary', branch: '' },
+        { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+      ],
+    });
+    const { service } = fixtureService({
+      projects: [primary, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.list();
+
+    expect(result.refs).toEqual([
+      { alias: 'web', path: path.resolve(web.path), description: 'Web', status: 'unknown', owned: false, current: null },
+    ]);
+    expect(result.refsError).toEqual({ path: file, message: 'The "references" section must be an object' });
   });
 
   it('marks an expected alias owned only when createdRefs lists it', async () => {
@@ -1423,6 +1515,39 @@ describe('workspace service: delete', () => {
     expect(readConfigFile(file).references.web).toEqual(edited.references.web);
   });
 
+  it('leaves the config untouched when one owned alias cannot be verified', async () => {
+    const root = caseRoot('delete-unverified');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const file = writeProjectConfig(api, JSON.stringify({
+      references: {
+        web: { path: path.resolve(web.path), description: 'Web' },
+        gone: { path: '/gone/repo', description: 'Gone' },
+      },
+    }));
+    const before = fs.readFileSync(file, 'utf8');
+    const stored = workspace({
+      primaryProjectId: 'api',
+      repos: [
+        { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+        { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+        { projectId: 'gone', alias: 'gone', description: 'Gone', branch: '' },
+      ],
+      createdRefs: ['web', 'gone'],
+    });
+    const { service, dependencies } = fixtureService({
+      projects: [api, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', { removeCreatedRefs: true });
+
+    expect(result).toMatchObject({ removed: false, failedAlias: 'gone', configError: null });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
   it('removes a hand-edited owned reference when the request confirms it', async () => {
     const { file, projects, stored } = deleteFixture('delete-edited-confirmed', ['web']);
     const edited = { references: { web: { path: '/user/edited', description: 'Edited web' } } };
@@ -1784,6 +1909,43 @@ describe('workspace service: update', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe(before);
   });
 
+  it('aborts the whole edit with 409 when an owned entry can no longer be located', async () => {
+    const root = caseRoot('update-remove-unverified');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const file = writeProjectConfig(api, JSON.stringify({
+      references: {
+        web: { path: path.resolve(web.path), description: 'Web' },
+        gone: { path: '/gone/repo', description: 'Gone' },
+      },
+    }));
+    const before = fs.readFileSync(file, 'utf8');
+    const stored = workspace({
+      primaryProjectId: 'api',
+      repos: [
+        { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+        { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+        { projectId: 'gone', alias: 'gone', description: 'Gone', branch: '' },
+      ],
+      createdRefs: ['web', 'gone'],
+    });
+    const { service, dependencies } = fixtureService({
+      projects: [api, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    await expect(service.update('ws_1', {
+      name: 'Shop Platform',
+      repos: [{ projectId: 'api', alias: 'api', primary: true }],
+    })).rejects.toMatchObject({
+      status: 409,
+      conflict: { alias: 'gone', path: null },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
   it('keeps the saved workspace and reports a pending alias when a new reference write fails', async () => {
     const { api, docs, projects, stored, web } = updateFixture('update-write-fails');
     const target = path.join(api.path, '.opencode', 'opencode.json');
@@ -1829,6 +1991,37 @@ describe('workspace service: update', () => {
       path: path.resolve(projects[1].path),
       description: 'Web',
     });
+  });
+
+  it('reports a failed restore when the settings write and the rollback both fail', async () => {
+    const { api, projects, stored } = updateFixture('update-restore-fails');
+    const target = path.join(api.path, '.opencode', 'opencode.json');
+    let writes = 0;
+    const { service } = fixtureService(
+      { projects, workspaces: [stored], activeWorkspaceId: 'ws_1' },
+      {
+        persistSettings: vi.fn(async () => { throw new Error('Settings write failed'); }),
+        writeConfig: vi.fn(async (config, file) => {
+          writes += 1;
+          if (writes > 1) throw new Error('permission denied with secret-content');
+          writeConfig(config, file);
+        }),
+      },
+    );
+
+    const error = await service.update('ws_1', {
+      name: 'Shop Platform',
+      repos: [{ projectId: 'api', alias: 'api', primary: true }],
+    }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      status: 500,
+      configError: {
+        path: target,
+        message: 'The settings write failed and the removed references could not be restored',
+      },
+    });
+    expect(error.message).not.toContain('secret-content');
   });
 
   it('keeps a repo whose project left the catalog when the form sends it back', async () => {

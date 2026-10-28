@@ -315,6 +315,12 @@ const expectedReferences = (workspace, projectsById) => workspace.repos
     };
   });
 
+/** Every expected reference in one state, for a read that could not classify any. */
+const expectedRefsInState = (workspace, projects, status) => expectedReferences(
+  workspace,
+  new Map(projects.map((project) => [project.id, project])),
+).map((reference) => describeReference(reference, { status, current: null }));
+
 /**
  * The project layer owns the entry, the merged layers reveal an alias another
  * layer also defines. A missing project entry is `missing`; an entry only in
@@ -365,11 +371,13 @@ const readWorkspaceRefs = ({ workspace, projectsById, readConfigLayers, getLayer
 
   const layers = readConfigLayers(primaryProject.path);
   const projectConfigPath = getProjectConfigPath(primaryProject.path);
-  const failedLayer = getLayerError(layers, projectConfigPath) ?? layers.layerErrors?.[0] ?? null;
-  const error = failedLayer ? { path: failedLayer.path, message: failedLayer.message } : null;
+  // A malformed `references` section is a read error too: its shape cannot be
+  // classified any more than a file that did not parse.
+  const readError = getLayerError(layers, projectConfigPath) ?? configReadError(layers);
+  const error = readError ? { path: readError.path, message: readError.message } : null;
 
   const refs = expected.map((reference) => {
-    if (failedLayer) {
+    if (readError) {
       return describeReference(reference, { status: 'unknown', current: null });
     }
     if (!reference.project) {
@@ -437,6 +445,16 @@ const conflictResponse = (alias, current) => new WorkspaceRequestError(
   409,
   'Reference alias is already in use',
   { conflict: { alias, path: current?.path ?? null } },
+);
+
+/**
+ * An owned entry the workspace can no longer locate: writing the workspace
+ * would leave that entry in the old config with no owner.
+ */
+const unverifiableRemovalResponse = (alias) => new WorkspaceRequestError(
+  409,
+  'An owned reference cannot be verified for removal',
+  { conflict: { alias, path: null } },
 );
 
 export const createWorkspaceService = (dependencies) => {
@@ -559,6 +577,28 @@ export const createWorkspaceService = (dependencies) => {
     getProjectConfigPath,
   });
 
+  /**
+   * A read after the workspace is already saved, or one workspace inside the
+   * list: an unexpected IO error (EACCES and the like, which `readConfigLayers`
+   * does not turn into a layer error) must not undo a successful write or hide
+   * the other workspaces. The refs then read `unknown` with the primary's
+   * target config path.
+   */
+  const safeRefsFor = (workspace, projects) => {
+    try {
+      return refsFor(workspace, projects);
+    } catch (error) {
+      const primary = projects.find((project) => project.id === workspace.primaryProjectId) ?? null;
+      return {
+        refs: expectedRefsInState(workspace, projects, 'unknown'),
+        error: {
+          path: primary ? refsConfigPath(primary.path) : null,
+          message: error?.message || 'The OpenCode configuration could not be read',
+        },
+      };
+    }
+  };
+
   const list = async () => {
     const settings = await readSettings();
     const parsed = sanitizeRepoWorkspaces(settings.workspaces);
@@ -569,7 +609,7 @@ export const createWorkspaceService = (dependencies) => {
     const workspaces = (parsed?.workspaces ?? []).map((workspace) => {
       // The edit dialog reads any workspace's references, so every entry
       // carries its own state.
-      const { refs, error: refsError } = refsFor(workspace, projects);
+      const { refs, error: refsError } = safeRefsFor(workspace, projects);
       return {
         ...workspace,
         repos: workspace.repos.map((repo) => {
@@ -757,7 +797,7 @@ export const createWorkspaceService = (dependencies) => {
       writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
     ));
 
-    const { refs, error: refsError } = refsFor(workspace, nextProjects);
+    const { refs, error: refsError } = safeRefsFor(workspace, nextProjects);
     return {
       workspace,
       refs,
@@ -826,7 +866,7 @@ export const createWorkspaceService = (dependencies) => {
       writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
     ));
 
-    const { refs, error: refsError } = refsFor(workspace, projects);
+    const { refs, error: refsError } = safeRefsFor(workspace, projects);
     return {
       refs,
       refWrites,
@@ -868,6 +908,7 @@ export const createWorkspaceService = (dependencies) => {
 
       const removable = [];
       const refWrites = [];
+      let blockedAlias = null;
       for (const alias of aliases) {
         const reference = references.get(alias) ?? null;
         if (!workspace.createdRefs.includes(alias)) {
@@ -881,7 +922,10 @@ export const createWorkspaceService = (dependencies) => {
         }
         if (!reference || reference.path === null) {
           // The workspace no longer knows which value it wrote; never guess.
+          // The whole request is blocked, not just this alias, so the other
+          // owned entries are not deleted while this one is left behind.
           refWrites.push({ alias, status: 'skipped' });
+          blockedAlias ??= alias;
           continue;
         }
 
@@ -891,6 +935,19 @@ export const createWorkspaceService = (dependencies) => {
         }
         removable.push(alias);
         refWrites.push({ alias, status: 'removed' });
+      }
+
+      if (blockedAlias) {
+        // Nothing was written, so no alias is reported as removed.
+        return {
+          removed: [],
+          refWrites: refWrites.map((write) => (
+            write.status === 'removed' ? { alias: write.alias, status: 'skipped' } : write
+          )),
+          removedEntries: {},
+          path: targetPath,
+          blockedAlias,
+        };
       }
 
       if (removable.length > 0) {
@@ -909,10 +966,10 @@ export const createWorkspaceService = (dependencies) => {
             { conflict: { aliases: removable, path: targetPath } },
           );
         }
-        return { removed: removable, refWrites, removedEntries, path: targetPath };
+        return { removed: removable, refWrites, removedEntries, path: targetPath, blockedAlias: null };
       }
 
-      return { removed: [], refWrites, removedEntries: {}, path: targetPath };
+      return { removed: [], refWrites, removedEntries: {}, path: targetPath, blockedAlias: null };
     });
   };
 
@@ -1023,6 +1080,10 @@ export const createWorkspaceService = (dependencies) => {
     const removal = leavingAliases.length > 0 && oldPrimary
       ? await removeCreatedRefs({ workspace: existing, aliases: leavingAliases, confirmRefs })
       : null;
+    if (removal?.blockedAlias) {
+      // The removal helper wrote nothing; abort before the workspace changes.
+      throw unverifiableRemovalResponse(removal.blockedAlias);
+    }
 
     const retainedOwned = existing.createdRefs.filter((alias) => nextAliases.has(alias));
     workspace.createdRefs = [...new Set([...retainedOwned, ...toWrite.map((reference) => reference.alias)])];
@@ -1034,14 +1095,7 @@ export const createWorkspaceService = (dependencies) => {
       changes.projects = nextProjects;
     }
 
-    try {
-      await persistSettings(changes);
-    } catch (error) {
-      // The workspace did not change, so put back the owned entries already
-      // removed instead of leaving its old references deleted.
-      await restoreRemovedEntries(removal);
-      throw error;
-    }
+    await persistWorkspaceChange(changes, removal);
 
     const writeResults = toWrite.length > 0
       ? await withRefsLock(() => writeReferences({ primaryPath: nextPrimary.path, references: toWrite, confirmRefs: confirmed }))
@@ -1051,7 +1105,7 @@ export const createWorkspaceService = (dependencies) => {
       writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
     ));
 
-    const { refs, error: refsError } = refsFor(workspace, nextProjects);
+    const { refs, error: refsError } = safeRefsFor(workspace, nextProjects);
     return {
       workspace,
       refs,
@@ -1066,6 +1120,7 @@ export const createWorkspaceService = (dependencies) => {
   /**
    * A settings write that fails after a successful removal leaves a workspace
    * pointing at entries it no longer expects; put them back before reporting.
+   * A restore that cannot write is reported by its caller, never swallowed.
    */
   const restoreRemovedEntries = async (removal) => {
     if (!removal || Object.keys(removal.removedEntries).length === 0) return;
@@ -1076,7 +1131,34 @@ export const createWorkspaceService = (dependencies) => {
         { ...config, references: { ...current, ...removal.removedEntries } },
         removal.path,
       );
-    }).catch(() => undefined);
+    });
+  };
+
+  /**
+   * Saves the workspace, rolling back the removals when that fails. If the
+   * rollback fails too, the config no longer matches the unchanged workspace,
+   * so that is the error the caller gets: a 500 naming the config file.
+   */
+  const persistWorkspaceChange = async (changes, removal) => {
+    try {
+      await persistSettings(changes);
+    } catch (error) {
+      try {
+        await restoreRemovedEntries(removal);
+      } catch {
+        throw new WorkspaceRequestError(
+          500,
+          'Failed to restore workspace references',
+          {
+            configError: {
+              path: removal.path,
+              message: 'The settings write failed and the removed references could not be restored',
+            },
+          },
+        );
+      }
+      throw error;
+    }
   };
 
   /**
@@ -1107,19 +1189,19 @@ export const createWorkspaceService = (dependencies) => {
         // workspace stays exactly where it was.
         return {
           removed: false,
-          refs: refsFor(workspace, projects).refs,
+          refs: safeRefsFor(workspace, projects).refs,
           failedAlias: error.conflict?.alias ?? error.conflict?.aliases?.[0] ?? null,
           configError: error.configError,
         };
       }
-      // An owned alias whose entry cannot be verified is left in the file; the
-      // workspace must stay so the alias is not orphaned without an owner.
-      const unverified = removal.refWrites.find((write) => write.status === 'skipped') ?? null;
-      if (unverified) {
+      // An owned alias whose entry cannot be verified blocked the whole
+      // removal, so the file is untouched; the workspace must stay so the
+      // alias is not orphaned without an owner.
+      if (removal.blockedAlias) {
         return {
           removed: false,
-          refs: refsFor(workspace, projects).refs,
-          failedAlias: unverified.alias,
+          refs: safeRefsFor(workspace, projects).refs,
+          failedAlias: removal.blockedAlias,
           configError: null,
         };
       }
@@ -1132,12 +1214,7 @@ export const createWorkspaceService = (dependencies) => {
       changes.activeWorkspaceId = null;
     }
 
-    try {
-      await persistSettings(changes);
-    } catch (error) {
-      await restoreRemovedEntries(removal);
-      throw error;
-    }
+    await persistWorkspaceChange(changes, removal);
 
     return { removed: true, refs: [], failedAlias: null, configError: null };
   };

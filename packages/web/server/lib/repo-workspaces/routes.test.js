@@ -270,6 +270,107 @@ describe('workspace routes', () => {
     expect(dependencies.persistSettings).not.toHaveBeenCalled();
   });
 
+  it('answers PATCH 409 and keeps settings when an owned entry cannot be located', async () => {
+    const projectConfig = {
+      references: {
+        web: { path: '/repos/web', description: 'Web' },
+        gone: { path: '/gone/repo', description: 'Gone' },
+      },
+    };
+    const { app, dependencies } = createApp({
+      readSettings: vi.fn(async () => ({
+        projects: [
+          { id: 'api', path: '/repos/api', label: 'API' },
+          { id: 'web', path: '/repos/web', label: 'Web' },
+        ],
+        workspaces: [{
+          id: 'ws_1',
+          name: 'Shop Platform',
+          primaryProjectId: 'api',
+          repos: [
+            { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+            { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+            { projectId: 'gone', alias: 'gone', description: 'Gone', branch: '' },
+          ],
+          createdRefs: ['web', 'gone'],
+        }],
+        activeWorkspaceId: 'ws_1',
+      })),
+      readConfigLayers: vi.fn(() => ({
+        ...emptyLayers(),
+        projectConfig,
+        mergedConfig: projectConfig,
+      })),
+      readConfigFile: vi.fn(() => projectConfig),
+    });
+
+    const response = await request(app)
+      .patch('/api/workspaces/ws_1')
+      .send({
+        name: 'Shop Platform',
+        repos: [{ projectId: 'api', alias: 'api', primary: true }],
+      })
+      .expect(409);
+
+    expect(response.body).toEqual({
+      error: 'An owned reference cannot be verified for removal',
+      conflict: { alias: 'gone', path: null },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
+  it('answers 500 with the config path when the settings write and the restore both fail', async () => {
+    let storedConfig = { references: { web: { path: '/repos/web', description: 'Web' } } };
+    let writes = 0;
+    const { app } = createApp({
+      readSettings: vi.fn(async () => ({
+        projects: [
+          { id: 'api', path: '/repos/api', label: 'API' },
+          { id: 'web', path: '/repos/web', label: 'Web' },
+        ],
+        workspaces: [{
+          id: 'ws_1',
+          name: 'Shop Platform',
+          primaryProjectId: 'api',
+          repos: [
+            { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+            { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+          ],
+          createdRefs: ['web'],
+        }],
+        activeWorkspaceId: 'ws_1',
+      })),
+      readConfigLayers: vi.fn(() => ({
+        ...emptyLayers(),
+        projectConfig: storedConfig,
+        mergedConfig: storedConfig,
+      })),
+      readConfigFile: vi.fn(() => storedConfig),
+      writeConfig: vi.fn(async (config) => {
+        writes += 1;
+        if (writes > 1) throw new Error('permission denied');
+        storedConfig = config;
+      }),
+      persistSettings: vi.fn(async () => { throw new Error('Settings write failed'); }),
+    });
+
+    const response = await request(app)
+      .patch('/api/workspaces/ws_1')
+      .send({
+        name: 'Shop Platform',
+        repos: [{ projectId: 'api', alias: 'api', primary: true }],
+      })
+      .expect(500);
+
+    expect(response.body).toEqual({
+      error: 'Failed to restore workspace references',
+      configError: {
+        path: '/repos/api/.opencode/opencode.json',
+        message: 'The settings write failed and the removed references could not be restored',
+      },
+    });
+  });
+
   it('retries pending references by workspace id', async () => {
     const { app, state } = createApp({
       readSettings: vi.fn(async () => ({
