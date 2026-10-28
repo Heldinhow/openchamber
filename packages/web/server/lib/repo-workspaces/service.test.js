@@ -748,6 +748,30 @@ describe('workspace service: reference descriptions', () => {
     expect(descriptionOf(result)).toBe('web');
   });
 
+  it('falls back to the folder name when the README exists but cannot be read', async () => {
+    const root = caseRoot('description-unreadable');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', '');
+    // A directory named README.md makes open/read fail on every platform.
+    fs.mkdirSync(path.join(web.path, 'README.md'));
+    const { service } = fixtureService({
+      projects: [api, web],
+      workspaces: [],
+      activeWorkspaceId: null,
+    });
+
+    const result = await service.create({
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true },
+        { projectId: 'web', alias: 'web' },
+      ],
+    });
+
+    expect(result.workspace.repos[1].description).toBe('web');
+    expect(result.refs[0].description).toBe('web');
+  });
+
   it('does not derive a description on read', async () => {
     const { service } = createWithFiles({
       files: { '/repos/web/package.json': JSON.stringify({ description: 'From package' }) },
