@@ -631,6 +631,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.empty.noMatches.description': '请尝试其他标题、分支、文件夹或路径。',
   'sessions.sidebar.empty.noMatches.searchArchive': '在归档中搜索',
   'sessions.sidebar.activity.chatsTitle': '聊天',
+  'sessions.sidebar.activity.otherProjectsTitle': '其他项目',
   'sessions.sidebar.activity.chatsEmpty': '暂无聊天。',
   'chat.chatInput.chooseProject': '选择项目',
   'sessions.sidebar.header.projectDisplay.label': '显示项目',

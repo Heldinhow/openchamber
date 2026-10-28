@@ -552,6 +552,7 @@ export const dict = {
   'sessions.sidebar.empty.noMatches.description': 'Farklı bir başlık, branch, klasör veya yol deneyin.',
   'sessions.sidebar.empty.noMatches.searchArchive': 'Arşivde ara',
   'sessions.sidebar.activity.chatsTitle': 'Sohbetler',
+  'sessions.sidebar.activity.otherProjectsTitle': 'Diğer projeler',
   'chat.chatInput.chooseProject': 'Proje seç',
   'sessions.sidebar.header.projectDisplay.label': 'Projeleri göster',
   'sessions.sidebar.header.projectDisplay.all': 'Tüm projeler',

@@ -82,9 +82,10 @@ type RepoWorkspaceSidebarProjection = {
 };
 
 /**
- * The single place that turns the workspace filter into sidebar sections.
- * Without an active workspace the current grouping passes through unchanged, in
- * the order the caller already sorted the projects.
+ * The single place that turns the active workspace into sidebar sections.
+ * Without one the current grouping passes through unchanged, in the order the
+ * caller already sorted the projects. With one, its repos come first, and every
+ * other project follows as a plain section, in that same order.
  */
 export const projectRepoWorkspaceSidebar = ({
   workspaces,
@@ -96,29 +97,28 @@ export const projectRepoWorkspaceSidebar = ({
   const activeWorkspace = activeWorkspaceId
     ? workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
     : null;
+  const plainSection = (project: RepoWorkspaceSidebarProject): RepoWorkspaceSidebarSection => ({
+    project,
+    repo: null,
+    primary: false,
+    showSessions: true,
+    showNewSession: true,
+    branchChip: null,
+    git: null,
+    missing: false,
+    sessions: [...(sessions.get(project.id) ?? [])],
+  });
 
   if (!activeWorkspace) {
-    return {
-      activeWorkspace: null,
-      sections: projects.map((project) => ({
-        project,
-        repo: null,
-        primary: false,
-        showSessions: true,
-        showNewSession: true,
-        branchChip: null,
-        git: null,
-        missing: false,
-        sessions: [...(sessions.get(project.id) ?? [])],
-      })),
-    };
+    return { activeWorkspace: null, sections: projects.map(plainSection) };
   }
 
   const projectsById = new Map(projects.map((project) => [project.id, project]));
+  const repoProjectIds = new Set(activeWorkspace.repos.map((repo) => repo.projectId));
 
   return {
     activeWorkspace,
-    sections: activeWorkspace.repos.map((repo) => {
+    sections: [...activeWorkspace.repos.map((repo): RepoWorkspaceSidebarSection => {
       const project = projectsById.get(repo.projectId) ?? null;
       const primary = repo.projectId === activeWorkspace.primaryProjectId;
       return {
@@ -132,7 +132,7 @@ export const projectRepoWorkspaceSidebar = ({
         missing: project === null,
         sessions: primary ? [...(sessions.get(repo.projectId) ?? [])] : [],
       };
-    }),
+    }), ...projects.filter((project) => !repoProjectIds.has(project.id)).map(plainSection)],
   };
 };
 

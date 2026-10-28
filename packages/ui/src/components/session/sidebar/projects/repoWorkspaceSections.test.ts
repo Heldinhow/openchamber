@@ -75,7 +75,7 @@ describe('projectRepoWorkspaceSidebar', () => {
     ))).toBe(true);
   });
 
-  test('an active workspace filters to its repos in repos order', () => {
+  test('an active workspace lists its repos first, in repos order, then every other project', () => {
     const result = projectRepoWorkspaceSidebar({
       workspaces: [workspace([
         { projectId: 'c', alias: 'shared' },
@@ -92,12 +92,31 @@ describe('projectRepoWorkspaceSidebar', () => {
     });
 
     expect(result.activeWorkspace?.name).toBe('Shop Platform');
-    expect(result.sections.map((section) => section.project.id)).toEqual(['c', 'a']);
-    expect(result.sections.map((section) => section.primary)).toEqual([false, true]);
-    expect(result.sections.map((section) => section.showSessions)).toEqual([false, true]);
-    expect(result.sections.map((section) => section.showNewSession)).toEqual([false, true]);
-    expect(result.sections[0]?.sessions).toEqual([]);
-    expect(result.sections[1]?.sessions.map((entry) => entry.id)).toEqual(['session-a']);
+    expect(result.sections.map((section) => section.project.id)).toEqual(['c', 'a', 'b']);
+    expect(result.sections.map((section) => section.repo?.alias ?? null)).toEqual(['shared', 'api', null]);
+    expect(result.sections.map((section) => section.primary)).toEqual([false, true, false]);
+    expect(result.sections.map((section) => section.showSessions)).toEqual([false, true, true]);
+    expect(result.sections.map((section) => section.showNewSession)).toEqual([false, true, true]);
+    expect(result.sections.map((section) => section.sessions.map((entry) => entry.id))).toEqual([
+      [],
+      ['session-a'],
+      ['session-b'],
+    ]);
+  });
+
+  test('projects outside the workspace keep the caller order and stay plain', () => {
+    const result = projectRepoWorkspaceSidebar({
+      workspaces: [workspace([{ projectId: 'b', alias: 'web' }], 'b')],
+      projects: [project('d'), project('b'), project('a')],
+      sessions: new Map(),
+      activeWorkspaceId: 'ws_shop',
+      gitByProject: new Map([['a', git(3)]]),
+    });
+
+    expect(result.sections.map((section) => section.project.id)).toEqual(['b', 'd', 'a']);
+    expect(result.sections.slice(1).every((section) => (
+      section.repo === null && section.git === null && section.branchChip === null && !section.missing
+    ))).toBe(true);
   });
 
   test('the branch chip shows the saved snapshot only when it differs from main', () => {
@@ -157,7 +176,7 @@ describe('projectRepoWorkspaceSidebar', () => {
       gitByProject: new Map(),
     });
 
-    expect(result.sections).toHaveLength(2);
+    expect(result.sections.map((section) => section.project.id)).toEqual(['gone', 'a']);
     expect(result.sections[0]).toMatchObject({
       missing: true,
       primary: false,
@@ -185,7 +204,7 @@ describe('projectRepoWorkspaceSidebar', () => {
       gitByProject: new Map([['a', git(0)]]),
     });
 
-    expect(result.sections).toHaveLength(1);
+    expect(result.sections.map((section) => section.project.id)).toEqual(['a', 'b']);
     expect(result.sections[0]?.primary).toBe(true);
     expect(result.sections[0]?.showSessions).toBe(true);
     expect(result.sections[0]?.sessions).toHaveLength(1);

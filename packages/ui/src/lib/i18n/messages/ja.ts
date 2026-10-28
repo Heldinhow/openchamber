@@ -631,6 +631,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.empty.noMatches.description': '別のタイトル、ブランチ、フォルダ、パスをお試しください。',
   'sessions.sidebar.empty.noMatches.searchArchive': 'アーカイブを検索',
   'sessions.sidebar.activity.chatsTitle': 'チャット',
+  'sessions.sidebar.activity.otherProjectsTitle': 'その他のプロジェクト',
   'sessions.sidebar.activity.chatsEmpty': 'まだチャットはありません。',
   'chat.chatInput.chooseProject': 'プロジェクトを選択',
   'sessions.sidebar.header.projectDisplay.label': 'プロジェクト表示',

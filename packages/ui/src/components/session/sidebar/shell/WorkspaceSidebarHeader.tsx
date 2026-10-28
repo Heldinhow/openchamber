@@ -52,7 +52,12 @@ const WorkspaceSidebarHeader: React.FC<Props> = ({
               type="button"
               className="flex min-h-7 min-w-0 items-center gap-1 rounded-md px-1 -ms-1 text-start"
             >
-              <span className="truncate typography-ui-section font-semibold text-foreground">
+              {activeWorkspace ? <Icon name="stack" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+              <span
+                className="truncate typography-ui-section font-semibold text-foreground"
+                dir={activeWorkspace ? 'auto' : undefined}
+                title={activeWorkspace?.name}
+              >
                 {activeWorkspace ? activeWorkspace.name : t('sessions.sidebar.workspace.allProjects')}
               </span>
               <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />

@@ -656,6 +656,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.empty.noMatches.description': '請嘗試其他標題、分支、資料夾或路徑。',
   'sessions.sidebar.empty.noMatches.searchArchive': '在封存中搜尋',
   'sessions.sidebar.activity.chatsTitle': '聊天',
+  'sessions.sidebar.activity.otherProjectsTitle': '其他專案',
   'sessions.sidebar.activity.chatsEmpty': '尚無聊天。',
   'chat.chatInput.chooseProject': '選擇專案',
   'sessions.sidebar.header.projectDisplay.label': '顯示專案',

@@ -471,7 +471,16 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
   const orderedSectionsForRender = React.useMemo(() => {
     if (workspaceActive) {
       const byId = new Map(sectionsForSidebarRender.map((section) => [section.project.id, section]));
-      return workspaceSidebar.sections.flatMap((metadata): ProjectSection[] => {
+      // Projects outside the workspace follow its repos as in All projects;
+      // only "Recent" re-ranks them, without holding the order under the pointer.
+      const plain = rankByLatestActivity(
+        workspaceSidebar.sections.flatMap((metadata) => (metadata.repo ? [] : byId.get(metadata.project.id) ?? [])),
+        view.projectSortOrder,
+        (section) => section.project.id,
+        ownership.sessionsByProject,
+      );
+      return [...workspaceSidebar.sections.flatMap((metadata): ProjectSection[] => {
+        if (!metadata.repo) return [];
         if (metadata.missing) {
           if (view.hasSessionSearchQuery) return [];
           return [{
@@ -503,7 +512,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
             missing: false,
           },
         }];
-      });
+      }), ...plain];
     }
     // "Recent" needs the sessions, which only exist from here on.
     const ranked = rankByLatestActivity(sectionsForSidebarRender, view.projectSortOrder, (section) => section.project.id, ownership.sessionsByProject);

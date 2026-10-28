@@ -114,6 +114,14 @@ describe('workspace sidebar slot', () => {
       .find((button) => button.textContent?.includes('Shop Platform'));
     expect(trigger?.getAttribute('aria-label')).toBeNull();
     expect(trigger?.textContent).toContain('Shop Platform');
+    expect(trigger?.querySelector('use')?.getAttribute('href')).toBe('#oc-stack');
+  });
+
+  test('All projects names the header without the workspace icon', async () => {
+    await render({ status: 'ready', workspaces: [workspace], activeWorkspace: null });
+    const trigger = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('All projects'));
+    expect(trigger?.querySelector('use[href="#oc-stack"]')).toBeNull();
   });
 
   test('the workspace menu marks the active entry as a checked radio item', async () => {

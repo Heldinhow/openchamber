@@ -578,6 +578,7 @@ export const dict = {
   'sessions.sidebar.empty.noMatches.description': 'Versuchen Sie einen anderen Titel, Branch, Ordner oder Pfad.',
   'sessions.sidebar.empty.noMatches.searchArchive': 'Im Archiv suchen',
   'sessions.sidebar.activity.chatsTitle': 'Chats',
+  'sessions.sidebar.activity.otherProjectsTitle': 'Weitere Projekte',
   'sessions.sidebar.activity.chatsEmpty': 'Noch keine Chats.',
   'chat.chatInput.chooseProject': 'Projekt auswählen',
   'sessions.switcher.openAria': 'Sitzungswechsler öffnen',
