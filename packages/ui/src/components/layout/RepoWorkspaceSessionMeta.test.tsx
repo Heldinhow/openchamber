@@ -83,12 +83,16 @@ describe('RepoWorkspaceSessionMeta', () => {
     expect(document.body.textContent).toContain('Shop Platform');
     expect(document.body.textContent).toContain('Session open in the primary');
 
-    const chip = [...document.querySelectorAll('span')].find((element) => element.textContent === '@web');
+    const chip = [...document.querySelectorAll('span')].find((element) => element.textContent?.startsWith('@web'));
     expect(chip?.getAttribute('title')).toBe('/shop/web');
     expect(chip?.className).toContain('rounded-full');
+    expect(chip?.querySelector('.sr-only')?.textContent?.trim()).toBe('/shop/web');
 
     expect(document.body.textContent).toContain('@gone');
     expect(document.body.textContent).toContain('missing');
+    const missingState = [...document.querySelectorAll('span')]
+      .find((element) => element.textContent?.includes('@gone') && element.textContent?.includes('missing'));
+    expect(missingState?.querySelector('.sr-only')?.textContent?.trim()).toBe('/shop/gone');
     expect(document.body.textContent).toContain('defined outside this workspace');
     expect(document.body.textContent).toContain('another layer also defines this alias');
 

@@ -39,7 +39,7 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
   const { t } = useI18n();
 
   return (
-    <div className="app-region-no-drag flex min-w-0 items-center gap-2 ps-2 text-start">
+    <div className="app-region-no-drag flex min-w-0 max-w-full items-center gap-2 overflow-hidden ps-2 text-start">
       <div className="flex min-w-0 flex-col justify-center">
         <span className="truncate typography-meta leading-tight text-muted-foreground" title={workspaceName}>
           {workspaceName}
@@ -49,20 +49,22 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
         </span>
       </div>
       {refs.length > 0 ? (
-        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden" role="group" aria-label={t('header.repoWorkspace.refsAria')}>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden" role="group" aria-label={t('header.repoWorkspace.refsAria')}>
           {refs.map((ref) => {
             if (ref.status === 'ok') {
               return (
                 <span key={ref.alias} className={CHIP_CLASS} title={ref.path ?? `@${ref.alias}`}>
                   @{ref.alias}
+                  {ref.path ? <span className="sr-only"> {ref.path}</span> : null}
                 </span>
               );
             }
 
             const label = t(stateLabelKey(ref.status));
+            const path = ref.current?.path ?? ref.path;
             const title = ref.status === 'unknown' && refsError
               ? `${refsError.path}: ${refsError.message}`
-              : [label, ref.current?.path ?? ref.path].filter(Boolean).join(' · ');
+              : [label, path].filter(Boolean).join(' · ');
             const retryable = ref.status === 'missing' && ref.owned;
             return (
               <span
@@ -72,10 +74,11 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
               >
                 <span className="font-mono">@{ref.alias}</span>
                 <span>{label}</span>
+                {path ? <span className="sr-only"> {path}</span> : null}
                 {retryable ? (
                   <button
                     type="button"
-                    className="shrink-0 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                    className="shrink-0 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
                     aria-label={t('sessions.sidebar.workspace.retryAlias', { alias: ref.alias })}
                     disabled={retryingAliases.has(ref.alias)}
                     onClick={() => onRetry(ref.alias)}
