@@ -4,9 +4,9 @@
  * against the current catalog and registers a folder that is not a project yet
  * through the existing add-project path, never by writing settings itself.
  *
- * It also reads, but never writes, the primary's OpenCode `references`: each
- * expected alias is classified against the project config (ownership) and the
- * merged layers (conflict). Ticket 05 adds the write side.
+ * It also owns the primary's OpenCode `references`: each expected alias is
+ * classified against the project config (ownership) and the merged layers
+ * (conflict), and written only through the shared config writer.
  */
 import path from 'node:path';
 import { z } from 'zod';
@@ -18,15 +18,17 @@ const WORKSPACE_ALIAS_PATTERN = /^[^\s/`,@][^\s/`,]*$/;
 const WORKSPACE_ID_PREFIX = 'ws_';
 
 export class WorkspaceRequestError extends Error {
-  constructor(status, message, fields = null) {
+  constructor(status, message, { fields = null, configError = null, conflict = null } = {}) {
     super(message);
     this.name = 'WorkspaceRequestError';
     this.status = status;
     this.fields = fields;
+    this.configError = configError;
+    this.conflict = conflict;
   }
 }
 
-const invalid = (fields) => new WorkspaceRequestError(422, 'Workspace is invalid', fields);
+const invalid = (fields) => new WorkspaceRequestError(422, 'Workspace is invalid', { fields });
 
 const createRepoSchema = z.object({
   alias: z.string({ error: 'Alias is required' }).trim().min(1, 'Alias is required').regex(
@@ -39,9 +41,15 @@ const createRepoSchema = z.object({
   primary: z.boolean({ error: 'Primary must be true or false' }).optional(),
 });
 
+const confirmRefsSchema = z.array(
+  z.string({ error: 'Confirmed aliases must be text' }).trim().min(1, 'Confirmed aliases must not be empty'),
+).optional();
+
 const createWorkspaceSchema = z.object({
   name: z.string({ error: 'Name is required' }).trim().min(1, 'Name is required'),
   repos: z.array(createRepoSchema, { error: 'At least one repository is required' }).min(1, 'At least one repository is required'),
+  // Aliases the user explicitly allowed to overwrite an existing entry.
+  confirmRefs: confirmRefsSchema,
 }).superRefine((payload, ctx) => {
   if (payload.repos.length === 0) return;
   const aliases = new Set();
@@ -80,6 +88,11 @@ const activatePayloadSchema = z.object({
 });
 
 const activeWorkspaceIdSchema = z.union([z.null(), z.string().trim().min(1)]);
+
+const retryRefsSchema = z.object({
+  aliases: z.array(z.string({ error: 'Aliases must be text' }).trim().min(1, 'Aliases must not be empty')).optional(),
+  confirmRefs: confirmRefsSchema,
+});
 
 /** `['repos', 0, 'alias']` → `repos[0].alias`, the key a form can point at. */
 const fieldKey = (segments) => segments.reduce(
@@ -208,8 +221,8 @@ const referenceMatches = (current, expected) => (
 
 const describeReference = (reference, state) => ({
   alias: reference.alias,
-  // The value ticket 05 will write: absolute and normalized, so it never
-  // depends on the config file's directory.
+  // The written value: absolute and normalized, so it never depends on the
+  // config file's directory.
   path: reference.path,
   description: reference.description,
   status: state.status,
@@ -217,26 +230,57 @@ const describeReference = (reference, state) => ({
   current: state.current,
 });
 
+const expectedReferences = (workspace, projectsById) => workspace.repos
+  .filter((repo) => repo.projectId !== workspace.primaryProjectId)
+  .map((repo) => {
+    const project = projectsById.get(repo.projectId) ?? null;
+    return {
+      alias: repo.alias,
+      description: repo.description ?? '',
+      owned: workspace.createdRefs.includes(repo.alias),
+      project,
+      path: project ? path.resolve(project.path) : null,
+    };
+  });
+
+/**
+ * The project layer owns the entry, the merged layers reveal an alias another
+ * layer also defines. A missing project entry is `missing`; an entry only in
+ * another layer is `outside`.
+ */
+const classifyReference = (reference, layers) => {
+  const projectReferences = referencesOf(layers.projectConfig);
+  const inProject = projectReferences !== null && Object.hasOwn(projectReferences, reference.alias);
+  const inOtherLayer = [layers.userConfig, layers.userOverrideConfig, layers.customConfig]
+    .some((layer) => layerDefinesAlias(layer, reference.alias));
+
+  if (inProject && inOtherLayer) {
+    return {
+      status: 'overridden',
+      current: currentReferenceValue(projectReferences[reference.alias]),
+    };
+  }
+  if (inProject) {
+    const current = currentReferenceValue(projectReferences[reference.alias]);
+    return { status: referenceMatches(current, reference) ? 'ok' : 'different', current };
+  }
+  if (inOtherLayer) {
+    return {
+      status: 'outside',
+      current: currentReferenceValue(referencesOf(layers.mergedConfig)?.[reference.alias]),
+    };
+  }
+  return { status: 'missing', current: null };
+};
+
 /**
  * Reads the primary's config once and classifies every expected reference.
- * Ownership is the project layer only; the merged layers only reveal an alias
- * another layer also defines. Any layer parse error makes the conflict state
- * untrustworthy, so every ref is `unknown` and the first error is reported once.
+ * Any layer parse error makes the conflict state untrustworthy, so every ref is
+ * `unknown` and the first error is reported once.
  */
 const readWorkspaceRefs = ({ workspace, projectsById, readConfigLayers, getLayerError, getProjectConfigPath }) => {
   const primaryProject = projectsById.get(workspace.primaryProjectId) ?? null;
-  const expected = workspace.repos
-    .filter((repo) => repo.projectId !== workspace.primaryProjectId)
-    .map((repo) => {
-      const project = projectsById.get(repo.projectId) ?? null;
-      return {
-        alias: repo.alias,
-        description: repo.description ?? '',
-        owned: workspace.createdRefs.includes(repo.alias),
-        project,
-        path: project ? path.resolve(project.path) : null,
-      };
-    });
+  const expected = expectedReferences(workspace, projectsById);
 
   if (!primaryProject) {
     // Without the primary there is no config to read; its refs read as missing
@@ -259,35 +303,69 @@ const readWorkspaceRefs = ({ workspace, projectsById, readConfigLayers, getLayer
     if (!reference.project) {
       return describeReference(reference, { status: 'missing', current: null });
     }
-
-    const inProject = layerDefinesAlias(layers.projectConfig, reference.alias);
-    const inOtherLayer = [layers.userConfig, layers.userOverrideConfig, layers.customConfig]
-      .some((layer) => layerDefinesAlias(layer, reference.alias));
-
-    if (inProject && inOtherLayer) {
-      return describeReference(reference, {
-        status: 'overridden',
-        current: currentReferenceValue(referencesOf(layers.projectConfig)[reference.alias]),
-      });
-    }
-    if (inProject) {
-      const current = currentReferenceValue(referencesOf(layers.projectConfig)[reference.alias]);
-      return describeReference(reference, {
-        status: referenceMatches(current, reference) ? 'ok' : 'different',
-        current,
-      });
-    }
-    if (inOtherLayer) {
-      return describeReference(reference, {
-        status: 'outside',
-        current: currentReferenceValue(referencesOf(layers.mergedConfig)?.[reference.alias]),
-      });
-    }
-    return describeReference(reference, { status: 'missing', current: null });
+    return describeReference(reference, classifyReference(reference, layers));
   });
 
   return { refs, error };
 };
+
+const REFS_DIR = '.opencode';
+const REFS_FILE = 'opencode.json';
+
+/** Always the `.opencode/` layer; the root file is never a write target. */
+const refsConfigPath = (projectPath) => path.resolve(projectPath, REFS_DIR, REFS_FILE);
+
+/**
+ * The dialog needs to warn when the new `.opencode/` file starts overriding a
+ * root config. `getProjectConfigPath` names the root file only when no
+ * `.opencode/` config exists, which is exactly that case.
+ */
+const describeConfigTarget = (projectPath, getProjectConfigPath) => {
+  const root = path.resolve(projectPath);
+  const currentPath = getProjectConfigPath(projectPath);
+  return {
+    path: refsConfigPath(projectPath),
+    rootConfigPath: currentPath && path.dirname(path.resolve(currentPath)) === root
+      ? path.resolve(currentPath)
+      : null,
+  };
+};
+
+/** A parsed config whose `references` key is not an object cannot be merged safely. */
+const invalidReferencesSection = (layers) => {
+  const candidates = [
+    [layers.paths?.userPath, layers.userConfig],
+    [layers.paths?.userOverridePath, layers.userOverrideConfig],
+    [layers.paths?.projectPath, layers.projectConfig],
+    [layers.paths?.customPath, layers.customConfig],
+  ];
+  for (const [filePath, config] of candidates) {
+    if (filePath && config && config.references !== undefined && referencesOf(config) === null) {
+      return { path: filePath, message: 'The "references" section must be an object' };
+    }
+  }
+  return null;
+};
+
+const configReadError = (layers) => {
+  const failedLayer = layers.layerErrors?.[0] ?? null;
+  if (failedLayer) {
+    return { path: failedLayer.path, message: failedLayer.message };
+  }
+  return invalidReferencesSection(layers);
+};
+
+const configErrorResponse = (configError) => new WorkspaceRequestError(
+  422,
+  'OpenCode configuration cannot be read',
+  { configError },
+);
+
+const conflictResponse = (alias, current) => new WorkspaceRequestError(
+  409,
+  'Reference alias is already in use',
+  { conflict: { alias, path: current?.path ?? null } },
+);
 
 export const createWorkspaceService = (dependencies) => {
   const {
@@ -299,11 +377,95 @@ export const createWorkspaceService = (dependencies) => {
     fsPromises,
     crypto,
     readConfigLayers,
+    readConfigFile,
+    writeConfig,
     getLayerError,
     getProjectConfigPath,
   } = dependencies;
 
   const storedWorkspaces = (value) => sanitizeRepoWorkspaces(value)?.workspaces ?? [];
+
+  // Every config read-modify-write runs through this queue. Two requests then
+  // re-read the file the previous one wrote instead of overwriting each other.
+  let refsQueue = Promise.resolve();
+  const withRefsLock = (operation) => {
+    const run = refsQueue.then(operation, operation);
+    refsQueue = run.catch(() => {});
+    return run;
+  };
+
+  const primaryProjectOf = (workspace, projects) => {
+    const primary = projects.find((project) => project.id === workspace.primaryProjectId) ?? null;
+    if (!primary) {
+      throw invalid({ id: 'The workspace primary project is not available' });
+    }
+    return primary;
+  };
+
+  const assertWritableReference = async (reference) => {
+    if (!reference.project) {
+      throw invalid({ [`refs.${reference.alias}.path`]: 'Repository folder is not available' });
+    }
+    const validated = await validateDirectoryPath(reference.project.path);
+    if (!validated.ok) {
+      throw invalid({ [`refs.${reference.alias}.path`]: validated.error || 'Repository folder is not available' });
+    }
+  };
+
+  /**
+   * One alias per write, re-reading the target each time: an alias that fails
+   * keeps its failure to itself and the next alias still writes. Callers hold
+   * the queue.
+   */
+  const writeReferences = async ({ primaryPath, references, confirmRefs }) => {
+    const targetPath = refsConfigPath(primaryPath);
+    const results = [];
+
+    for (const reference of references) {
+      try {
+        const layers = readConfigLayers(primaryPath);
+        const configError = configReadError(layers);
+        if (configError) {
+          results.push({ alias: reference.alias, status: 'failed', message: configError.message });
+          continue;
+        }
+
+        const state = classifyReference(reference, layers);
+        if (state.status === 'ok') {
+          results.push({ alias: reference.alias, status: 'unchanged' });
+          continue;
+        }
+        if (state.status !== 'missing' && !confirmRefs.has(reference.alias)) {
+          results.push({
+            alias: reference.alias,
+            status: 'failed',
+            message: 'The alias is defined elsewhere and was not confirmed for overwrite',
+          });
+          continue;
+        }
+
+        const config = readConfigFile(targetPath);
+        const value = referencesOf(config);
+        if (config.references !== undefined && value === null) {
+          results.push({ alias: reference.alias, status: 'failed', message: 'The "references" section must be an object' });
+          continue;
+        }
+        const next = {
+          ...config,
+          references: {
+            ...(value ?? {}),
+            [reference.alias]: { path: reference.path, description: reference.description },
+          },
+        };
+        await writeConfig(next, targetPath);
+        results.push({ alias: reference.alias, status: 'written' });
+      } catch {
+        results.push({ alias: reference.alias, status: 'failed', message: 'Failed to write the reference' });
+      }
+    }
+
+    return results;
+  };
 
   const refsFor = (workspace, projects) => readWorkspaceRefs({
     workspace,
@@ -347,7 +509,8 @@ export const createWorkspaceService = (dependencies) => {
   };
 
   const create = async (payload) => {
-    const { name, repos: entries } = parseCreatePayload(payload);
+    const { name, repos: entries, confirmRefs = [] } = parseCreatePayload(payload);
+    const confirmed = new Set(confirmRefs);
     const primaryIndex = entries.findIndex((repo) => repo.primary === true);
     const settings = await readSettings();
     const projects = sanitizeProjects(settings.projects) || [];
@@ -367,6 +530,32 @@ export const createWorkspaceService = (dependencies) => {
       createdRefs: [],
     };
 
+    // Validate the config and every target before anything is written. A broken
+    // layer or an unreachable folder must leave no workspace behind either.
+    const primary = primaryProjectOf(workspace, nextProjects);
+    // Read before the write: once the target exists, the root file is no
+    // longer what `getProjectConfigPath` reports.
+    const configTarget = describeConfigTarget(primary.path, getProjectConfigPath);
+    const layers = readConfigLayers(primary.path);
+    const configError = configReadError(layers);
+    if (configError) throw configErrorResponse(configError);
+
+    const projectsById = new Map(nextProjects.map((project) => [project.id, project]));
+    const references = expectedReferences(workspace, projectsById);
+    const toWrite = [];
+    for (const reference of references) {
+      await assertWritableReference(reference);
+      const state = classifyReference(reference, layers);
+      if (state.status === 'ok') continue;
+      if (state.status !== 'missing' && !confirmed.has(reference.alias)) {
+        throw conflictResponse(reference.alias, state.current);
+      }
+      toWrite.push(reference);
+    }
+    // Only what this workspace writes is its own; an identical entry that was
+    // already there belongs to the user.
+    workspace.createdRefs = toWrite.map((reference) => reference.alias);
+
     const changes = {
       workspaces: [...storedWorkspaces(settings.workspaces), workspace],
       activeWorkspaceId: workspace.id,
@@ -380,8 +569,165 @@ export const createWorkspaceService = (dependencies) => {
     }
 
     await persistSettings(changes);
+
+    // Best effort: the workspace is already saved, so one failed alias is a
+    // pending reference, never a lost workspace.
+    const writeResults = toWrite.length > 0
+      ? await withRefsLock(() => writeReferences({ primaryPath: primary.path, references: toWrite, confirmRefs: confirmed }))
+      : [];
+    const writeByAlias = new Map(writeResults.map((result) => [result.alias, result]));
+    const refWrites = references.map((reference) => (
+      writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
+    ));
+
     const { refs, error: refsError } = refsFor(workspace, nextProjects);
-    return { workspace, refs, refsError };
+    return {
+      workspace,
+      refs,
+      refWrites,
+      refsError,
+      configTarget,
+    };
+  };
+
+  const retryRefs = async (workspaceId, payload = {}) => {
+    const { aliases, confirmRefs = [] } = parseInput(retryRefsSchema, payload ?? {});
+    const confirmed = new Set(confirmRefs);
+    const settings = await readSettings();
+    const workspace = storedWorkspaces(settings.workspaces)
+      .find((candidate) => candidate.id === workspaceId) || null;
+    if (!workspace) {
+      throw new WorkspaceRequestError(404, 'Workspace not found');
+    }
+
+    const projects = sanitizeProjects(settings.projects) || [];
+    const projectsById = new Map(projects.map((project) => [project.id, project]));
+    const primary = primaryProjectOf(workspace, projects);
+    const configTarget = describeConfigTarget(primary.path, getProjectConfigPath);
+    const layers = readConfigLayers(primary.path);
+    const configError = configReadError(layers);
+    if (configError) throw configErrorResponse(configError);
+
+    const references = expectedReferences(workspace, projectsById);
+    const byAlias = new Map(references.map((reference) => [reference.alias, reference]));
+    let selected;
+    if (aliases) {
+      for (const alias of aliases) {
+        const reference = byAlias.get(alias);
+        if (!reference) throw invalid({ aliases: `Unknown reference alias "${alias}"` });
+        if (!reference.owned) throw invalid({ aliases: `The alias "${alias}" is not owned by this workspace` });
+      }
+      selected = aliases.map((alias) => byAlias.get(alias));
+    } else {
+      // Pending means an owned reference the last attempt did not write. An
+      // alias the user added or edited elsewhere is not pending.
+      selected = references.filter((reference) => (
+        reference.owned && reference.path !== null && classifyReference(reference, layers).status === 'missing'
+      ));
+    }
+
+    const toWrite = [];
+    for (const reference of selected) {
+      const state = classifyReference(reference, layers);
+      if (state.status === 'ok') continue;
+      if (state.status !== 'missing' && !confirmed.has(reference.alias)) {
+        throw conflictResponse(reference.alias, state.current);
+      }
+      await assertWritableReference(reference);
+      toWrite.push(reference);
+    }
+
+    const writeResults = toWrite.length > 0
+      ? await withRefsLock(() => writeReferences({ primaryPath: primary.path, references: toWrite, confirmRefs: confirmed }))
+      : [];
+    const writeByAlias = new Map(writeResults.map((result) => [result.alias, result]));
+    const refWrites = selected.map((reference) => (
+      writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
+    ));
+
+    const { refs, error: refsError } = refsFor(workspace, projects);
+    return {
+      refs,
+      refWrites,
+      refsError,
+      configTarget,
+    };
+  };
+
+  /**
+   * The removal helper ticket 07 calls. Ownership is `createdRefs` only, and an
+   * entry is removed only from this workspace's target file. A user-edited
+   * entry needs an explicit confirmation, like an overwrite. All removals land
+   * in one write, so a failed write removes nothing.
+   */
+  const removeCreatedRefs = async ({ workspace, aliases = workspace.createdRefs, confirmRefs = [] }) => {
+    const confirmed = new Set(confirmRefs);
+    const settings = await readSettings();
+    const projects = sanitizeProjects(settings.projects) || [];
+    const projectsById = new Map(projects.map((project) => [project.id, project]));
+    const primary = primaryProjectOf(workspace, projects);
+    const references = new Map(expectedReferences(workspace, projectsById).map((reference) => [reference.alias, reference]));
+
+    return withRefsLock(async () => {
+      const layers = readConfigLayers(primary.path);
+      const layersError = configReadError(layers);
+      if (layersError) throw configErrorResponse(layersError);
+
+      const targetPath = refsConfigPath(primary.path);
+      let targetConfig;
+      try {
+        targetConfig = readConfigFile(targetPath);
+      } catch (error) {
+        throw configErrorResponse({ path: targetPath, message: error.message });
+      }
+      const targetReferences = referencesOf(targetConfig);
+      if (targetConfig.references !== undefined && targetReferences === null) {
+        throw configErrorResponse({ path: targetPath, message: 'The "references" section must be an object' });
+      }
+
+      const removable = [];
+      const refWrites = [];
+      for (const alias of aliases) {
+        const reference = references.get(alias) ?? null;
+        if (!workspace.createdRefs.includes(alias)) {
+          // A user reference is never part of this workspace's removals.
+          refWrites.push({ alias, status: 'skipped' });
+          continue;
+        }
+        if (!targetReferences || !Object.hasOwn(targetReferences, alias)) {
+          refWrites.push({ alias, status: 'absent' });
+          continue;
+        }
+        if (!reference || reference.path === null) {
+          // The workspace no longer knows which value it wrote; never guess.
+          refWrites.push({ alias, status: 'skipped' });
+          continue;
+        }
+
+        const current = currentReferenceValue(targetReferences[alias]);
+        if (!referenceMatches(current, reference) && !confirmed.has(alias)) {
+          throw conflictResponse(alias, current);
+        }
+        removable.push(alias);
+        refWrites.push({ alias, status: 'removed' });
+      }
+
+      if (removable.length > 0) {
+        const nextReferences = { ...targetReferences };
+        for (const alias of removable) delete nextReferences[alias];
+        try {
+          await writeConfig({ ...targetConfig, references: nextReferences }, targetPath);
+        } catch {
+          throw new WorkspaceRequestError(
+            409,
+            'Failed to remove workspace references',
+            { conflict: { aliases: removable, path: targetPath } },
+          );
+        }
+      }
+
+      return { removed: removable, refWrites };
+    });
   };
 
   const activate = async (payload) => {
@@ -411,5 +757,5 @@ export const createWorkspaceService = (dependencies) => {
     return { activeWorkspaceId: workspace.id };
   };
 
-  return { list, create, activate };
+  return { list, create, activate, retryRefs, removeCreatedRefs };
 };
