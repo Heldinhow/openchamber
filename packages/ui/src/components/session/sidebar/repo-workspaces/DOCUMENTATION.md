@@ -95,7 +95,11 @@ total, partial flag and branch divergence come from
 - A delete whose owned removal failed keeps the dialog and the workspace open,
   shows the failing alias (or the config path when it could not be read), and
   never claims the workspace was deleted. Only `removed: true` reloads the
-  sidebar and closes.
+  sidebar and closes. When the failure names an alias, the same block offers two
+  retries: delete again with `removeCreatedRefs: false`, leaving the reference
+  file untouched, or retry with `removeCreatedRefs: true` and
+  `confirmRefs: [alias]` to overwrite the hand-edited entry. Both keep the
+  submitting guard, and a second failure leaves the dialog as it was.
 - The review panel reads each repo on open and keeps a read failure in that
   repo's card; the other cards and the total stay. A repo without git is shown
   as "No git", a missing project as "Project not found", and neither becomes a
@@ -176,6 +180,16 @@ from "the references could not be removed and the workspace is still here"
 without guessing from a status code. `removed` is that single fact; the alias
 and the config path are the explanation. The server writes settings only after a
 clean removal, so the dialog never has to undo an optimistic close.
+
+### Why the failed delete offers its two retries inline
+
+The user already decided to delete the workspace; the only thing left is whether
+the hand-edited reference goes with it. A checkbox after the failure would repeat
+the question the dialog already asked, and a second confirmation modal would hide
+the alias being decided on. The two buttons name the outcome: one leaves the
+reference file untouched, the other overwrites that entry. Both reuse the
+request and the submitting guard, so a second failure stays in the same block.
+Rejected alternative: a new confirmation dialog inside the existing one.
 
 ### Why every workspace carries its reference state
 

@@ -50,6 +50,8 @@ workspace document and never stores one locally.
 - A delete answer is parsed at the boundary too. `removed: false` is a normal
   answer, not a transport error: the workspace still exists and `failedAlias`
   or `configError` explains why. Only a non-2xx answer becomes an error.
+  `confirmRefs` is sent beside `removeCreatedRefs` so the dialog can overwrite an
+  owned entry the user edited by hand, and is omitted when empty.
 - The import answer is parsed at the boundary like every other response. Its
   folders are a draft only: the server reads the file and returns nothing
   persisted, and an import error carries a reason (`unreadable` or

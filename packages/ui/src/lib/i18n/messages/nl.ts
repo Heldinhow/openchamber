@@ -731,6 +731,8 @@ export const dict = {
   "sessions.sidebar.workspace.deleteAction": "Verwijderen",
   "sessions.sidebar.workspace.deleteFailed": "De werkruimte kon niet worden verwijderd.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} kon niet worden verwijderd. Er is niets verwijderd.",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Verwijderen en @{alias} laten staan",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "@{alias} toch verwijderen",
   "sessions.sidebar.workspace.discardedSingle": "{count} werkruimte is genegeerd",
   "sessions.sidebar.workspace.discardedPlural": "{count} werkruimten zijn genegeerd",
   "sessions.sidebar.workspace.review": "Werkruimteweergave",

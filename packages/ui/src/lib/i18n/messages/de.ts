@@ -3393,6 +3393,8 @@ export const dict = {
   "sessions.sidebar.workspace.deleteAction": "Löschen",
   "sessions.sidebar.workspace.deleteFailed": "Der Arbeitsbereich konnte nicht gelöscht werden.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} konnte nicht entfernt werden. Nichts wurde gelöscht.",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Löschen, ohne @{alias} zu entfernen",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "@{alias} trotzdem entfernen",
   "sessions.sidebar.workspace.discardedSingle": "{count} Arbeitsbereich wurde verworfen",
   "sessions.sidebar.workspace.discardedPlural": "{count} Arbeitsbereiche wurden verworfen",
   "sessions.sidebar.workspace.review": "Arbeitsbereich-Ansicht",

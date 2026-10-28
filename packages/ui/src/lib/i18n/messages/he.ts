@@ -685,6 +685,8 @@ export const dict = {
   "sessions.sidebar.workspace.deleteAction": "מחיקה",
   "sessions.sidebar.workspace.deleteFailed": "לא ניתן למחוק את סביבת העבודה.",
   "sessions.sidebar.workspace.deleteFailedAlias": "לא ניתן להסיר את @{alias}. דבר לא נמחק.",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "מחיקה בלי להסיר את @{alias}",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "להסיר את @{alias} בכל זאת",
   "sessions.sidebar.workspace.discardedSingle": "סביבת עבודה {count} נזנחה",
   "sessions.sidebar.workspace.discardedPlural": "{count} סביבות עבודה נזנחו",
   "sessions.sidebar.workspace.review": "תצוגת סביבת העבודה",

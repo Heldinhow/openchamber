@@ -143,7 +143,11 @@ type DeleteContentProps = {
   workspace: RepoWorkspaceResolved;
   onClose: () => void;
   onDeleted: () => void;
-  deleteWorkspace?: (id: string, removeCreatedRefs: boolean) => Promise<DeleteRepoWorkspaceResult>;
+  deleteWorkspace?: (
+    id: string,
+    removeCreatedRefs: boolean,
+    confirmRefs?: string[],
+  ) => Promise<DeleteRepoWorkspaceResult>;
 };
 
 /**
@@ -163,13 +167,14 @@ const RepoWorkspaceDeleteContent: React.FC<DeleteContentProps> = ({
   const [deleting, setDeleting] = React.useState(false);
   const [failure, setFailure] = React.useState<DeleteFailure | null>(null);
   const aliasList = ownedAliases.map((alias) => `@${alias}`).join(', ');
+  const failedAlias = failure?.alias ?? null;
 
-  const submit = async () => {
+  const submit = async (nextRemoveRefs = removeRefs, confirmRefs?: string[]) => {
     if (deleting) return;
     setDeleting(true);
     setFailure(null);
     try {
-      const result = await deleteWorkspace(workspace.id, removeRefs);
+      const result = await deleteWorkspace(workspace.id, nextRemoveRefs, confirmRefs);
       if (result.removed) {
         onDeleted();
         onClose();
@@ -221,8 +226,8 @@ const RepoWorkspaceDeleteContent: React.FC<DeleteContentProps> = ({
       {failure ? (
         <div className="flex flex-col gap-1" role="alert">
           <p className="typography-micro text-status-error">
-            {failure.alias
-              ? t('sessions.sidebar.workspace.deleteFailedAlias', { alias: failure.alias })
+            {failedAlias
+              ? t('sessions.sidebar.workspace.deleteFailedAlias', { alias: failedAlias })
               : t('sessions.sidebar.workspace.deleteFailed')}
           </p>
           {failure.configError ? (
@@ -232,6 +237,21 @@ const RepoWorkspaceDeleteContent: React.FC<DeleteContentProps> = ({
                 {t('sessions.sidebar.workspace.configUnreadable')}
               </p>
             </>
+          ) : null}
+          {failedAlias ? (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => void submit(false)} disabled={deleting}>
+                {t('sessions.sidebar.workspace.deleteWithoutRefs', { alias: failedAlias })}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => void submit(true, [failedAlias])}
+                disabled={deleting}
+              >
+                {t('sessions.sidebar.workspace.deleteOverwriteRef', { alias: failedAlias })}
+              </Button>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -253,7 +273,11 @@ type DeleteDialogProps = {
   workspace: RepoWorkspaceResolved | null;
   onOpenChange: (open: boolean) => void;
   onDeleted: () => void;
-  deleteWorkspace?: (id: string, removeCreatedRefs: boolean) => Promise<DeleteRepoWorkspaceResult>;
+  deleteWorkspace?: (
+    id: string,
+    removeCreatedRefs: boolean,
+    confirmRefs?: string[],
+  ) => Promise<DeleteRepoWorkspaceResult>;
 };
 
 export const RepoWorkspaceDeleteDialog: React.FC<DeleteDialogProps> = ({

@@ -741,6 +741,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteAction": "Eliminar",
   "sessions.sidebar.workspace.deleteFailed": "No se pudo eliminar el espacio de trabajo.",
   "sessions.sidebar.workspace.deleteFailedAlias": "No se pudo eliminar @{alias}. No se eliminó nada.",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Eliminar sin quitar @{alias}",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "Quitar @{alias} de todos modos",
   "sessions.sidebar.workspace.discardedSingle": "Se descartó {count} espacio de trabajo",
   "sessions.sidebar.workspace.discardedPlural": "Se descartaron {count} espacios de trabajo",
   "sessions.sidebar.workspace.review": "Vista del espacio de trabajo",

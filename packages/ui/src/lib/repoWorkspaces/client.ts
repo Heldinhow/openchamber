@@ -357,11 +357,12 @@ export const activateRepoWorkspace = async (id: string | null): Promise<{ active
 export const deleteRepoWorkspace = async (
   id: string,
   removeCreatedRefs: boolean,
+  confirmRefs?: string[],
 ): Promise<DeleteRepoWorkspaceResult> => {
   const response = await runtimeFetch(`/api/workspaces/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ removeCreatedRefs }),
+    body: JSON.stringify(confirmRefs?.length ? { removeCreatedRefs, confirmRefs } : { removeCreatedRefs }),
   });
   if (!response.ok) throw await requestFailure(response);
   const parsed = deleteRepoWorkspaceResultSchema.safeParse(await readJson(response));

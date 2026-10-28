@@ -34,6 +34,8 @@ const deleteResult = (overrides: Partial<DeleteRepoWorkspaceResult>): DeleteRepo
   ...overrides,
 });
 
+const buttonLabels = () => [...document.querySelectorAll('button')].map((button) => button.textContent);
+
 const clickButton = async (label: string) => {
   const button = [...document.querySelectorAll('button')].find((element) => element.textContent === label);
   expect(button !== undefined).toBe(true);
@@ -158,7 +160,7 @@ describe('delete workspace question', () => {
     expect(text).not.toContain('@docs');
   });
 
-  test('a removal that fails keeps the workspace and names the alias', async () => {
+  test('a removal that fails keeps the workspace, names the alias and offers both next steps', async () => {
     const calls: Array<[string, boolean]> = [];
     let closed = 0;
     let deleted = 0;
@@ -184,6 +186,110 @@ describe('delete workspace question', () => {
     expect(deleted).toBe(0);
     expect(closed).toBe(0);
     expect(document.body.textContent).toContain("Couldn't remove @web. Nothing was deleted.");
+    expect(buttonLabels()).toContain('Delete without removing @web');
+    expect(buttonLabels()).toContain('Remove @web anyway');
+  });
+
+  test('deleting without removing the reference retries with removeCreatedRefs false and closes', async () => {
+    const calls: Array<[string, boolean, string[]?]> = [];
+    let closed = 0;
+    let deleted = 0;
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <DeleteDialog
+          open
+          workspace={workspaceWith({})}
+          onOpenChange={(open) => { if (!open) closed += 1; }}
+          onDeleted={() => { deleted += 1; }}
+          deleteWorkspace={async (id, removeRefs, confirmRefs) => {
+            calls.push(confirmRefs ? [id, removeRefs, confirmRefs] : [id, removeRefs]);
+            return calls.length === 1 ? deleteResult({ removed: false, failedAlias: 'web' }) : deleteResult({});
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    await clickButton('Delete');
+    await clickButton('Delete without removing @web');
+
+    expect(calls).toEqual([['ws_1', true], ['ws_1', false]]);
+    expect(deleted).toBe(1);
+    expect(closed).toBe(1);
+  });
+
+  test('removing the edited reference anyway retries with confirmRefs and closes', async () => {
+    const calls: Array<[string, boolean, string[]?]> = [];
+    let closed = 0;
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <DeleteDialog
+          open
+          workspace={workspaceWith({})}
+          onOpenChange={(open) => { if (!open) closed += 1; }}
+          onDeleted={() => undefined}
+          deleteWorkspace={async (id, removeRefs, confirmRefs) => {
+            calls.push(confirmRefs ? [id, removeRefs, confirmRefs] : [id, removeRefs]);
+            return calls.length === 1 ? deleteResult({ removed: false, failedAlias: 'web' }) : deleteResult({});
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    await clickButton('Delete');
+    await clickButton('Remove @web anyway');
+
+    expect(calls).toEqual([['ws_1', true], ['ws_1', true, ['web']]]);
+    expect(closed).toBe(1);
+  });
+
+  test('a failure without an alias shows only the message', async () => {
+    await act(async () => root.render(
+      <I18nProvider>
+        <DeleteDialog
+          open
+          workspace={workspaceWith({})}
+          onOpenChange={() => undefined}
+          onDeleted={() => undefined}
+          deleteWorkspace={async () => deleteResult({ removed: false, failedAlias: null })}
+        />
+      </I18nProvider>,
+    ));
+
+    await clickButton('Delete');
+
+    expect(document.body.textContent).toContain("Couldn't delete the workspace.");
+    expect(buttonLabels()).not.toContain('Delete without removing @web');
+    expect(buttonLabels()).not.toContain('Remove @web anyway');
+  });
+
+  test('a second failure keeps the dialog open with the message', async () => {
+    const calls: Array<[string, boolean, string[]?]> = [];
+    let closed = 0;
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <DeleteDialog
+          open
+          workspace={workspaceWith({})}
+          onOpenChange={(open) => { if (!open) closed += 1; }}
+          onDeleted={() => undefined}
+          deleteWorkspace={async (id, removeRefs, confirmRefs) => {
+            calls.push(confirmRefs ? [id, removeRefs, confirmRefs] : [id, removeRefs]);
+            return deleteResult({ removed: false, failedAlias: 'web' });
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    await clickButton('Delete');
+    await clickButton('Remove @web anyway');
+
+    expect(calls).toEqual([['ws_1', true], ['ws_1', true, ['web']]]);
+    expect(closed).toBe(0);
+    expect(document.body.textContent).toContain("Couldn't remove @web. Nothing was deleted.");
+    expect(buttonLabels()).toContain('Remove @web anyway');
   });
 
   test('a successful delete reloads and closes', async () => {

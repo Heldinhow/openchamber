@@ -565,6 +565,8 @@ export const dict = {
   "sessions.sidebar.workspace.deleteAction": "Supprimer",
   "sessions.sidebar.workspace.deleteFailed": "Impossible de supprimer l'espace de travail.",
   "sessions.sidebar.workspace.deleteFailedAlias": "Impossible de supprimer @{alias}. Rien n'a été supprimé.",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Supprimer sans retirer @{alias}",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "Retirer @{alias} quand même",
   "sessions.sidebar.workspace.discardedSingle": "{count} espace de travail a été ignoré",
   "sessions.sidebar.workspace.discardedPlural": "{count} espaces de travail ont été ignorés",
   "sessions.sidebar.workspace.review": "Vue de l'espace de travail",

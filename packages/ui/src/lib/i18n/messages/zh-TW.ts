@@ -757,6 +757,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteAction": "刪除",
   "sessions.sidebar.workspace.deleteFailed": "無法刪除工作區。",
   "sessions.sidebar.workspace.deleteFailedAlias": "無法移除 @{alias}。未刪除任何內容。",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "刪除但保留 @{alias}",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "仍要移除 @{alias}",
   "sessions.sidebar.workspace.discardedSingle": "已丟棄 {count} 個工作區",
   "sessions.sidebar.workspace.discardedPlural": "已丟棄 {count} 個工作區",
   "sessions.sidebar.workspace.review": "工作區檢視",

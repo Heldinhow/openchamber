@@ -731,6 +731,8 @@ export const dict = {
   "sessions.sidebar.workspace.deleteAction": "Delete",
   "sessions.sidebar.workspace.deleteFailed": "Couldn't delete the workspace.",
   "sessions.sidebar.workspace.deleteFailedAlias": "Couldn't remove @{alias}. Nothing was deleted.",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Delete without removing @{alias}",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "Remove @{alias} anyway",
   "sessions.sidebar.workspace.discardedSingle": "{count} workspace was discarded",
   "sessions.sidebar.workspace.discardedPlural": "{count} workspaces were discarded",
   "sessions.sidebar.workspace.review": "Workspace view",

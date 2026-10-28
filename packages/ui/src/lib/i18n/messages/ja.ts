@@ -732,6 +732,8 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteAction": "削除",
   "sessions.sidebar.workspace.deleteFailed": "ワークスペースを削除できませんでした。",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} を削除できませんでした。何も削除されていません。",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "@{alias} を残して削除",
+  "sessions.sidebar.workspace.deleteOverwriteRef": "@{alias} をそれでも削除",
   "sessions.sidebar.workspace.discardedSingle": "{count} 件のワークスペースを破棄しました",
   "sessions.sidebar.workspace.discardedPlural": "{count} 件のワークスペースを破棄しました",
   "sessions.sidebar.workspace.review": "ワークスペース表示",
