@@ -6,8 +6,9 @@
 `activeWorkspaceId` settings fields, and the only reader that resolves them
 against the project catalog. It also owns the primary's OpenCode `references`.
 `routes.js` registers `GET /api/workspaces`, `POST /api/workspaces`,
-`PATCH /api/workspaces/:id`, `DELETE /api/workspaces/:id`,
-`POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
+`POST /api/workspaces/import`, `PATCH /api/workspaces/:id`,
+`DELETE /api/workspaces/:id`, `POST /api/workspaces/active` and
+`POST /api/workspaces/:id/refs/retry`.
 
 A folder that is not a project yet is registered through the shared add-project
 rule in `../projects/add-project.js`; its project id comes from there. Settings
@@ -109,6 +110,21 @@ warn that the new layer overrides it, and is never edited.
   write that fails after a successful removal restores the removed entries.
 - The config read-modify-write path is serialized per service instance: two
   concurrent saves re-read the previous write instead of losing it.
+- `POST /api/workspaces/import` only reads. It returns `{ name, folders }` and
+  never calls `persistSettings`, registers a project or writes config, so a
+  cancel after importing leaves no trace.
+- Import resolves a relative folder against the workspace file's directory,
+  expands `~`, and deduplicates by `realpath` (falling back to the normalized
+  path when the folder is missing or cannot be resolved). The first accepted
+  folder is proposed as primary.
+- Aliases are the sanitized folder basename under the dialog's rule, suffixed
+  `-2`, `-3` when repeated. A non-`file:` URI (`vscode-remote:`, `ssh:`) stays
+  in the draft as `{ path, alias: '', error: 'unsupported' }` so one bad folder
+  does not drop the others; `file:` URIs are converted to paths.
+- An unreadable file answers 422 with `importError.reason = 'unreadable'`; a
+  file that is not JSONC with a `folders` array answers 422 with
+  `importError.reason = 'invalid-json'`. Neither body nor message carries file
+  content.
 - Error bodies carry a field key (`repos[0].alias`) and an English API message.
   They never carry settings content, file contents or secrets.
 
@@ -257,6 +273,25 @@ workspace are candidates. A list of aliases also keeps the payload independent
 of row order, and an alias that stays simply ignores its entry. The kept alias
 leaves `createdRefs`, because a reference the user chose to keep is no longer
 this workspace's to delete.
+
+### Why import is its own read-only route
+
+A `.code-workspace` import fills a dialog that has not asked to create anything
+yet, so it cannot share the create route without either writing early or
+carrying a dry-run flag through every step of create. A separate method keeps
+the never-write rule structural, and the draft it returns is already the shape
+the form edits: resolved folder paths, aliases and a proposed primary. Rejected
+alternative: parsing the file in the browser, which cannot resolve a relative
+path because the browser receives neither the file's directory nor the server's
+filesystem.
+
+### Why a bad folder does not fail the import
+
+A workspace file can mix local folders with remote URIs the app cannot open.
+Dropping the whole file would lose the local folders the user does want, so the
+draft carries each rejected entry with `error: 'unsupported'` and the dialog
+lists it. The name and accepted folders still land, and submit sends only what
+the user can save.
 
 ## Installed OpenCode check: absolute reference paths
 

@@ -89,6 +89,20 @@ const updateRepoWorkspaceResultSchema = createRepoWorkspaceResultSchema;
 
 const retryRepoWorkspaceRefsResultSchema = z.object(refsResultFields);
 
+const importFolderSchema = z.object({
+  path: z.string(),
+  alias: z.string(),
+  primary: z.boolean(),
+  error: z.enum(['unsupported']).nullable().catch(null),
+});
+
+const importDraftSchema = z.object({
+  name: z.string(),
+  folders: z.array(importFolderSchema),
+});
+
+export type RepoWorkspaceImportDraft = z.infer<typeof importDraftSchema>;
+
 const requestErrorSchema = z.object({
   error: z.string().optional(),
   fields: z.record(z.string(), z.string()).optional(),
@@ -97,6 +111,9 @@ const requestErrorSchema = z.object({
     alias: z.string().optional(),
     aliases: z.array(z.string()).optional(),
     path: z.string().nullable().optional(),
+  }).optional(),
+  importError: z.object({
+    reason: z.enum(['unreadable', 'invalid-json']),
   }).optional(),
 });
 
@@ -123,6 +140,7 @@ export class RepoWorkspaceRequestError extends Error {
   readonly fields: Record<string, string>;
   readonly configError: { path: string; message: string } | null;
   readonly conflict: { alias: string | null; aliases: string[]; path: string | null } | null;
+  readonly importError: { reason: 'unreadable' | 'invalid-json' } | null;
 
   constructor(status: number, payload: z.infer<typeof requestErrorSchema> | null) {
     super(payload?.error ?? `Workspace request failed with ${status}`);
@@ -137,6 +155,7 @@ export class RepoWorkspaceRequestError extends Error {
         path: payload.conflict.path ?? null,
       }
       : null;
+    this.importError = payload?.importError ?? null;
   }
 }
 
@@ -175,6 +194,24 @@ export const fetchRepoWorkspaces = async () => {
   const parsed = repoWorkspacesDocumentSchema.safeParse(await readJson(response));
   if (!parsed.success) {
     throw new Error('Workspaces response was invalid');
+  }
+  return parsed.data;
+};
+
+/**
+ * Reads a `.code-workspace` into a draft. The server only reads the file; the
+ * dialog still has to submit to create anything.
+ */
+export const importRepoWorkspace = async (filePath: string): Promise<RepoWorkspaceImportDraft> => {
+  const response = await runtimeFetch('/api/workspaces/import', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: filePath }),
+  });
+  if (!response.ok) throw await requestFailure(response);
+  const parsed = importDraftSchema.safeParse(await readJson(response));
+  if (!parsed.success) {
+    throw new Error('Workspace import response was invalid');
   }
   return parsed.data;
 };

@@ -11,6 +11,7 @@ const respondWithError = (res, error, fallbackMessage) => {
     if (error.fields) body.fields = error.fields;
     if (error.configError) body.configError = error.configError;
     if (error.conflict) body.conflict = error.conflict;
+    if (error.importError) body.importError = error.importError;
     return res.status(error.status).json(body);
   }
   return res.status(500).json({ error: fallbackMessage });
@@ -24,6 +25,15 @@ export const registerWorkspaceRoutes = (app, dependencies) => {
       return res.json(await service.list());
     } catch (error) {
       return respondWithError(res, error, 'Failed to read workspaces');
+    }
+  });
+
+  // Before the `/:id` routes, so `import` is never read as a workspace id.
+  app.post('/api/workspaces/import', async (req, res) => {
+    try {
+      return res.json(await service.importDraft(req.body));
+    } catch (error) {
+      return respondWithError(res, error, 'Failed to import workspace file');
     }
   });
 

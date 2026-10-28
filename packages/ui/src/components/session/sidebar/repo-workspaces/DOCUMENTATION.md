@@ -12,8 +12,8 @@ diff. `RepoWorkspaceDialog.tsx` is only the window around the form.
 Activate, Edit and Delete) and the delete question; their list and question are
 exported without the window so the component test drives them directly. The form
 never writes settings, projects or config itself; `POST /api/workspaces`,
-`PATCH /api/workspaces/:id` and `DELETE /api/workspaces/:id` do, through the
-server service.
+`POST /api/workspaces/import`, `PATCH /api/workspaces/:id` and
+`DELETE /api/workspaces/:id` do, through the server service (import only reads).
 
 The dialogs are mounted only by the desktop/web sidebar, from the empty card and
 the workspace header (new, edit, manage). Mobile and VS Code do not register the
@@ -22,8 +22,13 @@ route and never mount them.
 ## Invariants
 
 - Nothing is written before submit. Picking a folder reads the directory to
-  prove it exists (`DirectoryExplorerDialog`'s pick mode) and changes only the
-  draft.
+  prove it exists (`DirectoryExplorerDialog`'s pick mode), and importing a
+  `.code-workspace` reads the file and replaces the draft rows and name;
+  neither changes anything outside the form, so cancel after either writes
+  nothing.
+- Import is offered only in create mode. The first accepted folder is primary,
+  an unsupported folder is listed by path, an unreadable or invalid file shows
+  its error in the import status slot, and the name stays editable.
 - Save stays disabled while the name is empty, no row is primary, a row has no
   valid alias, two rows share an alias, or two rows point at the same folder.
   The server repeats these checks; the client check is what makes the block
@@ -82,6 +87,16 @@ second modal inside the dialog and hide the diff the user is deciding on.
 dialog around it stays a window with no state. It also lets the component test
 submit a draft and reach the pending card without a server, while the surrounding
 dialog keeps the focus trap, Escape and the close control.
+
+### Why the import field asks for a path instead of opening a file picker
+
+The server resolves each `folders[].path` relative to the workspace file, so it
+must read the file itself and needs its absolute path. A browser file input
+gives the client only the file's contents and name, and the desktop picker only
+returns folders, so neither can supply that path. The field is the one input the
+contract can actually use; the import button stays next to it as the design
+asks. Rejected alternative: reading the file in the browser and posting its
+contents, which cannot resolve relative folders and would duplicate the parser.
 
 ### Why the folder picker is reused in a pick-only mode
 

@@ -3,7 +3,8 @@
 ## Ownership
 
 `client.ts` is the UI's only reader of `/api/workspaces` and the only caller of
-`POST /api/workspaces`, `PATCH /api/workspaces/:id`, `DELETE /api/workspaces/:id`,
+`POST /api/workspaces`, `POST /api/workspaces/import`,
+`PATCH /api/workspaces/:id`, `DELETE /api/workspaces/:id`,
 `POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
 `useRepoWorkspaces` holds the resolved list, the active pointer, the count of
 discarded workspaces and the active workspace's reference states for the
@@ -35,6 +36,10 @@ workspace document and never stores one locally.
 - A delete answer is parsed at the boundary too. `removed: false` is a normal
   answer, not a transport error: the workspace still exists and `failedAlias`
   or `configError` explains why. Only a non-2xx answer becomes an error.
+- The import answer is parsed at the boundary like every other response. Its
+  folders are a draft only: the server reads the file and returns nothing
+  persisted, and an import error carries a reason (`unreadable` or
+  `invalid-json`) instead of file content.
 - The document's `discarded` count is read-only: it names stored workspaces the
   parser dropped so the sidebar can show them, and nothing writes them back.
 - The document's `refs` and `refsError` describe the active workspace's primary

@@ -279,6 +279,130 @@ describe('workspace service: create', () => {
   });
 });
 
+describe('workspace service: import', () => {
+  const importService = (content, overrides = {}) => createService({
+    homeDirectory: '/home/ada',
+    fsPromises: {
+      readFile: vi.fn(async () => content),
+      realpath: vi.fn(async (value) => value),
+    },
+    ...overrides,
+  });
+
+  const workspaceFile = (folders) => JSON.stringify({ folders });
+
+  it('drafts the name, resolves relative folders from the file and proposes the first as primary', async () => {
+    const { service, dependencies } = importService(workspaceFile([
+      { path: './api' },
+      { path: 'web' },
+      { path: '../shared' },
+    ]));
+
+    await expect(service.importDraft({ path: '/work/shop.code-workspace' })).resolves.toEqual({
+      name: 'shop',
+      folders: [
+        { path: '/work/api', alias: 'api', primary: true, error: null },
+        { path: '/work/web', alias: 'web', primary: false, error: null },
+        { path: '/shared', alias: 'shared', primary: false, error: null },
+      ],
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(dependencies.writeConfig).not.toHaveBeenCalled();
+    expect(dependencies.validateDirectoryPath).not.toHaveBeenCalled();
+    expect(dependencies.readSettings).not.toHaveBeenCalled();
+  });
+
+  it('expands ~ and removes duplicate folders by normalized path and realpath', async () => {
+    const { service } = importService('', {
+      fsPromises: {
+        readFile: vi.fn(async () => workspaceFile([
+          { path: '~/src/web' },
+          { path: '~/src/./web' },
+          { path: '/link/api' },
+          { path: '/real/api' },
+        ])),
+        realpath: vi.fn(async (value) => (value === '/link/api' ? '/real/api' : value)),
+      },
+    });
+
+    const draft = await service.importDraft({ path: '/work/shop.code-workspace' });
+
+    expect(draft.folders).toEqual([
+      { path: '/home/ada/src/web', alias: 'web', primary: true, error: null },
+      { path: '/link/api', alias: 'api', primary: false, error: null },
+    ]);
+  });
+
+  it('suffixes repeated aliases with -2 and -3', async () => {
+    const { service } = importService(workspaceFile([
+      { path: '/repos/web' },
+      { path: '/other/web' },
+      { path: '/third/web' },
+      { path: '/repos/Web App' },
+    ]));
+
+    const draft = await service.importDraft({ path: '/work/shop.code-workspace' });
+
+    expect(draft.folders.map((folder) => folder.alias)).toEqual(['web', 'web-2', 'web-3', 'Web-App']);
+  });
+
+  it('reports a non-file URI per folder and keeps the local folders', async () => {
+    const { service, dependencies } = importService(workspaceFile([
+      { path: 'vscode-remote://ssh-remote+host/work/api' },
+      { path: './api' },
+    ]));
+
+    await expect(service.importDraft({ path: '/work/shop.code-workspace' })).resolves.toEqual({
+      name: 'shop',
+      folders: [
+        { path: 'vscode-remote://ssh-remote+host/work/api', alias: '', primary: false, error: 'unsupported' },
+        { path: '/work/api', alias: 'api', primary: true, error: null },
+      ],
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unreadable file without exposing its content', async () => {
+    const { service, dependencies } = importService('', {
+      fsPromises: {
+        readFile: vi.fn(async () => { throw new Error('permission denied with secret-content'); }),
+        realpath: vi.fn(async (value) => value),
+      },
+    });
+
+    await expect(service.importDraft({ path: '/work/shop.code-workspace' })).rejects.toMatchObject({
+      status: 422,
+      importError: { reason: 'unreadable' },
+      message: 'Workspace file cannot be read',
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid JSON without exposing its content', async () => {
+    const { service } = importService('{\n  "folders": [{ "path": "/secret/token" }');
+
+    const error = await service.importDraft({ path: '/work/shop.code-workspace' }).catch((reason) => reason);
+
+    expect(error).toMatchObject({
+      status: 422,
+      importError: { reason: 'invalid-json' },
+      message: 'Workspace file is not valid JSON',
+    });
+    expect(error.message).not.toContain('secret');
+    expect(error.message).not.toContain('folders');
+  });
+
+  it('requires a file path', async () => {
+    const { service, dependencies } = importService(workspaceFile([]));
+
+    await expect(service.importDraft({})).rejects.toMatchObject({
+      status: 422,
+      fields: { path: 'Workspace file path is required' },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+});
+
 describe('workspace service: activate', () => {
   it('writes the pointer and the primary as the active project', async () => {
     const stored = workspace();

@@ -67,6 +67,46 @@ describe('workspace routes', () => {
     expect(dependencies.persistSettings).not.toHaveBeenCalled();
   });
 
+  it('imports a workspace file as a draft without writing settings', async () => {
+    const { app, dependencies } = createApp({
+      fsPromises: {
+        readFile: vi.fn(async () => JSON.stringify({ folders: [{ path: '/repos/api' }] })),
+        realpath: vi.fn(async (value) => value),
+      },
+    });
+
+    const response = await request(app)
+      .post('/api/workspaces/import')
+      .send({ path: '/work/shop.code-workspace' })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      name: 'shop',
+      folders: [{ path: '/repos/api', alias: 'api', primary: true, error: null }],
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
+  it('answers 422 with the import reason for a file that is not a workspace', async () => {
+    const { app, dependencies } = createApp({
+      fsPromises: {
+        readFile: vi.fn(async () => '{ "folders": [ }'),
+        realpath: vi.fn(async (value) => value),
+      },
+    });
+
+    const response = await request(app)
+      .post('/api/workspaces/import')
+      .send({ path: '/work/shop.code-workspace' })
+      .expect(422);
+
+    expect(response.body).toEqual({
+      error: 'Workspace file is not valid JSON',
+      importError: { reason: 'invalid-json' },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
   it('answers 500 when the settings write fails', async () => {
     const { app } = createApp({
       persistSettings: vi.fn(async () => { throw new Error('write failed with /private/path'); }),

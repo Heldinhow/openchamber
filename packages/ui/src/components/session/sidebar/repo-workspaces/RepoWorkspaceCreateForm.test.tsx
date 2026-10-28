@@ -258,6 +258,76 @@ describe('workspace create form', () => {
     });
   });
 
+  test('importing a .code-workspace fills the rows and skips only the unsupported folder', async () => {
+    let importedPath: string | null = null;
+    let created = 0;
+    let cancelled = 0;
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          titleId="workspace-title"
+          onClose={() => { cancelled += 1; }}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          importWorkspace={async (filePath) => {
+            importedPath = filePath;
+            return {
+              name: 'Shop Platform',
+              folders: [
+                { path: '/repos/api', alias: 'api', primary: true, error: null },
+                { path: 'vscode-remote://ssh-remote+host/work/web', alias: '', primary: false, error: 'unsupported' },
+                { path: '/repos/web', alias: 'web', primary: false, error: null },
+              ],
+            };
+          }}
+          createWorkspace={async () => {
+            created += 1;
+            return pendingResult();
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    const pathInput = document.querySelector<HTMLInputElement>('input[placeholder="~/project.code-workspace"]');
+    expect(pathInput !== null).toBe(true);
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    expect(setValue !== undefined).toBe(true);
+    await act(async () => {
+      setValue!.call(pathInput, '/work/shop.code-workspace');
+      pathInput!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const importButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Import .code-workspace');
+    expect(importButton !== undefined).toBe(true);
+    await act(async () => {
+      importButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(importedPath).toBe('/work/shop.code-workspace');
+    expect(document.body.textContent).toContain('Skipped vscode-remote://ssh-remote+host/work/web: only local folders can be imported.');
+
+    const nameField = [...document.querySelectorAll<HTMLInputElement>('input')]
+      .find((input) => input.value === 'Shop Platform');
+    expect(nameField !== undefined).toBe(true);
+    const aliases = [...document.querySelectorAll<HTMLInputElement>('input')]
+      .map((input) => input.value)
+      .filter((value) => value === 'api' || value === 'web');
+    expect(aliases).toEqual(['api', 'web']);
+    expect(document.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('aria-label'))
+      .toBe('Primary repository: /repos/api');
+
+    expect(created).toBe(0);
+    const cancel = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Cancel');
+    await act(async () => {
+      cancel!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(created).toBe(0);
+    expect(cancelled).toBe(1);
+  });
+
   test('removing a repo asks about its owned reference and keeps it when unchecked', async () => {
     const updates: Array<{ input: unknown }> = [];
     const editing = {

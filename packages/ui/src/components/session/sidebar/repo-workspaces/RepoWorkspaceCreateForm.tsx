@@ -11,12 +11,14 @@ import { useGitStatus, useGitStore } from '@/stores/useGitStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import {
   createRepoWorkspace,
+  importRepoWorkspace,
   retryRepoWorkspaceRefs,
   updateRepoWorkspace,
   RepoWorkspaceRequestError,
   type CreateRepoWorkspaceInput,
   type CreateRepoWorkspaceResult,
   type RepoWorkspaceConfigTarget,
+  type RepoWorkspaceImportDraft,
   type RepoWorkspaceRef,
   type RepoWorkspaceResolved,
   type RetryRepoWorkspaceRefsResult,
@@ -72,6 +74,7 @@ type RepoWorkspaceCreateFormProps = {
   createWorkspace?: (input: CreateRepoWorkspaceInput) => Promise<CreateRepoWorkspaceResult>;
   updateWorkspace?: (id: string, input: UpdateRepoWorkspaceInput) => Promise<CreateRepoWorkspaceResult>;
   retryRefs?: (id: string, aliases?: string[]) => Promise<RetryRepoWorkspaceRefsResult>;
+  importWorkspace?: (filePath: string) => Promise<RepoWorkspaceImportDraft>;
 };
 
 const configFilePath = (projectPath: string): string => {
@@ -193,6 +196,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   createWorkspace = createRepoWorkspace,
   updateWorkspace = updateRepoWorkspace,
   retryRefs = retryRepoWorkspaceRefs,
+  importWorkspace = importRepoWorkspace,
 }) => {
   const { t } = useI18n();
   const projects = useProjectsStore((state) => state.projects);
@@ -212,9 +216,14 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const [retryingAlias, setRetryingAlias] = React.useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [showContent, setShowContent] = React.useState(false);
+  const [importPath, setImportPath] = React.useState('');
+  const [importing, setImporting] = React.useState(false);
+  const [importError, setImportError] = React.useState<'unreadable' | 'invalid' | null>(null);
+  const [importSkipped, setImportSkipped] = React.useState<string[]>([]);
   const nextRowKey = React.useRef(draft.rows.length);
   const nameId = React.useId();
   const nameErrorId = React.useId();
+  const importErrorId = React.useId();
 
   const registeredPaths = React.useMemo(() => new Set(
     projects.map((project) => normalizePath(project.path)).filter((path): path is string => Boolean(path)),
@@ -307,6 +316,44 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         primaryKey: current.primaryKey ?? row.key,
       };
     });
+  };
+
+  /**
+   * Import replaces the draft with the file's folders; the first accepted one
+   * is proposed as primary. A rejected folder is listed and the others still
+   * land. Nothing is written: this only fills the form.
+   */
+  const runImport = async () => {
+    const filePath = importPath.trim();
+    if (!filePath || importing || submitting) return;
+    setImporting(true);
+    setImportError(null);
+    setImportSkipped([]);
+    try {
+      const result = await importWorkspace(filePath);
+      const accepted = result.folders.filter((folder) => folder.error === null);
+      setImportSkipped(result.folders.filter((folder) => folder.error !== null).map((folder) => folder.path));
+      if (accepted.length === 0) return;
+      const rows: RepoWorkspaceDraftRow[] = accepted.map((folder) => ({
+        key: `repo-${nextRowKey.current++}`,
+        path: folder.path,
+        alias: folder.alias,
+      }));
+      const primaryIndex = accepted.findIndex((folder) => folder.primary);
+      updateDraft(() => ({
+        name: result.name,
+        rows,
+        primaryKey: rows[primaryIndex >= 0 ? primaryIndex : 0].key,
+      }));
+    } catch (error) {
+      setImportError(
+        error instanceof RepoWorkspaceRequestError && error.importError?.reason === 'invalid-json'
+          ? 'invalid'
+          : 'unreadable',
+      );
+    } finally {
+      setImporting(false);
+    }
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -495,6 +542,52 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           </p>
         ) : null}
       </div>
+
+      {!editing ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <Input
+              value={importPath}
+              onChange={(event) => setImportPath(event.target.value)}
+              disabled={submitting || importing}
+              placeholder={t('sessions.sidebar.workspace.importPathPlaceholder')}
+              aria-label={t('sessions.sidebar.workspace.importPathLabel')}
+              aria-invalid={importError !== null}
+              aria-describedby={importError ? importErrorId : undefined}
+              className="min-w-0 flex-1 font-mono"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <Button
+              variant="outline"
+              onClick={() => void runImport()}
+              disabled={submitting || importing || importPath.trim().length === 0}
+            >
+              {t('sessions.sidebar.workspace.importAction')}
+            </Button>
+          </div>
+          <p
+            id={importErrorId}
+            role={importError ? 'alert' : undefined}
+            className={`min-h-4 typography-micro ${importError ? 'text-status-error' : 'text-muted-foreground'}`}
+          >
+            {importError
+              ? t(importError === 'invalid'
+                ? 'sessions.sidebar.workspace.importInvalid'
+                : 'sessions.sidebar.workspace.importUnreadable')
+              : ''}
+          </p>
+          {importSkipped.length > 0 ? (
+            <div role="alert" className="flex flex-col gap-0.5">
+              {importSkipped.map((path) => (
+                <p key={path} className="break-all typography-micro text-status-warning">
+                  {t('sessions.sidebar.workspace.importUnsupported', { path })}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <fieldset className="min-w-0">
         <legend className="sr-only">{t('sessions.sidebar.workspace.primary')}</legend>

@@ -8,7 +8,10 @@
  * classified against the project config (ownership) and the merged layers
  * (conflict), and written only through the shared config writer.
  */
+import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse as parseJsonc } from 'jsonc-parser';
 import { z } from 'zod';
 import { resolveProjectForDirectory } from '../projects/add-project.js';
 
@@ -16,17 +19,43 @@ import { resolveProjectForDirectory } from '../projects/add-project.js';
 // `/`, backtick or comma, and no leading `@`.
 const WORKSPACE_ALIAS_PATTERN = /^[^\s/`,@][^\s/`,]*$/;
 const WORKSPACE_ID_PREFIX = 'ws_';
+// A path in a `.code-workspace` is either a local path or a URI. Only `file:`
+// URIs name a local folder; anything else (`vscode-remote:`, `ssh:`) is skipped.
+const FOLDER_URI_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
 export class WorkspaceRequestError extends Error {
-  constructor(status, message, { fields = null, configError = null, conflict = null } = {}) {
+  constructor(status, message, { fields = null, configError = null, conflict = null, importError = null } = {}) {
     super(message);
     this.name = 'WorkspaceRequestError';
     this.status = status;
     this.fields = fields;
     this.configError = configError;
     this.conflict = conflict;
+    this.importError = importError;
   }
 }
+
+const expandHome = (value, homeDirectory) => {
+  if (value === '~') return homeDirectory;
+  if (value.startsWith('~/') || value.startsWith('~\\')) return path.join(homeDirectory, value.slice(2));
+  return value;
+};
+
+/** The dialog's alias rule, so an imported alias is one the form accepts. */
+const aliasBaseForFolder = (folderPath) => path.basename(folderPath)
+  .replace(/[^A-Za-z0-9._-]+/g, '-')
+  .replace(/^[^A-Za-z0-9]+/, '')
+  .replace(/[-.]+$/, '') || 'repo';
+
+const nextFolderAlias = (base, takenAliases) => {
+  let alias = base;
+  let suffix = 2;
+  while (takenAliases.has(alias)) {
+    alias = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return alias;
+};
 
 const invalid = (fields) => new WorkspaceRequestError(422, 'Workspace is invalid', { fields });
 
@@ -107,6 +136,15 @@ const retryRefsSchema = z.object({
   aliases: z.array(z.string({ error: 'Aliases must be text' }).trim().min(1, 'Aliases must not be empty')).optional(),
   confirmRefs: confirmRefsSchema,
 });
+
+const importPayloadSchema = z.object({
+  path: z.string({ error: 'Workspace file path is required' }).trim().min(1, 'Workspace file path is required'),
+});
+
+// The file is untyped JSONC: a folder without a string path is ignored, and a
+// document without a `folders` array is not a workspace file.
+const importFolderSchema = z.object({ path: z.string() });
+const importDocumentSchema = z.object({ folders: z.array(z.unknown()) });
 
 /** `['repos', 0, 'alias']` → `repos[0].alias`, the key a form can point at. */
 const fieldKey = (segments) => segments.reduce(
@@ -413,6 +451,7 @@ export const createWorkspaceService = (dependencies) => {
     writeConfig,
     getLayerError,
     getProjectConfigPath,
+    homeDirectory = os.homedir(),
   } = dependencies;
 
   const storedWorkspaces = (value) => sanitizeRepoWorkspaces(value)?.workspaces ?? [];
@@ -537,6 +576,95 @@ export const createWorkspaceService = (dependencies) => {
       discarded: parsed?.discarded ?? 0,
       refs,
       refsError,
+    };
+  };
+
+  /**
+   * Reads a `.code-workspace` into the dialog's draft. It never writes: no
+   * workspace, project or config is touched, and the user still has to submit
+   * the form.
+   */
+  const importDraft = async (payload) => {
+    const { path: requestedPath } = parseInput(importPayloadSchema, payload);
+    const filePath = path.resolve(expandHome(requestedPath, homeDirectory));
+
+    let content;
+    try {
+      content = await fsPromises.readFile(filePath, 'utf8');
+    } catch {
+      throw new WorkspaceRequestError(
+        422,
+        'Workspace file cannot be read',
+        { importError: { reason: 'unreadable' } },
+      );
+    }
+
+    const parseErrors = [];
+    const document = importDocumentSchema.safeParse(parseJsonc(content, parseErrors, { allowTrailingComma: true }));
+    if (parseErrors.length > 0 || !document.success) {
+      throw new WorkspaceRequestError(
+        422,
+        'Workspace file is not valid JSON',
+        { importError: { reason: 'invalid-json' } },
+      );
+    }
+
+    const fileDirectory = path.dirname(filePath);
+    const folders = [];
+    const seenPaths = new Set();
+    const takenAliases = new Set();
+
+    for (const entry of document.data.folders) {
+      const folder = importFolderSchema.safeParse(entry);
+      if (!folder.success) continue;
+      const rawPath = folder.data.path.trim();
+      if (!rawPath) continue;
+
+      let folderPath;
+      if (FOLDER_URI_PATTERN.test(rawPath)) {
+        let url = null;
+        try {
+          url = new URL(rawPath);
+        } catch {
+          // Not a local path either way; report it as a skipped folder.
+        }
+        if (!url || url.protocol !== 'file:') {
+          folders.push({ path: rawPath, alias: '', primary: false, error: 'unsupported' });
+          continue;
+        }
+        try {
+          folderPath = fileURLToPath(url);
+        } catch {
+          folders.push({ path: rawPath, alias: '', primary: false, error: 'unsupported' });
+          continue;
+        }
+      } else {
+        folderPath = path.resolve(fileDirectory, expandHome(rawPath, homeDirectory));
+      }
+
+      // A symlink and its target are the same folder; a missing folder keeps
+      // the normalized path so duplicates in the file still collapse.
+      let dedupeKey = folderPath;
+      try {
+        dedupeKey = await fsPromises.realpath(folderPath);
+      } catch {
+        // Keep the normalized path.
+      }
+      if (seenPaths.has(dedupeKey)) continue;
+      seenPaths.add(dedupeKey);
+
+      const alias = nextFolderAlias(aliasBaseForFolder(folderPath), takenAliases);
+      takenAliases.add(alias);
+      folders.push({ path: folderPath, alias, primary: false, error: null });
+    }
+
+    const primary = folders.find((folder) => folder.error === null);
+    if (primary) primary.primary = true;
+
+    const basename = path.basename(filePath);
+    return {
+      name: path.basename(filePath, path.extname(filePath)) || basename,
+      folders,
     };
   };
 
@@ -1003,5 +1131,5 @@ export const createWorkspaceService = (dependencies) => {
     return { activeWorkspaceId: workspace.id };
   };
 
-  return { list, create, update, activate, remove, retryRefs, removeCreatedRefs };
+  return { list, importDraft, create, update, activate, remove, retryRefs, removeCreatedRefs };
 };
