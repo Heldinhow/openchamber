@@ -648,6 +648,7 @@ export const dict = {
   "sessions.sidebar.workspace.noticeUnregistered": "ستُسجَّل المجلدات التي لا مشروع لها عند الحفظ.",
   "sessions.sidebar.workspace.showContent": "عرض المحتوى",
   "sessions.sidebar.workspace.configUnreadable": "تعذّرت قراءة ملف التهيئة هذا. أصلحه وحاول مرة أخرى.",
+  "sessions.sidebar.workspace.rootConfigShadowed": "هذه الطبقة تحجب ملف الإعدادات الموجود في الجذر.",
   "sessions.sidebar.workspace.createFailed": "تعذّر إنشاء مساحة العمل.",
   "sessions.sidebar.workspace.pendingTitle": "أُنشئت مساحة العمل، وreferences معلّقة",
   "sessions.sidebar.workspace.pendingBody": "مساحة العمل تعمل؛ هذه references غير متاحة في الجلسة حتى تُكتب.",

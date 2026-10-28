@@ -14,6 +14,8 @@ exported without the window so the component test drives them directly. The form
 never writes settings, projects or config itself; `POST /api/workspaces`,
 `POST /api/workspaces/import`, `PATCH /api/workspaces/:id` and
 `DELETE /api/workspaces/:id` do, through the server service (import only reads).
+The displayed config target comes from `GET /api/workspaces/config-target`
+through `fetchRepoWorkspaceConfigTarget`; the form never composes the path.
 
 The dialogs are mounted only by the desktop/web sidebar, from the empty card and
 the workspace header (new, edit, manage). Mobile and VS Code do not register the
@@ -43,9 +45,18 @@ total, partial flag and branch divergence come from
 - Edit opens on the saved name, repos, aliases, primary and branch snapshots.
   A repo whose project is gone shows "Project not found" and keeps its id.
 - The create warning is part of the form, not a toast, and stays visible until
-  the request: the exact target (`<primary>/.opencode/opencode.json`), one chip
-  per secondary alias, and the notice that unregistered folders are registered
-  on save. A single-repository draft shows the discreet no-gain note instead.
+  the request: the exact target (`<primary>/.opencode/opencode.json`) as the
+  server resolves it, one chip per secondary alias, and the notice that
+  unregistered folders are registered on save. A single-repository draft shows
+  the discreet no-gain note instead.
+- The target is read again whenever the primary row's path changes and when an
+  edit dialog opens. While that read is in flight the card shows no path at all,
+  never the folder plus a guessed `.opencode/opencode.json`. A failed read uses
+  the existing config-error block (path plus `configUnreadable`) and keeps save
+  disabled; it adds no other rule.
+- When the server reports `rootConfigPath`, both the create and edit warning
+  cards say that this layer shadows the existing root config file and show that
+  path in mono. It is a warning, not an error, and does not block save.
 - The edit warning shows the reference diff (removed, changed and added aliases)
   and the same target. Removing a repo with an owned reference asks whether to
   delete that reference; declining keeps it in the config and removes only the
@@ -96,6 +107,17 @@ Both modes are the same rows, validation and pending transition; only the
 initial draft, the notice and the route differ. A second form would duplicate
 the validation and the pending card, which are the parts most likely to drift.
 The component test drives both routes through the same surface.
+
+### Why the dialog asks the server for the config target
+
+The warning must name the file the workspace service will actually write, and
+the folder the user picked may be a symlink; composing `<path>/.opencode/
+opencode.json` in the browser showed the typed path while the server wrote
+through the canonical one. The server already owns path resolution and config
+reading, so the same route answers the target and the root file it shadows, and
+the browser keeps no second rule for either. Rejected alternative: keeping the
+composed path and only fetching the root file, which still disagreed with the
+server about the target.
 
 ### Why the removal question is a checked checkbox
 

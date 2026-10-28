@@ -132,6 +132,49 @@ describe('workspace routes', () => {
     expect(response.body).toEqual({ error: 'Failed to read workspaces' });
   });
 
+  it('reads the config target for a folder that is not a project yet', async () => {
+    const rootConfig = '/work/api/opencode.json';
+    const { app } = createApp({
+      fsPromises: {
+        mkdir: vi.fn(async () => undefined),
+        stat: vi.fn(async (filePath) => ({ isFile: () => filePath === rootConfig })),
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/workspaces/config-target')
+      .query({ path: '/work/api' })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      path: '/work/api/.opencode/opencode.json',
+      rootConfigPath: rootConfig,
+    });
+  });
+
+  it('answers 422 with the config path when the target cannot be read', async () => {
+    const projectConfigPath = '/work/api/.opencode/opencode.json';
+    const message = `OpenCode configuration at ${projectConfigPath} contains invalid JSONC and cannot be loaded safely`;
+    const { app } = createApp({
+      readConfigLayers: vi.fn(() => ({
+        ...emptyLayers(),
+        paths: { userPath: null, userOverridePath: null, projectPath: projectConfigPath, customPath: null },
+        layerErrors: [{ path: projectConfigPath, code: 'INVALID_JSONC', message }],
+      })),
+      getProjectConfigPath: vi.fn(() => projectConfigPath),
+    });
+
+    const response = await request(app)
+      .get('/api/workspaces/config-target')
+      .query({ path: '/work/api' })
+      .expect(422);
+
+    expect(response.body).toEqual({
+      error: 'OpenCode configuration cannot be read',
+      configError: { path: projectConfigPath, message },
+    });
+  });
+
   it('serializes the active workspace reference states and one config parse error', async () => {
     const projectConfigPath = '/repos/api/.opencode/opencode.json';
     const message = `OpenCode configuration at ${projectConfigPath} contains invalid JSONC and cannot be loaded safely`;

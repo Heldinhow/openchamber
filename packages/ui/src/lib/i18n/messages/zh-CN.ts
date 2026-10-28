@@ -695,6 +695,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "没有项目的文件夹会在保存时注册。",
   "sessions.sidebar.workspace.showContent": "查看内容",
   "sessions.sidebar.workspace.configUnreadable": "无法读取该配置文件。请修正后重试。",
+  "sessions.sidebar.workspace.rootConfigShadowed": "此层会覆盖根目录中现有的配置文件。",
   "sessions.sidebar.workspace.createFailed": "无法创建工作区。",
   "sessions.sidebar.workspace.pendingTitle": "工作区已创建，references 待写入",
   "sessions.sidebar.workspace.pendingBody": "工作区可用；这些 references 在写入前不会在会话中生效。",

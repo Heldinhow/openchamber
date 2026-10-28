@@ -11,6 +11,7 @@ import { useGitStatus, useGitStore } from '@/stores/useGitStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import {
   createRepoWorkspace,
+  fetchRepoWorkspaceConfigTarget,
   importRepoWorkspace,
   retryRepoWorkspaceRefs,
   updateRepoWorkspace,
@@ -75,14 +76,10 @@ type RepoWorkspaceCreateFormProps = {
   updateWorkspace?: (id: string, input: UpdateRepoWorkspaceInput) => Promise<CreateRepoWorkspaceResult>;
   retryRefs?: (id: string, aliases?: string[], confirmRefs?: string[]) => Promise<RetryRepoWorkspaceRefsResult>;
   importWorkspace?: (filePath: string) => Promise<RepoWorkspaceImportDraft>;
+  fetchConfigTarget?: (path: string) => Promise<RepoWorkspaceConfigTarget>;
 };
 
 const ROW_GRID_COLS = 'grid-cols-[4.5rem_minmax(4.5rem,7rem)_minmax(0,1fr)_7rem_1.75rem]';
-
-const configFilePath = (projectPath: string): string => {
-  const base = normalizePath(projectPath) ?? projectPath.trim();
-  return base === '/' ? '/.opencode/opencode.json' : `${base}/.opencode/opencode.json`;
-};
 
 const rowIndexFromField = (field: string): number | null => {
   const match = /^repos\[(\d+)\]/.exec(field);
@@ -184,6 +181,19 @@ const RepoRow: React.FC<{
   );
 };
 
+/** A root config file the new `.opencode/` layer will shadow. */
+const RootConfigNotice: React.FC<{ path: string }> = ({ path }) => {
+  const { t } = useI18n();
+  return (
+    <>
+      <p className="mt-1 typography-micro text-foreground">
+        {t('sessions.sidebar.workspace.rootConfigShadowed')}
+      </p>
+      <p className="break-all font-mono typography-micro text-foreground">{path}</p>
+    </>
+  );
+};
+
 /**
  * The one dialog form. In create mode it owns a new draft; in edit mode it
  * opens on the saved workspace and shows the reference diff and the explicit
@@ -200,6 +210,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   updateWorkspace = updateRepoWorkspace,
   retryRefs = retryRepoWorkspaceRefs,
   importWorkspace = importRepoWorkspace,
+  fetchConfigTarget = fetchRepoWorkspaceConfigTarget,
 }) => {
   const { t } = useI18n();
   const projects = useProjectsStore((state) => state.projects);
@@ -249,7 +260,38 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
 
   const primaryRow = draft.rows.find((row) => row.key === draft.primaryKey) ?? null;
   const secondaryRows = draft.rows.filter((row) => row.key !== draft.primaryKey && row.alias.trim());
-  const targetPath = primaryRow?.path ? configFilePath(primaryRow.path) : '';
+  const primaryPath = primaryRow?.path ? (normalizePath(primaryRow.path) ?? primaryRow.path) : '';
+  const [configTarget, setConfigTarget] = React.useState<{
+    folderPath: string;
+    target: RepoWorkspaceConfigTarget;
+  } | null>(null);
+
+  // The server names the exact target, including the canonical folder path the
+  // user typed through a symlink. Until it answers, no path is shown at all.
+  React.useEffect(() => {
+    if (!primaryPath) {
+      setConfigTarget(null);
+      return undefined;
+    }
+    let active = true;
+    setConfigTarget(null);
+    void fetchConfigTarget(primaryPath)
+      .then((target) => {
+        if (!active) return;
+        setConfigTarget({ folderPath: primaryPath, target });
+        setConfigError(null);
+      })
+      .catch((error) => {
+        if (!active) return;
+        const targetError = error instanceof RepoWorkspaceRequestError ? error.configError : null;
+        setConfigError(targetError ?? { path: primaryPath, message: '' });
+      });
+    return () => { active = false; };
+  }, [primaryPath, fetchConfigTarget]);
+  // The folder guard drops the previous target in the render before the next
+  // read starts, so a changed primary never flashes the old path.
+  const currentTarget = configTarget?.folderPath === primaryPath ? configTarget.target : null;
+  const targetPath = currentTarget?.path ?? '';
   const hasUnregistered = draft.rows.some((row) => (
     !row.projectId && !registeredPaths.has(normalizePath(row.path) ?? row.path)
   ));
@@ -695,7 +737,8 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
                 {t('sessions.sidebar.workspace.diffTitle')}
               </p>
             </div>
-            <p className="mt-1 break-all font-mono typography-micro text-foreground">{targetPath}</p>
+            <p className="mt-1 min-h-4 break-all font-mono typography-micro text-foreground">{targetPath}</p>
+            {currentTarget?.rootConfigPath ? <RootConfigNotice path={currentTarget.rootConfigPath} /> : null}
             <ul className="mt-1 flex flex-col gap-0.5 font-mono typography-micro text-foreground">
               {diff?.removed.map((alias) => (
                 <li key={`removed-${alias}`}>{`- ${t('sessions.sidebar.workspace.diffRemoved', { alias })}`}</li>
@@ -780,7 +823,8 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
                 {t('sessions.sidebar.workspace.showContent')}
               </Button>
             </div>
-            <p className="mt-1 break-all font-mono typography-micro text-foreground">{targetPath}</p>
+            <p className="mt-1 min-h-4 break-all font-mono typography-micro text-foreground">{targetPath}</p>
+            {currentTarget?.rootConfigPath ? <RootConfigNotice path={currentTarget.rootConfigPath} /> : null}
             <div className="mt-1 flex flex-wrap gap-1.5">
               {secondaryRows.map((row) => (
                 <code key={row.key} className="rounded bg-[var(--surface-muted)] px-1.5 py-0.5 font-mono typography-micro">

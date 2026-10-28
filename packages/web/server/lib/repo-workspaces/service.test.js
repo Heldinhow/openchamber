@@ -1093,6 +1093,40 @@ describe('workspace service: list reference states per workspace', () => {
 });
 
 describe('workspace service: write references', () => {
+  it('reads the target and the root config it would shadow before saving', async () => {
+    const root = caseRoot('config-target-read');
+    const api = projectAt(root, 'api', 'API');
+    const rootConfig = writeJson(path.join(api.path, 'opencode.json'), { keybinds: { leader: 'ctrl+x' } });
+    const { service } = fixtureService({ projects: [], workspaces: [], activeWorkspaceId: null });
+
+    await expect(service.configTarget({ path: api.path })).resolves.toEqual({
+      path: path.join(api.path, '.opencode', 'opencode.json'),
+      rootConfigPath: rootConfig.file,
+    });
+
+    // An existing `.opencode/` layer must not hide the root file any more.
+    writeProjectConfig(api, '{}');
+    await expect(service.configTarget({ path: api.path })).resolves.toEqual({
+      path: path.join(api.path, '.opencode', 'opencode.json'),
+      rootConfigPath: rootConfig.file,
+    });
+
+    const bare = projectAt(root, 'bare', 'Bare');
+    await expect(service.configTarget({ path: bare.path })).resolves.toEqual({
+      path: path.join(bare.path, '.opencode', 'opencode.json'),
+      rootConfigPath: null,
+    });
+
+    const broken = projectAt(root, 'broken', 'Broken');
+    writeProjectConfig(broken, '{}');
+    const brokenRoot = path.join(broken.path, 'opencode.json');
+    fs.writeFileSync(brokenRoot, '{\n  "references": {');
+    await expect(service.configTarget({ path: broken.path })).rejects.toMatchObject({
+      status: 422,
+      configError: { path: brokenRoot },
+    });
+  });
+
   it('refuses to shadow a root-config alias without confirmation and writes nothing', async () => {
     const root = caseRoot('write-root-conflict');
     const api = projectAt(root, 'api', 'API');

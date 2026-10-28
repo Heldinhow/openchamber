@@ -694,6 +694,7 @@ export const dict = {
   "sessions.sidebar.workspace.noticeUnregistered": "Mappen zonder project worden geregistreerd bij opslaan.",
   "sessions.sidebar.workspace.showContent": "Inhoud bekijken",
   "sessions.sidebar.workspace.configUnreadable": "Dit configuratiebestand kon niet worden gelezen. Herstel het en probeer opnieuw.",
+  "sessions.sidebar.workspace.rootConfigShadowed": "Deze laag overschaduwt het bestaande configuratiebestand in de hoofdmap.",
   "sessions.sidebar.workspace.createFailed": "De werkruimte kon niet worden gemaakt.",
   "sessions.sidebar.workspace.pendingTitle": "Werkruimte gemaakt, references in behandeling",
   "sessions.sidebar.workspace.pendingBody": "De werkruimte werkt; deze references zijn niet beschikbaar in de sessie tot ze zijn geschreven.",

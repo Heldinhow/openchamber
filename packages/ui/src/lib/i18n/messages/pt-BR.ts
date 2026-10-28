@@ -704,6 +704,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "As pastas sem projeto serão registradas ao salvar.",
   "sessions.sidebar.workspace.showContent": "Ver conteúdo",
   "sessions.sidebar.workspace.configUnreadable": "Não foi possível ler este arquivo de configuração. Corrija-o e tente de novo.",
+  "sessions.sidebar.workspace.rootConfigShadowed": "Esta camada sombreia o arquivo de configuração existente na raiz.",
   "sessions.sidebar.workspace.createFailed": "Não foi possível criar o workspace.",
   "sessions.sidebar.workspace.pendingTitle": "Workspace criado, references pendentes",
   "sessions.sidebar.workspace.pendingBody": "O workspace funciona; estas references ficam indisponíveis na sessão até a gravação.",

@@ -5,8 +5,8 @@
 `service.js` is the only server writer of the `workspaces` and
 `activeWorkspaceId` settings fields, and the only reader that resolves them
 against the project catalog. It also owns the primary's OpenCode `references`.
-`routes.js` registers `GET /api/workspaces`, `POST /api/workspaces`,
-`POST /api/workspaces/import`, `PATCH /api/workspaces/:id`,
+`routes.js` registers `GET /api/workspaces`, `GET /api/workspaces/config-target`,
+`POST /api/workspaces`, `POST /api/workspaces/import`, `PATCH /api/workspaces/:id`,
 `DELETE /api/workspaces/:id`, `POST /api/workspaces/active` and
 `POST /api/workspaces/:id/refs/retry`.
 
@@ -71,6 +71,13 @@ itself as lower layers; the shared reader's merge order stays unchanged.
   unreadable config neither fails the request nor hides the other workspaces.
 - An expected alias is `owned` only when `createdRefs` lists it; ownership never
   changes the classification.
+- `GET /api/workspaces/config-target?path=<folder>` reads only the target for a
+  folder that may not be a project yet: the folder must be absolute and exist,
+  an unreadable config is 422 `configError`, and the answer is
+  `{ path, rootConfigPath }` where `path` is always
+  `<folder>/.opencode/opencode.json`. `rootConfigPath` names the existing
+  `<folder>/opencode.json` (or `.jsonc`) even when `.opencode/opencode.json`
+  already exists, because the dialog warns before writing over that layer.
 - Create validates every secondary's config and folder before persisting
   settings. An unreadable config is 422 with `configError: { path, message }`;
   an alias already defined in any layer — including a lower project file — is

@@ -3,14 +3,16 @@
 ## Ownership
 
 `client.ts` is the UI's only reader of `/api/workspaces` and the only caller of
-`POST /api/workspaces`, `POST /api/workspaces/import`,
-`PATCH /api/workspaces/:id`, `DELETE /api/workspaces/:id`,
-`POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
+`GET /api/workspaces/config-target`, `POST /api/workspaces`,
+`POST /api/workspaces/import`, `PATCH /api/workspaces/:id`,
+`DELETE /api/workspaces/:id`, `POST /api/workspaces/active` and
+`POST /api/workspaces/:id/refs/retry`.
 `useRepoWorkspaces` holds the resolved list, the active pointer, the count of
 discarded workspaces and the reference states for the sidebar, the session
 header and every workspace's edit dialog; the workspace dialogs use
-`createRepoWorkspace`, `updateRepoWorkspace`, `deleteRepoWorkspace` and
-`retryRepoWorkspaceRefs` and parse every response at the boundary.
+`fetchRepoWorkspaceConfigTarget`, `createRepoWorkspace`, `updateRepoWorkspace`,
+`deleteRepoWorkspace` and `retryRepoWorkspaceRefs` and parse every response at
+the boundary.
 
 `workspaceReview.ts` is the workspace review panel's only projection. It reads
 the resolved workspace, its reference states and a per-repo git readout, and
@@ -46,6 +48,10 @@ workspace document and never stores one locally.
   folders are a draft only: the server reads the file and returns nothing
   persisted, and an import error carries a reason (`unreadable` or
   `invalid-json`) instead of file content.
+- The config-target answer is parsed at the boundary too. It names the exact
+  file the form will write and the existing root config it shadows; a 4xx is a
+  `RepoWorkspaceRequestError` whose `configError` the form shows in its existing
+  config-error block. The client never composes that path.
 - The document's `discarded` count is read-only: it names stored workspaces the
   parser dropped so the sidebar can show them, and nothing writes them back.
 - The document's top-level `refs` and `refsError` describe the active

@@ -28,6 +28,15 @@ export const registerWorkspaceRoutes = (app, dependencies) => {
     }
   });
 
+  // The dialog reads the target before saving; the folder may not be a project.
+  app.get('/api/workspaces/config-target', async (req, res) => {
+    try {
+      return res.json(await service.configTarget({ path: req.query.path }));
+    } catch (error) {
+      return respondWithError(res, error, 'Failed to read the config target');
+    }
+  });
+
   // Before the `/:id` routes, so `import` is never read as a workspace id.
   app.post('/api/workspaces/import', async (req, res) => {
     try {

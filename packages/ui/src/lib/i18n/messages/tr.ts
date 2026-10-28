@@ -615,6 +615,7 @@ export const dict = {
   "sessions.sidebar.workspace.noticeUnregistered": "Projesi olmayan klasörler kaydederken kaydedilir.",
   "sessions.sidebar.workspace.showContent": "İçeriği gör",
   "sessions.sidebar.workspace.configUnreadable": "Bu yapılandırma dosyası okunamadı. Düzeltip yeniden dene.",
+  "sessions.sidebar.workspace.rootConfigShadowed": "Bu katman, kök dizindeki mevcut yapılandırma dosyasını gölgeler.",
   "sessions.sidebar.workspace.createFailed": "Çalışma alanı oluşturulamadı.",
   "sessions.sidebar.workspace.pendingTitle": "Çalışma alanı oluşturuldu, references beklemede",
   "sessions.sidebar.workspace.pendingBody": "Çalışma alanı çalışıyor; bu references yazılana kadar oturumda kullanılamaz.",

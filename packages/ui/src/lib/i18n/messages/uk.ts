@@ -704,6 +704,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "Папки без проєкту буде зареєстровано під час збереження.",
   "sessions.sidebar.workspace.showContent": "Переглянути вміст",
   "sessions.sidebar.workspace.configUnreadable": "Не вдалося прочитати цей файл конфігурації. Виправте його та спробуйте знову.",
+  "sessions.sidebar.workspace.rootConfigShadowed": "Цей шар перекриває наявний файл конфігурації в корені.",
   "sessions.sidebar.workspace.createFailed": "Не вдалося створити робочий простір.",
   "sessions.sidebar.workspace.pendingTitle": "Робочий простір створено, references очікують",
   "sessions.sidebar.workspace.pendingBody": "Робочий простір працює; ці references недоступні в сесії, доки їх не буде записано.",

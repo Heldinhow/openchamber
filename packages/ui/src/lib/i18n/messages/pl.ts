@@ -536,6 +536,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "Foldery bez projektu zostaną zarejestrowane przy zapisie.",
   "sessions.sidebar.workspace.showContent": "Pokaż zawartość",
   "sessions.sidebar.workspace.configUnreadable": "Nie można odczytać tego pliku konfiguracji. Popraw go i spróbuj ponownie.",
+  "sessions.sidebar.workspace.rootConfigShadowed": "Ta warstwa przesłania istniejący plik konfiguracji w katalogu głównym.",
   "sessions.sidebar.workspace.createFailed": "Nie udało się utworzyć obszaru roboczego.",
   "sessions.sidebar.workspace.pendingTitle": "Obszar roboczy utworzony, references oczekują",
   "sessions.sidebar.workspace.pendingBody": "Obszar roboczy działa; te references będą niedostępne w sesji, dopóki nie zostaną zapisane.",

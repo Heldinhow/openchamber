@@ -528,6 +528,7 @@ export const dict = {
   "sessions.sidebar.workspace.noticeUnregistered": "Les dossiers sans projet sont enregistrés à l'enregistrement.",
   "sessions.sidebar.workspace.showContent": "Voir le contenu",
   "sessions.sidebar.workspace.configUnreadable": "Impossible de lire ce fichier de configuration. Corrigez-le et réessayez.",
+  "sessions.sidebar.workspace.rootConfigShadowed": "Cette couche masque le fichier de configuration existant à la racine.",
   "sessions.sidebar.workspace.createFailed": "Impossible de créer l'espace de travail.",
   "sessions.sidebar.workspace.pendingTitle": "Espace de travail créé, references en attente",
   "sessions.sidebar.workspace.pendingBody": "L'espace de travail fonctionne ; ces references sont indisponibles dans la session tant qu'elles ne sont pas écrites.",

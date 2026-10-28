@@ -207,6 +207,26 @@ export const fetchRepoWorkspaces = async () => {
 };
 
 /**
+ * Reads the exact target the dialog will write for a folder, before any
+ * workspace exists: `<folder>/.opencode/opencode.json` plus the root file that
+ * layer would shadow. The folder must exist; an unreadable config is a 4xx with
+ * `configError`.
+ */
+export const fetchRepoWorkspaceConfigTarget = async (folderPath: string): Promise<RepoWorkspaceConfigTarget> => {
+  const response = await runtimeFetch('/api/workspaces/config-target', {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    query: { path: folderPath },
+  });
+  if (!response.ok) throw await requestFailure(response);
+  const parsed = configTargetSchema.safeParse(await readJson(response));
+  if (!parsed.success) {
+    throw new Error('Workspace config target response was invalid');
+  }
+  return parsed.data;
+};
+
+/**
  * Reads a `.code-workspace` into a draft. The server only reads the file; the
  * dialog still has to submit to create anything.
  */

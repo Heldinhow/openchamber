@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React, { act } from 'react';
 import type { Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
-import type { CreateRepoWorkspaceResult, RepoWorkspaceImportDraft, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
+import type { CreateRepoWorkspaceResult, RepoWorkspaceConfigTarget, RepoWorkspaceImportDraft, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import type { RepoWorkspaceDraft } from './repoWorkspaceDraft';
 
 let Form: typeof import('./RepoWorkspaceCreateForm').RepoWorkspaceCreateForm;
@@ -78,6 +78,12 @@ const pendingResult = (): CreateRepoWorkspaceResult => ({
   configTarget: { path: '/repos/api/.opencode/opencode.json', rootConfigPath: null },
 });
 
+/** The target the server answers for a folder; these tests never hit the route. */
+const targetFor = async (folderPath: string): Promise<RepoWorkspaceConfigTarget> => ({
+  path: `${folderPath}/.opencode/opencode.json`,
+  rootConfigPath: null,
+});
+
 beforeEach(async () => {
   dom = new Window({ url: 'http://localhost' });
   const values = {
@@ -128,6 +134,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           initialDraft={draft}
           titleId="workspace-title"
           onClose={() => { cancelled += 1; }}
@@ -176,6 +183,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           initialDraft={{ name: '', rows: [], primaryKey: null }}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -202,6 +210,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           initialDraft={{ name: '', rows: [], primaryKey: null }}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -232,6 +241,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           initialDraft={draft}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -277,6 +287,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           initialDraft={{
             ...draft,
             rows: [{ key: 'a', path: '/repos/api', alias: 'web app' }],
@@ -305,6 +316,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           initialDraft={{ name: 'Shop Platform', rows: [], primaryKey: null }}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -339,6 +351,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           editing={editing}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -398,6 +411,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           editing={{
             workspace: resolvedWorkspace,
             refs: [{
@@ -449,6 +463,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           editing={{
             workspace: resolvedWorkspace,
             refs: [{
@@ -483,6 +498,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           titleId="workspace-title"
           onClose={() => { cancelled += 1; }}
           onCreated={() => undefined}
@@ -563,6 +579,7 @@ describe('workspace create form', () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
+          fetchConfigTarget={targetFor}
           editing={editing}
           titleId="workspace-title"
           onClose={() => undefined}
@@ -607,5 +624,144 @@ describe('workspace create form', () => {
       repos: [{ projectId: 'p_api', alias: 'api', primary: true }],
     });
     expect(submit?.disabled).toBe(false);
+  });
+
+  test('shows the target the server returns instead of composing one', async () => {
+    const seen: string[] = [];
+    const fetchTarget = async (folderPath: string): Promise<RepoWorkspaceConfigTarget> => {
+      seen.push(folderPath);
+      return { path: '/srv/api/.opencode/opencode.json', rootConfigPath: null };
+    };
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={fetchTarget}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(seen).toEqual(['/repos/api']);
+    expect(document.body.textContent).toContain('/srv/api/.opencode/opencode.json');
+    expect(document.body.textContent).not.toContain('/repos/api/.opencode/opencode.json');
+  });
+
+  test('reads the target again when the primary folder changes', async () => {
+    const seen: string[] = [];
+    const fetchTarget = async (folderPath: string): Promise<RepoWorkspaceConfigTarget> => {
+      seen.push(folderPath);
+      return { path: `${folderPath}/target/.opencode/opencode.json`, rootConfigPath: null };
+    };
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={fetchTarget}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).toContain('/repos/api/target/.opencode/opencode.json');
+    const webRadio = [...document.querySelectorAll('[role="radio"]')]
+      .find((element) => element.getAttribute('aria-label') === 'Secondary repository: /repos/web');
+    expect(webRadio !== undefined).toBe(true);
+    await act(async () => {
+      webRadio!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(seen).toEqual(['/repos/api', '/repos/web']);
+    expect(document.body.textContent).toContain('/repos/web/target/.opencode/opencode.json');
+  });
+
+  test('warns that the new layer shadows an existing root config', async () => {
+    const rootConfig = '/private/repos/api/opencode.json';
+    const fetchTarget = async (): Promise<RepoWorkspaceConfigTarget> => ({
+      path: '/private/repos/api/.opencode/opencode.json',
+      rootConfigPath: rootConfig,
+    });
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={fetchTarget}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).toContain('This layer shadows the existing root config file.');
+    const pathLine = [...document.querySelectorAll('p')].find((element) => element.textContent === rootConfig);
+    expect(pathLine !== undefined).toBe(true);
+    expect(pathLine!.className).toContain('font-mono');
+  });
+
+  test('shows no guessed path while the target read is in flight', async () => {
+    let resolveTarget: (target: RepoWorkspaceConfigTarget) => void = () => undefined;
+    const fetchTarget = () => new Promise<RepoWorkspaceConfigTarget>((resolve) => {
+      resolveTarget = resolve;
+    });
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={fetchTarget}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).not.toContain('/repos/api/.opencode/opencode.json');
+
+    await act(async () => {
+      resolveTarget({ path: '/canonical/repos/api/.opencode/opencode.json', rootConfigPath: null });
+    });
+
+    expect(document.body.textContent).toContain('/canonical/repos/api/.opencode/opencode.json');
+  });
+
+  test('shows the config error and blocks saving when the target cannot be read', async () => {
+    const { RepoWorkspaceRequestError } = await import('@/lib/repoWorkspaces/client');
+    const configPath = '/repos/api/.opencode/opencode.json';
+    const fetchTarget = async (): Promise<RepoWorkspaceConfigTarget> => {
+      throw new RepoWorkspaceRequestError(422, {
+        error: 'OpenCode configuration cannot be read',
+        configError: { path: configPath, message: 'invalid JSONC' },
+      });
+    };
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={fetchTarget}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).toContain(configPath);
+    expect(document.body.textContent).toContain('Couldn\'t read this configuration file. Fix it and try again.');
+    expect(document.querySelector<HTMLButtonElement>('form button[type="submit"]')?.disabled).toBe(true);
   });
 });

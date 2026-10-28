@@ -143,6 +143,10 @@ const importPayloadSchema = z.object({
   path: z.string({ error: 'Workspace file path is required' }).trim().min(1, 'Workspace file path is required'),
 });
 
+const configTargetPayloadSchema = z.object({
+  path: z.string({ error: 'Folder path is required' }).trim().min(1, 'Folder path is required'),
+});
+
 // The file is untyped JSONC: a folder without a string path is ignored, and a
 // document without a `folders` array is not a workspace file.
 const importFolderSchema = z.object({ path: z.string() });
@@ -678,6 +682,29 @@ export const createWorkspaceService = (dependencies) => {
         },
       };
     }
+  };
+
+  /**
+   * The dialog reads the exact target before the user submits; the row may be a
+   * folder that is not a project yet, so this never touches settings. A config
+   * it cannot parse is a 422, the same shape as every other flow.
+   */
+  const configTarget = async (payload) => {
+    const { path: requestedPath } = parseInput(configTargetPayloadSchema, payload);
+    if (!path.isAbsolute(requestedPath)) {
+      throw invalid({ path: 'Folder path must be absolute' });
+    }
+    const validated = await validateDirectoryPath(requestedPath);
+    if (!validated.ok) {
+      throw invalid({ path: validated.error || 'Folder is not available' });
+    }
+    const folderPath = validated.directory ?? requestedPath;
+    const layers = readConfigLayers(folderPath);
+    const lower = readLowerConfigs(folderPath);
+    const configError = getLayerError(layers, getProjectConfigPath(folderPath))
+      ?? configReadError(layers, lower);
+    if (configError) throw configErrorResponse(configError);
+    return describeConfigTarget(folderPath, fsPromises);
   };
 
   const list = async () => {
@@ -1334,5 +1361,5 @@ export const createWorkspaceService = (dependencies) => {
 
   const activate = (payload) => withSettingsLock(() => activateWorkspace(payload));
 
-  return { list, importDraft, create, update, activate, remove, retryRefs, removeCreatedRefs };
+  return { list, importDraft, configTarget, create, update, activate, remove, retryRefs, removeCreatedRefs };
 };
