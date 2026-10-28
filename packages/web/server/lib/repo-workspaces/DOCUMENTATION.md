@@ -74,6 +74,25 @@ the target layer.
   unreadable config neither fails the request nor hides the other workspaces.
 - An expected alias is `owned` only when `createdRefs` lists it; ownership never
   changes the classification.
+- Every repo carries `readOnly` (default `false`); the primary is always
+  editable when rules are built, whatever the payload says. Each workspace also
+  stores `editRules`: the exact `{ alias, resource, effect }` entries it wrote
+  into the primary's `permissions`. Rules for an alias that left `repos` stay
+  stored so they can still be removed; they are never filtered on read.
+- Permissions are written to the same `<primary>/.opencode/opencode.json`
+  through `writeConfig`. A secondary repo gets `allow` (editable) or `deny`
+  (`readOnly`) for `<configured>/*` and, when `realpath` differs, for
+  `<canonical>/*`. Desired rules are appended after everything already in
+  `permissions`, because the last matching rule wins. Only entries exactly
+  equal to the workspace's previous `editRules` are removed; every other key
+  and rule is preserved. A `permissions` value that is not an array of objects
+  fails without a write.
+- Create and edit persist the desired `editRules` before the config write and
+  reconcile after the references are written, under the refs lock. A failed
+  permission write is `permissionWrites: { status: 'failed', path, message }`
+  and never fails the saved workspace. Deletion removes the app-owned rules
+  after the settings write, best effort, and reports `permissionRemoved`
+  (plus `configError` on failure) without keeping the workspace.
 - `GET /api/workspaces/config-target?path=<folder>` reads only the target for a
   folder that may not be a project yet: the folder must be absolute and exist,
   an unreadable config is 422 `configError`, and the answer is
@@ -308,6 +327,20 @@ replace per secondary repo. Rejected alternative: one merged write, where a
 single failed write fails every alias of the request; and a merged write with
 per-alias retry fallback, which is more code and still loses the per-alias
 provenance the pending card needs.
+
+### Why permission rules are appended and removed by exact match
+
+OpenCode applies the last matching rule, so the workspace's rules go at the end
+of `permissions`; anything before them stays untouched and user rules keep
+winning nothing. Ownership is `editRules`, which records exactly the triples
+this workspace wrote, so an edit or a deletion removes only those and leaves
+every other rule and key alone. Removal includes rules whose alias is gone from
+`repos`, which is why the parser does not filter `editRules` by the current
+aliases: filtering on read would strand those entries in the config. Both the
+configured path and its canonical `realpath` are written when they differ,
+because they are distinct resources to the permission check. Rejected
+alternative: rewriting the whole `permissions` array from the workspace state,
+which would discard rules the user added by hand.
 
 ### Why an identical pre-existing reference is not owned
 

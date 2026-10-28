@@ -384,12 +384,20 @@ export const parseProjects = fromSchema(
   }).refine((projects) => projects.length > 0),
 );
 
+/** A `permissions` entry this workspace wrote; `resource` is the glob it covers. */
+export type WorkspaceEditRule = {
+  alias: string;
+  resource: string;
+  effect: 'allow' | 'deny';
+};
+
 /** One project inside a multi-repo workspace; `alias` is its OpenCode reference key. */
 export type WorkspaceRepo = {
   projectId: string;
   alias: string;
   description: string;
   branch: string;
+  readOnly: boolean;
 };
 
 export type RepoWorkspace = {
@@ -398,6 +406,7 @@ export type RepoWorkspace = {
   primaryProjectId: string;
   repos: WorkspaceRepo[];
   createdRefs: string[];
+  editRules: WorkspaceEditRule[];
 };
 
 /** `discarded` is the number of entries the per-entry parser rejected. */
@@ -414,6 +423,13 @@ const workspaceRepoSchema = z.object({
   alias: nonEmptyTrimmed.pipe(z.string().regex(WORKSPACE_ALIAS_PATTERN)),
   description: z.string().optional(),
   branch: z.string().optional(),
+  readOnly: z.boolean().optional().catch(false),
+});
+
+const workspaceEditRuleSchema = z.object({
+  alias: nonEmptyTrimmed,
+  resource: nonEmptyTrimmed,
+  effect: z.enum(['allow', 'deny']),
 });
 
 const workspaceEntrySchema = z.object({
@@ -423,6 +439,8 @@ const workspaceEntrySchema = z.object({
   repos: z.array(z.unknown()),
   // A malformed entry is dropped, never allowed to take the workspace with it.
   createdRefs: z.array(z.string().optional().catch(undefined)).catch([]),
+  // Kept for aliases that are no longer in `repos`, so their rules can be removed.
+  editRules: z.array(z.unknown()).catch([]),
 }).transform((workspace) => {
   const repos: WorkspaceRepo[] = [];
   const aliases = new Set<string>();
@@ -435,6 +453,7 @@ const workspaceEntrySchema = z.object({
       alias: repo.data.alias,
       description: repo.data.description ?? '',
       branch: repo.data.branch ?? '',
+      readOnly: repo.data.readOnly === true,
     });
   }
   if (repos.length === 0 || !repos.some((repo) => repo.projectId === workspace.primaryProjectId)) return undefined;
@@ -444,12 +463,18 @@ const workspaceEntrySchema = z.object({
   const createdRefs = Array.from(new Set(
     workspace.createdRefs.flatMap((alias) => (alias !== undefined && secondaryAliases.has(alias) ? [alias] : [])),
   ));
+  const editRules: WorkspaceEditRule[] = [];
+  for (const ruleEntry of workspace.editRules) {
+    const rule = workspaceEditRuleSchema.safeParse(ruleEntry);
+    if (rule.success) editRules.push(rule.data);
+  }
   return {
     id: workspace.id,
     name: workspace.name,
     primaryProjectId: workspace.primaryProjectId,
     repos,
     createdRefs,
+    editRules,
   };
 });
 

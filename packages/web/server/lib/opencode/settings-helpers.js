@@ -75,6 +75,13 @@ const workspaceRepoSchema = z.object({
   alias: z.string().trim().min(1).regex(WORKSPACE_ALIAS_PATTERN),
   description: z.string().optional(),
   branch: z.string().optional(),
+  readOnly: z.boolean().optional().catch(false),
+});
+
+const workspaceEditRuleSchema = z.object({
+  alias: z.string().trim().min(1),
+  resource: z.string().trim().min(1),
+  effect: z.enum(['allow', 'deny']),
 });
 
 const activeWorkspaceIdSchema = z.union([z.null(), z.string().trim().min(1)]);
@@ -85,6 +92,7 @@ const workspaceSchema = z.object({
   primaryProjectId: z.string().trim().min(1),
   repos: z.array(z.unknown()),
   createdRefs: z.unknown().optional(),
+  editRules: z.unknown().optional(),
 });
 
 const sanitizeRepoWorkspace = (entry) => {
@@ -101,6 +109,7 @@ const sanitizeRepoWorkspace = (entry) => {
       alias: repo.data.alias,
       description: repo.data.description ?? '',
       branch: repo.data.branch ?? '',
+      readOnly: repo.data.readOnly === true,
     });
   }
   if (repos.length === 0 || !repos.some((repo) => repo.projectId === parsed.data.primaryProjectId)) {
@@ -113,12 +122,21 @@ const sanitizeRepoWorkspace = (entry) => {
   const createdRefs = [...new Set(
     rawCreatedRefs.filter((alias) => secondaryAliases.has(alias)),
   )];
+  // Not filtered by `repos`: a rule for a repo that left must stay readable so
+  // it can still be removed from the config.
+  const rawEditRules = Array.isArray(parsed.data.editRules) ? parsed.data.editRules : [];
+  const editRules = [];
+  for (const ruleEntry of rawEditRules) {
+    const rule = workspaceEditRuleSchema.safeParse(ruleEntry);
+    if (rule.success) editRules.push(rule.data);
+  }
   return {
     id: parsed.data.id,
     name: parsed.data.name,
     primaryProjectId: parsed.data.primaryProjectId,
     repos,
     createdRefs,
+    editRules,
   };
 };
 

@@ -25,10 +25,11 @@ describe('parseRepoWorkspaces', () => {
     name: 'Shop Platform',
     primaryProjectId: 'proj_api',
     repos: [
-      { projectId: 'proj_api', alias: 'api', description: 'API de checkout', branch: 'main' },
-      { projectId: 'proj_web', alias: 'web', description: 'Frontend', branch: 'feat/tokens' },
+      { projectId: 'proj_api', alias: 'api', description: 'API de checkout', branch: 'main', readOnly: false },
+      { projectId: 'proj_web', alias: 'web', description: 'Frontend', branch: 'feat/tokens', readOnly: true },
     ],
     createdRefs: ['web'],
+    editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'deny' }],
   };
 
   test('keeps valid entries and counts each rejected one', () => {
@@ -61,6 +62,28 @@ describe('parseRepoWorkspaces', () => {
 
     expect(result?.workspaces[0]?.createdRefs).toEqual(['web']);
     expect(parseRepoWorkspaces([{ ...validWorkspace, createdRefs: undefined }], {})?.workspaces[0]?.createdRefs).toEqual([]);
+  });
+
+  test('defaults a missing or malformed readOnly and drops malformed edit rules', () => {
+    const result = parseRepoWorkspaces([{
+      ...validWorkspace,
+      repos: [
+        { projectId: 'proj_api', alias: 'api', readOnly: 'yes' },
+        { projectId: 'proj_web', alias: 'web', readOnly: true },
+      ],
+      editRules: [
+        { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
+        { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },
+        { alias: 'bad', resource: '/repos/bad/*', effect: 'ask' },
+        'nope',
+      ],
+    }], {});
+
+    expect(result?.workspaces[0]?.repos.map((repo) => repo.readOnly)).toEqual([false, true]);
+    expect(result?.workspaces[0]?.editRules).toEqual([
+      { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
+      { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },
+    ]);
   });
 
   test('does not invalidate a workspace for an unknown project id', () => {

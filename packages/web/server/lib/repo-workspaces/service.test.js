@@ -222,10 +222,11 @@ describe('workspace service: create', () => {
         name: 'Shop Platform',
         primaryProjectId: 'api',
         repos: [
-          { projectId: 'api', alias: 'api', description: 'API', branch: '' },
-          { projectId: 'web', alias: 'web', description: '', branch: 'feat/tokens' },
+          { projectId: 'api', alias: 'api', description: 'API', branch: '', readOnly: false },
+          { projectId: 'web', alias: 'web', description: '', branch: 'feat/tokens', readOnly: false },
         ],
         createdRefs: ['web'],
+        editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'allow' }],
       },
       refs: [
         {
@@ -238,6 +239,7 @@ describe('workspace service: create', () => {
         },
       ],
       refWrites: [{ alias: 'web', status: 'written' }],
+      permissionWrites: { status: 'written', path: '/repos/api/.opencode/opencode.json' },
       refsError: null,
       configTarget: { path: '/repos/api/.opencode/opencode.json', rootConfigPath: null },
     });
@@ -573,6 +575,19 @@ const projectAt = (root, id, label = id) => {
   return { id, path: directory, label };
 };
 
+/** The configured path and its canonical form when they differ. */
+const permissionRuleForms = (projectPath) => {
+  const configured = path.resolve(projectPath);
+  const canonical = fs.realpathSync(configured);
+  return canonical === configured ? [configured] : [configured, canonical];
+};
+
+const storedPermissionRules = (projectPath, alias, effect) => permissionRuleForms(projectPath)
+  .map((resource) => ({ alias, resource: `${resource}/*`, effect }));
+
+const configPermissionRules = (projectPath, effect) => permissionRuleForms(projectPath)
+  .map((resource) => ({ action: 'edit', resource: `${resource}/*`, effect }));
+
 const writeProjectConfig = (project, content) => {
   const directory = path.join(project.path, '.opencode');
   fs.mkdirSync(directory, { recursive: true });
@@ -598,6 +613,7 @@ const fixtureService = (settings, overrides = {}) => createService({
   fsPromises: {
     mkdir: vi.fn(async () => undefined),
     stat: fs.promises.stat.bind(fs.promises),
+    realpath: fs.promises.realpath.bind(fs.promises),
   },
   ...overrides,
 });
@@ -973,7 +989,7 @@ describe('workspace service: reference states', () => {
       references: { web: { path: web.path, description: 'Web' } },
     });
     const file = writeProjectConfig(api, projectConfig);
-    const { service, dependencies } = fixtureService({ projects: [api, web], workspaces: [], activeWorkspaceId: null });
+    const { service } = fixtureService({ projects: [api, web], workspaces: [], activeWorkspaceId: null });
 
     const result = await service.create({
       name: 'Shop Platform',
@@ -996,8 +1012,13 @@ describe('workspace service: reference states', () => {
       },
     ]);
     expect(result.refsError).toBeNull();
-    expect(dependencies.writeConfig).not.toHaveBeenCalled();
-    expect(fs.readFileSync(file, 'utf8')).toBe(projectConfig);
+    // The reference stays the user's; only the missing permission rule is written.
+    expect(result.permissionWrites).toEqual({ status: 'written', path: file });
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'allow'));
+    expect(readConfigFile(file).references).toEqual({
+      web: { path: web.path, description: 'Web' },
+    });
+    expect(readConfigFile(file).permissions).toEqual(configPermissionRules(web.path, 'allow'));
   });
 });
 
@@ -1270,6 +1291,7 @@ describe('workspace service: write references', () => {
     expect(fs.readFileSync(rootConfig, 'utf8')).toBe(rootContent);
     expect(readConfigFile(target)).toEqual({
       references: { web: { path: path.resolve(web.path), description: 'Web' } },
+      permissions: configPermissionRules(web.path, 'allow'),
     });
   });
 
@@ -1406,6 +1428,180 @@ describe('workspace service: write references', () => {
     expect(readConfigFile(target).references).toEqual({
       docs: { path: path.resolve(docs.path), description: 'Docs' },
     });
+  });
+});
+
+describe('workspace service: permission rules', () => {
+  it('appends allow and deny rules for every secondary path form after the user rules', async () => {
+    const root = caseRoot('permission-create');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const docs = projectAt(root, 'docs', 'Docs');
+    // A symlink guarantees the configured path and its realpath differ.
+    const linked = path.join(root, 'linked-web');
+    fs.symlinkSync(web.path, linked);
+    const userRule = { action: 'edit', resource: '/user/*', effect: 'deny' };
+    const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {
+      $schema: 'https://opencode.ai/config.json',
+      permissions: [userRule],
+    }).file;
+    const { service, dependencies } = fixtureService({
+      projects: [api, { ...web, path: linked }, docs],
+      workspaces: [],
+      activeWorkspaceId: null,
+    });
+
+    const result = await service.create({
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true, readOnly: true },
+        { projectId: 'web', alias: 'web' },
+        { projectId: 'docs', alias: 'docs', readOnly: true },
+      ],
+    });
+
+    const storedRules = [
+      ...storedPermissionRules(linked, 'web', 'allow'),
+      ...storedPermissionRules(docs.path, 'docs', 'deny'),
+    ];
+    expect(result.workspace.editRules).toEqual(storedRules);
+    expect(result.permissionWrites).toEqual({ status: 'written', path: file });
+    // The primary is always editable, even when the payload says otherwise.
+    expect(result.workspace.editRules.some((rule) => rule.alias === 'api')).toBe(false);
+    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
+      ['api', true],
+      ['web', false],
+      ['docs', true],
+    ]);
+    expect(dependencies.persistSettings.mock.calls[0][0].workspaces[0].editRules).toEqual(storedRules);
+    expect(readConfigFile(file)).toEqual({
+      $schema: 'https://opencode.ai/config.json',
+      references: {
+        web: { path: path.resolve(linked), description: 'Web' },
+        docs: { path: path.resolve(docs.path), description: 'Docs' },
+      },
+      permissions: [
+        userRule,
+        ...configPermissionRules(linked, 'allow'),
+        ...configPermissionRules(docs.path, 'deny'),
+      ],
+    });
+  });
+
+  it('removes the rules it wrote before and appends the new ones on edit', async () => {
+    const root = caseRoot('permission-update');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const userRule = { action: 'edit', resource: '/user/*', effect: 'deny' };
+    const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {
+      permissions: [userRule, ...configPermissionRules(web.path, 'allow')],
+    }).file;
+    const stored = storedWorkspaceFor(api, [web], ['web']);
+    stored.editRules = storedPermissionRules(web.path, 'web', 'allow');
+    const { service } = fixtureService({
+      projects: [api, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.update('ws_1', {
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true },
+        { projectId: 'web', alias: 'web', readOnly: true },
+      ],
+    });
+
+    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
+      ['api', false],
+      ['web', true],
+    ]);
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'deny'));
+    expect(result.permissionWrites.status).toBe('written');
+    expect(readConfigFile(file).permissions).toEqual([
+      userRule,
+      ...configPermissionRules(web.path, 'deny'),
+    ]);
+  });
+
+  it('removes only the rules it wrote when the workspace is deleted', async () => {
+    const root = caseRoot('permission-delete');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const userRule = { action: 'edit', resource: '/user/*', effect: 'deny' };
+    const otherRule = { action: 'edit', resource: '/other/*', effect: 'allow' };
+    const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {
+      references: { web: { path: path.resolve(web.path), description: 'Web' } },
+      permissions: [userRule, ...configPermissionRules(web.path, 'allow'), otherRule],
+    }).file;
+    const stored = storedWorkspaceFor(api, [web], ['web']);
+    stored.editRules = storedPermissionRules(web.path, 'web', 'allow');
+    const { service } = fixtureService({
+      projects: [api, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', {});
+
+    expect(result).toEqual({
+      removed: true,
+      refs: [],
+      failedAlias: null,
+      configError: null,
+      permissionRemoved: true,
+    });
+    expect(readConfigFile(file).permissions).toEqual([userRule, otherRule]);
+    expect(readConfigFile(file).references).toEqual({
+      web: { path: path.resolve(web.path), description: 'Web' },
+    });
+  });
+
+  it('saves the workspace but reports and never rewrites a malformed permissions section', async () => {
+    const root = caseRoot('permission-malformed');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const raw = `{
+  // hand-written project config
+  "references": { "web": { "path": ${JSON.stringify(path.resolve(web.path))}, "description": "Web" } },
+  "permissions": { "edit": "deny" }
+}`;
+    const file = writeProjectConfig(api, raw);
+    const { service, dependencies } = fixtureService({
+      projects: [api, web],
+      workspaces: [],
+      activeWorkspaceId: null,
+    });
+
+    const result = await service.create(createPayloadWith(api, [web]));
+
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'allow'));
+    expect(result.permissionWrites).toEqual({
+      status: 'failed',
+      path: file,
+      message: 'The "permissions" section must be an array',
+    });
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
+    expect(fs.readFileSync(file, 'utf8')).toBe(raw);
+  });
+
+  it('keeps the saved workspace when the permission write fails', async () => {
+    const root = caseRoot('permission-write-fails');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const file = path.join(api.path, '.opencode', 'opencode.json');
+    const { service, dependencies } = fixtureService(
+      { projects: [api, web], workspaces: [], activeWorkspaceId: null },
+      { writeConfig: vi.fn(async () => { throw new Error('disk full'); }) },
+    );
+
+    const result = await service.create(createPayloadWith(api, [web]));
+
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'allow'));
+    expect(result.permissionWrites).toEqual({ status: 'failed', path: file, message: 'disk full' });
+    expect(dependencies.persistSettings).toHaveBeenCalledOnce();
+    expect(dependencies.persistSettings.mock.calls[0][0].workspaces[0].editRules)
+      .toEqual(storedPermissionRules(web.path, 'web', 'allow'));
   });
 });
 
@@ -1671,7 +1867,7 @@ describe('workspace service: delete', () => {
 
     const result = await service.remove('ws_1', {});
 
-    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null, permissionRemoved: true });
     expect(dependencies.persistSettings).toHaveBeenCalledWith({
       workspaces: [],
       activeWorkspaceId: null,
@@ -1778,7 +1974,7 @@ describe('workspace service: delete', () => {
 
     const result = await service.remove('ws_1', { removeCreatedRefs: true, confirmRefs: ['web'] });
 
-    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null, permissionRemoved: true });
     expect(readConfigFile(file).references).toEqual({});
     expect(dependencies.persistSettings).toHaveBeenCalledOnce();
   });
@@ -1802,7 +1998,7 @@ describe('workspace service: delete', () => {
 
     const result = await service.remove('ws_1', { removeCreatedRefs: true, confirmRefs: ['web'] });
 
-    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null, permissionRemoved: true });
     expect(readConfigFile(file).references).toEqual({
       docs: { path: '/user/docs', description: 'User docs' },
     });
@@ -1843,7 +2039,7 @@ describe('workspace service: delete', () => {
       confirmRefs: ['web', 'docs'],
     });
 
-    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null, permissionRemoved: true });
     expect(readConfigFile(file).references).toEqual({});
     expect(dependencies.persistSettings).toHaveBeenCalledOnce();
   });
@@ -2040,7 +2236,8 @@ describe('workspace service: update', () => {
       ['user-only', 'outside'],
       ['both-layers', 'overridden'],
     ]);
-    expect(dependencies.writeConfig).not.toHaveBeenCalled();
+    // Only the permission rules are written; both references stay untouched.
+    expect(result.permissionWrites.status).toBe('written');
     expect(dependencies.persistSettings).toHaveBeenCalledOnce();
   });
 

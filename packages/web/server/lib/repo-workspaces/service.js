@@ -6,7 +6,9 @@
  *
  * It also owns the primary's OpenCode `references`: each expected alias is
  * classified against the project config (ownership) and the merged layers
- * (conflict), and written only through the shared config writer.
+ * (conflict), and written only through the shared config writer. The same file
+ * carries the `edit` permission rules for secondary repos, recorded per
+ * workspace in `editRules` so only the rules this workspace wrote are removed.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -68,6 +70,7 @@ const createRepoSchema = z.object({
   path: z.string({ error: 'Folder path must be text' }).trim().min(1, 'Folder path must not be empty').optional(),
   branch: z.string({ error: 'Branch must be a string' }).optional(),
   primary: z.boolean({ error: 'Primary must be true or false' }).optional(),
+  readOnly: z.boolean({ error: 'Read only must be true or false' }).optional(),
 });
 
 const confirmRefsSchema = z.array(
@@ -215,6 +218,7 @@ const resolveRepos = async ({
           alias: repo.alias,
           description: retained.description ?? '',
           branch: repo.branch ?? retained.branch ?? '',
+          readOnly: repo.readOnly === true,
         });
         continue;
       }
@@ -246,6 +250,7 @@ const resolveRepos = async ({
       // The reference description comes from the project label in v1.
       description: project.label ?? '',
       branch: repo.branch ?? '',
+      readOnly: repo.readOnly === true,
     });
   }
 
@@ -305,6 +310,17 @@ const describeReference = (reference, state) => ({
   owned: reference.owned,
   current: state.current,
 });
+
+/** A config entry this workspace wrote, matched on exactly its three fields. */
+const samePermissionRule = (entry, rule) => (
+  entry !== null
+  && typeof entry === 'object'
+  && !Array.isArray(entry)
+  && Object.keys(entry).length === 3
+  && entry.action === 'edit'
+  && entry.resource === rule.resource
+  && entry.effect === rule.effect
+);
 
 const expectedReferences = (workspace, projectsById) => workspace.repos
   .filter((repo) => repo.projectId !== workspace.primaryProjectId)
@@ -660,6 +676,85 @@ export const createWorkspaceService = (dependencies) => {
     return results;
   };
 
+  /**
+   * The rules this workspace owns: one per resource form (configured path and,
+   * when a symlink resolves elsewhere, the canonical path) for every secondary
+   * repo whose folder is available. The primary is always editable because the
+   * session runs in it.
+   */
+  const permissionRulesFor = async (workspace, projectsById) => {
+    const rules = [];
+    for (const repo of workspace.repos) {
+      if (repo.projectId === workspace.primaryProjectId) continue;
+      const project = projectsById.get(repo.projectId) ?? null;
+      if (!project) continue;
+
+      const configured = path.resolve(project.path);
+      const resources = [configured];
+      try {
+        const canonical = path.resolve(await fsPromises.realpath(configured));
+        if (canonical !== configured) resources.push(canonical);
+      } catch {
+        // Missing or unreadable folder: only the configured path can match.
+      }
+
+      for (const resource of resources) {
+        rules.push({
+          alias: repo.alias,
+          resource: `${resource}/*`,
+          effect: repo.readOnly === true ? 'deny' : 'allow',
+        });
+      }
+    }
+    return rules;
+  };
+
+  /**
+   * Removes exactly the rules this workspace wrote, then appends the desired
+   * ones. Appending is what makes them win: OpenCode applies the last matching
+   * rule. Every other key and rule is preserved. A malformed `permissions`
+   * section fails without writing, because it cannot be edited safely.
+   */
+  const reconcilePermissions = async ({
+    workspace,
+    projectsById,
+    previousRules,
+    desiredRules,
+  }) => {
+    const primary = projectsById.get(workspace.primaryProjectId) ?? null;
+    if (!primary) {
+      return { status: 'failed', path: null, message: 'The workspace primary project is not available' };
+    }
+    const targetPath = refsConfigPath(primary.path);
+    try {
+      const config = readConfigFile(targetPath);
+      if (config.permissions !== undefined && !Array.isArray(config.permissions)) {
+        return { status: 'failed', path: targetPath, message: 'The "permissions" section must be an array' };
+      }
+      const current = Array.isArray(config.permissions) ? config.permissions : [];
+      if (current.some((entry) => entry === null || typeof entry !== 'object' || Array.isArray(entry))) {
+        return { status: 'failed', path: targetPath, message: 'The "permissions" section must contain rule objects' };
+      }
+
+      const kept = current.filter((entry) => !previousRules.some((rule) => samePermissionRule(entry, rule)));
+      const next = [
+        ...kept,
+        ...desiredRules.map((rule) => ({ action: 'edit', resource: rule.resource, effect: rule.effect })),
+      ];
+      if (JSON.stringify(next) === JSON.stringify(current)) {
+        return { status: 'unchanged' };
+      }
+      await writeConfig({ ...config, permissions: next }, targetPath);
+      return { status: 'written', path: targetPath };
+    } catch (error) {
+      return {
+        status: 'failed',
+        path: targetPath,
+        message: error?.message || 'Failed to write the permission rules',
+      };
+    }
+  };
+
   const refsFor = (workspace, projects) => readWorkspaceRefs({
     workspace,
     projectsById: new Map(projects.map((project) => [project.id, project])),
@@ -888,6 +983,9 @@ export const createWorkspaceService = (dependencies) => {
     // Only what this workspace writes is its own; an identical entry that was
     // already there belongs to the user.
     workspace.createdRefs = toWrite.map((reference) => reference.alias);
+    // Persisted before the config write: a failed write is then a visible
+    // pending rule, not an ownership record lost with the response.
+    workspace.editRules = await permissionRulesFor(workspace, projectsById);
 
     const changes = {
       workspaces: [...storedWorkspaces(settings.workspaces), workspace],
@@ -913,11 +1011,19 @@ export const createWorkspaceService = (dependencies) => {
       writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
     ));
 
+    const permissionWrites = await withRefsLock(() => reconcilePermissions({
+      workspace,
+      projectsById,
+      previousRules: [],
+      desiredRules: workspace.editRules,
+    }));
+
     const { refs, error: refsError } = safeRefsFor(workspace, nextProjects);
     return {
       workspace,
       refs,
       refWrites,
+      permissionWrites,
       refsError,
       configTarget,
     };
@@ -1208,6 +1314,7 @@ export const createWorkspaceService = (dependencies) => {
 
     const retainedOwned = existing.createdRefs.filter((alias) => nextAliases.has(alias));
     workspace.createdRefs = [...new Set([...retainedOwned, ...toWrite.map((reference) => reference.alias)])];
+    workspace.editRules = await permissionRulesFor(workspace, nextProjectsById);
 
     const changes = {
       workspaces: stored.map((candidate) => (candidate.id === workspace.id ? workspace : candidate)),
@@ -1226,11 +1333,19 @@ export const createWorkspaceService = (dependencies) => {
       writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
     ));
 
+    const permissionWrites = await withRefsLock(() => reconcilePermissions({
+      workspace,
+      projectsById: nextProjectsById,
+      previousRules: existing.editRules ?? [],
+      desiredRules: workspace.editRules,
+    }));
+
     const { refs, error: refsError } = safeRefsFor(workspace, nextProjects);
     return {
       workspace,
       refs,
       refWrites,
+      permissionWrites,
       refsError,
       configTarget,
     };
@@ -1337,7 +1452,29 @@ export const createWorkspaceService = (dependencies) => {
 
     await persistWorkspaceChange(changes, removal);
 
-    return { removed: true, refs: [], failedAlias: null, configError: null };
+    // The workspace is already gone; a failed cleanup is reported, never a
+    // reason to keep it or to answer as if the deletion did not happen.
+    const editRules = workspace.editRules ?? [];
+    let permissionWrites = { status: 'unchanged' };
+    if (editRules.length > 0) {
+      permissionWrites = await withRefsLock(() => reconcilePermissions({
+        workspace,
+        projectsById: new Map(projects.map((project) => [project.id, project])),
+        previousRules: editRules,
+        desiredRules: [],
+      }));
+    }
+    const permissionFailed = permissionWrites.status === 'failed';
+
+    return {
+      removed: true,
+      refs: [],
+      failedAlias: null,
+      configError: permissionFailed
+        ? { path: permissionWrites.path, message: permissionWrites.message }
+        : null,
+      permissionRemoved: !permissionFailed,
+    };
   };
 
   const remove = (workspaceId, payload) => withSettingsLock(() => removeWorkspace(workspaceId, payload));

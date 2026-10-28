@@ -115,10 +115,15 @@ describe('settings helpers', () => {
       name: 'Shop Platform',
       primaryProjectId: 'p',
       repos: [
-        { projectId: 'p', alias: 'api', description: 'API', branch: 'main' },
-        { projectId: 'w', alias: 'web', description: 'Web', branch: 'feat/tokens' },
+        { projectId: 'p', alias: 'api', description: 'API', branch: 'main', readOnly: false },
+        { projectId: 'w', alias: 'web', description: 'Web', branch: 'feat/tokens', readOnly: true },
       ],
       createdRefs: ['web'],
+      editRules: [
+        { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
+        // Kept even though no repo uses the alias any more.
+        { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },
+      ],
     };
     const ignored = [
       { id: 'ws_no_name', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: 'api' }] },
@@ -138,6 +143,13 @@ describe('settings helpers', () => {
     expect(changes.activeWorkspaceId).toBe('ws_shop');
     expect(helpers.sanitizeRepoWorkspaces([workspace, ...ignored]).discarded).toBe(3);
     expect(helpers.sanitizeRepoWorkspaces('bad')).toBeUndefined();
+    const defaults = helpers.sanitizeRepoWorkspaces([{
+      ...workspace,
+      repos: [{ projectId: 'p', alias: 'api', readOnly: 'yes' }],
+      editRules: [{ alias: 'api', resource: '/p/*', effect: 'ask' }, 'bad'],
+    }]).workspaces[0];
+    expect(defaults.repos[0].readOnly).toBe(false);
+    expect(defaults.editRules).toEqual([]);
 
     const saved = helpers.mergePersistedSettings(current, changes);
     expect(saved.projects).toEqual(current.projects);
