@@ -254,4 +254,84 @@ describe('workspace routes', () => {
     expect(response.body.configTarget.path).toBe('/repos/api/.opencode/opencode.json');
     expect(state.projectConfig).toEqual({});
   });
+
+  it('deletes a workspace and answers the removal result', async () => {
+    const { app, dependencies } = createApp({
+      readSettings: vi.fn(async () => ({
+        projects: [{ id: 'api', path: '/repos/api', label: 'API' }],
+        workspaces: [{
+          id: 'ws_1',
+          name: 'Shop Platform',
+          primaryProjectId: 'api',
+          repos: [{ projectId: 'api', alias: 'api', description: 'API', branch: '' }],
+          createdRefs: [],
+        }],
+        activeWorkspaceId: 'ws_1',
+      })),
+    });
+
+    const response = await request(app)
+      .delete('/api/workspaces/ws_1')
+      .send({ removeCreatedRefs: false })
+      .expect(200);
+
+    expect(response.body).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(dependencies.persistSettings).toHaveBeenCalledWith({
+      workspaces: [],
+      activeWorkspaceId: null,
+    });
+  });
+
+  it('answers removed false with the alias when an owned removal fails', async () => {
+    const projectConfig = {
+      references: { web: { path: '/repos/web', description: 'Web' } },
+    };
+    const { app, dependencies } = createApp({
+      readSettings: vi.fn(async () => ({
+        projects: [
+          { id: 'api', path: '/repos/api', label: 'API' },
+          { id: 'web', path: '/repos/web', label: 'Web' },
+        ],
+        workspaces: [{
+          id: 'ws_1',
+          name: 'Shop Platform',
+          primaryProjectId: 'api',
+          repos: [
+            { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+            { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+          ],
+          createdRefs: ['web'],
+        }],
+        activeWorkspaceId: 'ws_1',
+      })),
+      readConfigLayers: vi.fn(() => ({
+        ...emptyLayers(),
+        projectConfig,
+        mergedConfig: projectConfig,
+      })),
+      readConfigFile: vi.fn(() => projectConfig),
+      writeConfig: vi.fn(async () => { throw new Error('permission denied'); }),
+    });
+
+    const response = await request(app)
+      .delete('/api/workspaces/ws_1')
+      .send({ removeCreatedRefs: true })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ removed: false, failedAlias: 'web', configError: null });
+    expect(response.body.refs).toContainEqual(expect.objectContaining({ alias: 'web', status: 'ok' }));
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown workspace', async () => {
+    const { app, dependencies } = createApp();
+
+    const response = await request(app)
+      .delete('/api/workspaces/ws_missing')
+      .send({})
+      .expect(404);
+
+    expect(response.body).toEqual({ error: 'Workspace not found' });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
 });

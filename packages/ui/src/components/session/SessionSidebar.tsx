@@ -22,9 +22,10 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { SidebarHeader } from './sidebar/shell/SidebarHeader';
 import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
-import { WorkspaceEmptyCard, WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
+import { WorkspaceDiscardedNotice, WorkspaceEmptyCard, WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
 import { RepoWorkspaceDialog } from './sidebar/repo-workspaces/RepoWorkspaceDialog';
-import { updateRepoWorkspace } from '@/lib/repoWorkspaces/client';
+import { RepoWorkspaceDeleteDialog, RepoWorkspaceManageDialog } from './sidebar/repo-workspaces/RepoWorkspaceManageDialogs';
+import { updateRepoWorkspace, type RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
 import type { SessionProjectListProps } from './sidebar/projects/SessionProjectScroller';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -449,9 +450,25 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     }
   }, [selectWorkspace, t]);
 
-  const [workspaceDialog, setWorkspaceDialog] = React.useState<'create' | 'edit' | null>(null);
-  const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialog('create'), []);
-  const openWorkspaceEditDialog = React.useCallback(() => setWorkspaceDialog('edit'), []);
+  const [workspaceDialog, setWorkspaceDialog] = React.useState<
+    | { mode: 'create' }
+    | { mode: 'edit'; workspaceId: string }
+    | { mode: 'manage' }
+    | { mode: 'delete'; workspaceId: string }
+    | null
+  >(null);
+  const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialog({ mode: 'create' }), []);
+  const activeWorkspaceId = repoWorkspaces.activeWorkspace?.id ?? null;
+  const openWorkspaceEditDialog = React.useCallback(() => {
+    if (activeWorkspaceId) setWorkspaceDialog({ mode: 'edit', workspaceId: activeWorkspaceId });
+  }, [activeWorkspaceId]);
+  const openWorkspaceManageDialog = React.useCallback(() => setWorkspaceDialog({ mode: 'manage' }), []);
+  const editWorkspaceFromManage = React.useCallback((workspace: RepoWorkspaceResolved) => {
+    setWorkspaceDialog({ mode: 'edit', workspaceId: workspace.id });
+  }, []);
+  const deleteWorkspaceFromManage = React.useCallback((workspace: RepoWorkspaceResolved) => {
+    setWorkspaceDialog({ mode: 'delete', workspaceId: workspace.id });
+  }, []);
   const reloadRepoWorkspaces = repoWorkspaces.reload;
   // Creation registers folders and activates the workspace on the server; the
   // settings document is the only way this window learns the new projects.
@@ -462,6 +479,15 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const handleWorkspaceRefsChanged = React.useCallback(() => {
     reloadRepoWorkspaces();
   }, [reloadRepoWorkspaces]);
+  const activateWorkspaceFromManage = React.useCallback((workspace: RepoWorkspaceResolved) => {
+    void handleSelectWorkspace(workspace.id).then(() => setWorkspaceDialog(null));
+  }, [handleSelectWorkspace]);
+  const editingWorkspace = workspaceDialog?.mode === 'edit'
+    ? repoWorkspaces.workspaces.find((workspace) => workspace.id === workspaceDialog.workspaceId) ?? null
+    : null;
+  const deletingWorkspace = workspaceDialog?.mode === 'delete'
+    ? repoWorkspaces.workspaces.find((workspace) => workspace.id === workspaceDialog.workspaceId) ?? null
+    : null;
 
   // A missing repo row has no dialog: save the same workspace minus that repo
   // through the edit route, keeping the reference it cannot verify.
@@ -802,7 +828,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
           {repoWorkspaces.status === 'ready' && repoWorkspaces.workspaces.length === 0 ? (
             <WorkspaceEmptyCard onCreate={openWorkspaceDialog} />
           ) : null}
-          {repoWorkspaces.activeWorkspace ? (
+          {repoWorkspaces.status === 'ready' && repoWorkspaces.workspaces.length > 0 ? (
             <WorkspaceSidebarHeader
               workspaces={repoWorkspaces.workspaces}
               activeWorkspace={repoWorkspaces.activeWorkspace}
@@ -810,7 +836,11 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
               onSelect={handleSelectWorkspace}
               onCreate={openWorkspaceDialog}
               onEdit={openWorkspaceEditDialog}
+              onManage={openWorkspaceManageDialog}
             />
+          ) : null}
+          {repoWorkspaces.status === 'ready' && repoWorkspaces.discarded > 0 ? (
+            <WorkspaceDiscardedNotice count={repoWorkspaces.discarded} />
           ) : null}
           {collection}
         </>
@@ -863,19 +893,39 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       />
 
       <RepoWorkspaceDialog
-        open={workspaceDialog !== null}
+        open={workspaceDialog?.mode === 'create' || (workspaceDialog?.mode === 'edit' && editingWorkspace !== null)}
         onOpenChange={(open) => {
           if (!open) setWorkspaceDialog(null);
         }}
-        editing={workspaceDialog === 'edit' && repoWorkspaces.activeWorkspace
-          ? {
-            workspace: repoWorkspaces.activeWorkspace,
-            refs: repoWorkspaces.refs,
-            refsError: repoWorkspaces.refsError,
-          }
-          : null}
+        editing={editingWorkspace ? {
+          workspace: editingWorkspace,
+          refs: editingWorkspace.id === activeWorkspaceId ? repoWorkspaces.refs : [],
+          refsError: editingWorkspace.id === activeWorkspaceId ? repoWorkspaces.refsError : null,
+        } : null}
         onCreated={handleWorkspaceCreated}
         onRefsChanged={handleWorkspaceRefsChanged}
+      />
+
+      <RepoWorkspaceManageDialog
+        open={workspaceDialog?.mode === 'manage'}
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceDialog(null);
+        }}
+        workspaces={repoWorkspaces.workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        activating={repoWorkspaces.activating}
+        onActivate={activateWorkspaceFromManage}
+        onEdit={editWorkspaceFromManage}
+        onDelete={deleteWorkspaceFromManage}
+      />
+
+      <RepoWorkspaceDeleteDialog
+        open={workspaceDialog?.mode === 'delete' && deletingWorkspace !== null}
+        workspace={deletingWorkspace}
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceDialog(null);
+        }}
+        onDeleted={handleWorkspaceCreated}
       />
 
     </div>

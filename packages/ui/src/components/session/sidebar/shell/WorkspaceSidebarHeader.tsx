@@ -15,11 +15,13 @@ const repoCountLabel = (t: ReturnType<typeof useI18n>['t'], count: number): stri
 
 type Props = {
   workspaces: readonly RepoWorkspaceResolved[];
-  activeWorkspace: RepoWorkspaceResolved;
+  /** Null when every project is shown: the header then names "All projects". */
+  activeWorkspace: RepoWorkspaceResolved | null;
   activating: boolean;
   onSelect: (id: string | null) => void;
   onCreate: () => void;
   onEdit: () => void;
+  onManage: () => void;
 };
 
 /**
@@ -34,6 +36,7 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
   onSelect,
   onCreate,
   onEdit,
+  onManage,
 }) => {
   const { t } = useI18n();
   const check = <Icon name="check" className="h-4 w-4 flex-shrink-0 text-interactive-selection-foreground" />;
@@ -50,18 +53,20 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
               className="flex min-w-0 items-center gap-1 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t('sessions.sidebar.workspace.menuLabel')}
             >
-              <span className="truncate typography-ui-section font-semibold text-foreground">{activeWorkspace.name}</span>
+              <span className="truncate typography-ui-section font-semibold text-foreground">
+                {activeWorkspace ? activeWorkspace.name : t('sessions.sidebar.workspace.allProjects')}
+              </span>
               <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-[220px] max-w-[calc(100vw-16px)]">
             {workspaces.map((workspace) => {
-              const active = workspace.id === activeWorkspace.id;
+              const active = workspace.id === activeWorkspace?.id;
               return (
                 <DropdownMenuItem
                   key={workspace.id}
                   disabled={activating}
-                  onClick={() => onSelect(nextActiveWorkspaceId(workspace.id, activeWorkspace.id))}
+                  onClick={() => onSelect(nextActiveWorkspaceId(workspace.id, activeWorkspace?.id ?? null))}
                   className="flex items-center justify-between gap-3"
                 >
                   <span className="flex min-w-0 items-center gap-2">
@@ -80,7 +85,7 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
               onClick={() => onSelect(null)}
               className="flex items-center gap-2"
             >
-              {emptyColumn}
+              {activeWorkspace === null ? checkColumn : emptyColumn}
               <span className="truncate">{t('sessions.sidebar.workspace.allProjects')}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -93,24 +98,37 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
               </span>
               <span className="truncate">{t('sessions.sidebar.workspace.new')}</span>
             </DropdownMenuItem>
+            {activeWorkspace ? (
+              <DropdownMenuItem
+                onClick={onEdit}
+                className="flex items-center gap-2"
+              >
+                <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
+                  <Icon name="pencil" className="h-4 w-4" />
+                </span>
+                <span className="truncate">{t('sessions.sidebar.workspace.edit')}</span>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem
-              onClick={onEdit}
+              onClick={onManage}
               className="flex items-center gap-2"
             >
               <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
-                <Icon name="pencil" className="h-4 w-4" />
+                <Icon name="settings-3" className="h-4 w-4" />
               </span>
-              <span className="truncate">{t('sessions.sidebar.workspace.edit')}</span>
+              <span className="truncate">{t('sessions.sidebar.workspace.manage')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <span className="ms-auto shrink-0 text-[0.6875rem] font-normal text-muted-foreground">
-          {repoCountLabel(t, activeWorkspace.repos.length)}
-        </span>
+        {activeWorkspace ? (
+          <span className="ms-auto shrink-0 text-[0.6875rem] font-normal text-muted-foreground">
+            {repoCountLabel(t, activeWorkspace.repos.length)}
+          </span>
+        ) : null}
         <Button
           variant="ghost"
           size="icon"
-          className="size-7 shrink-0"
+          className={activeWorkspace ? 'size-7 shrink-0' : 'ms-auto size-7 shrink-0'}
           aria-label={t('sessions.sidebar.workspace.new')}
           onClick={onCreate}
         >
@@ -118,6 +136,18 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
         </Button>
       </div>
     </div>
+  );
+};
+
+/** Stored workspaces the parser dropped: a count, never a rewrite. */
+export const WorkspaceDiscardedNotice: React.FC<{ count: number }> = ({ count }) => {
+  const { t } = useI18n();
+  return (
+    <p role="status" className="px-2.5 pb-1 typography-micro text-muted-foreground">
+      {count === 1
+        ? t('sessions.sidebar.workspace.discardedSingle', { count })
+        : t('sessions.sidebar.workspace.discardedPlural', { count })}
+    </p>
   );
 };
 

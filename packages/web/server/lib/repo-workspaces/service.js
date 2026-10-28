@@ -99,6 +99,10 @@ const activatePayloadSchema = z.object({
 
 const activeWorkspaceIdSchema = z.union([z.null(), z.string().trim().min(1)]);
 
+const removeWorkspaceSchema = z.object({
+  removeCreatedRefs: z.boolean({ error: 'Remove references must be true or false' }).optional(),
+});
+
 const retryRefsSchema = z.object({
   aliases: z.array(z.string({ error: 'Aliases must be text' }).trim().min(1, 'Aliases must not be empty')).optional(),
   confirmRefs: confirmRefsSchema,
@@ -874,16 +878,7 @@ export const createWorkspaceService = (dependencies) => {
     } catch (error) {
       // The workspace did not change, so put back the owned entries already
       // removed instead of leaving its old references deleted.
-      if (removal && Object.keys(removal.removedEntries).length > 0) {
-        await withRefsLock(async () => {
-          const config = readConfigFile(removal.path);
-          const current = referencesOf(config) ?? {};
-          await writeConfig(
-            { ...config, references: { ...current, ...removal.removedEntries } },
-            removal.path,
-          );
-        }).catch(() => undefined);
-      }
+      await restoreRemovedEntries(removal);
       throw error;
     }
 
@@ -903,6 +898,82 @@ export const createWorkspaceService = (dependencies) => {
       refsError,
       configTarget,
     };
+  };
+
+  /**
+   * A settings write that fails after a successful removal leaves a workspace
+   * pointing at entries it no longer expects; put them back before reporting.
+   */
+  const restoreRemovedEntries = async (removal) => {
+    if (!removal || Object.keys(removal.removedEntries).length === 0) return;
+    await withRefsLock(async () => {
+      const config = readConfigFile(removal.path);
+      const current = referencesOf(config) ?? {};
+      await writeConfig(
+        { ...config, references: { ...current, ...removal.removedEntries } },
+        removal.path,
+      );
+    }).catch(() => undefined);
+  };
+
+  /**
+   * Delete in the contract order: remove the owned references first, then drop
+   * the workspace and clear the pointer when it was the active one. A failed
+   * removal answers `removed: false` with the alias and leaves settings alone.
+   */
+  const remove = async (workspaceId, payload = {}) => {
+    const { removeCreatedRefs: alsoRemoveRefs = false } = parseInput(removeWorkspaceSchema, payload ?? {});
+    const settings = await readSettings();
+    const stored = storedWorkspaces(settings.workspaces);
+    const workspace = stored.find((candidate) => candidate.id === workspaceId) || null;
+    if (!workspace) {
+      throw new WorkspaceRequestError(404, 'Workspace not found');
+    }
+
+    const projects = sanitizeProjects(settings.projects) || [];
+    let removal = null;
+    if (alsoRemoveRefs && workspace.createdRefs.length > 0) {
+      try {
+        removal = await removeCreatedRefs({ workspace });
+      } catch (error) {
+        if (!(error instanceof WorkspaceRequestError)) throw error;
+        // Config unreadable, a hand-edited entry, or a failed write: the
+        // workspace stays exactly where it was.
+        return {
+          removed: false,
+          refs: refsFor(workspace, projects).refs,
+          failedAlias: error.conflict?.alias ?? error.conflict?.aliases?.[0] ?? null,
+          configError: error.configError,
+        };
+      }
+      // An owned alias whose entry cannot be verified is left in the file; the
+      // workspace must stay so the alias is not orphaned without an owner.
+      const unverified = removal.refWrites.find((write) => write.status === 'skipped') ?? null;
+      if (unverified) {
+        return {
+          removed: false,
+          refs: refsFor(workspace, projects).refs,
+          failedAlias: unverified.alias,
+          configError: null,
+        };
+      }
+    }
+
+    const changes = {
+      workspaces: stored.filter((candidate) => candidate.id !== workspace.id),
+    };
+    if (settings.activeWorkspaceId === workspace.id) {
+      changes.activeWorkspaceId = null;
+    }
+
+    try {
+      await persistSettings(changes);
+    } catch (error) {
+      await restoreRemovedEntries(removal);
+      throw error;
+    }
+
+    return { removed: true, refs: [], failedAlias: null, configError: null };
   };
 
   const activate = async (payload) => {
@@ -932,5 +1003,5 @@ export const createWorkspaceService = (dependencies) => {
     return { activeWorkspaceId: workspace.id };
   };
 
-  return { list, create, update, activate, retryRefs, removeCreatedRefs };
+  return { list, create, update, activate, remove, retryRefs, removeCreatedRefs };
 };

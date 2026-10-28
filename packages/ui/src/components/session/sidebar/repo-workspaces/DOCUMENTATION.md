@@ -1,4 +1,4 @@
-# Workspace dialog (create and edit)
+# Workspace dialogs (create, edit, manage, delete)
 
 ## Ownership
 
@@ -7,13 +7,17 @@ validation shown before a request, the create warning or the edit diff, the
 explicit confirmations, and the pending-references card after a save whose
 writes failed. `repoWorkspaceDraft.ts` is the pure draft model: alias generation,
 validation, loading an existing workspace, both request bodies and the reference
-diff. `RepoWorkspaceDialog.tsx` is only the window around the form. The form
-never writes settings, projects or config itself; `POST /api/workspaces` and
-`PATCH /api/workspaces/:id` do, through the server service.
+diff. `RepoWorkspaceDialog.tsx` is only the window around the form.
+`RepoWorkspaceManageDialogs.tsx` owns "Manage workspaces" (the list with
+Activate, Edit and Delete) and the delete question; their list and question are
+exported without the window so the component test drives them directly. The form
+never writes settings, projects or config itself; `POST /api/workspaces`,
+`PATCH /api/workspaces/:id` and `DELETE /api/workspaces/:id` do, through the
+server service.
 
-The dialog is mounted only by the desktop/web sidebar, from the empty card and
-the workspace header (new and edit). Mobile and VS Code do not register the
-route and never mount it.
+The dialogs are mounted only by the desktop/web sidebar, from the empty card and
+the workspace header (new, edit, manage). Mobile and VS Code do not register the
+route and never mount them.
 
 ## Invariants
 
@@ -45,6 +49,17 @@ route and never mount it.
 - A removal the server refuses (`409` with an alias) is shown with that alias
   and nothing is saved. The caller refreshes the project catalog and the filter
   after `onCreated`.
+- "Manage workspaces" lists every workspace with its repo count and marks the
+  active one. Activate switches the filter and closes; Edit opens the same form
+  on that workspace; Delete opens the delete question.
+- The delete question states that sessions stay in their repos and offers a
+  checked box only when the workspace owns references. The box names exactly
+  `createdRefs`; a secondary reference the user owns is never listed. Cancel
+  closes without a request.
+- A delete whose owned removal failed keeps the dialog and the workspace open,
+  shows the failing alias (or the config path when it could not be read), and
+  never claims the workspace was deleted. Only `removed: true` reloads the
+  sidebar and closes.
 
 ## Decisions
 
@@ -81,3 +96,21 @@ The workspace already exists and is active; the form's fields no longer describe
 anything the user can save. Keeping the card in the same dialog makes the two
 facts — created or saved, references pending — one screen, and the per-alias
 retry lives next to the alias it retries.
+
+### Why deleting always answers `removed` and not a bare success
+
+The delete button is destructive, so the dialog must be able to tell "deleted"
+from "the references could not be removed and the workspace is still here"
+without guessing from a status code. `removed` is that single fact; the alias
+and the config path are the explanation. The server writes settings only after a
+clean removal, so the dialog never has to undo an optimistic close.
+
+### Why editing a non-active workspace opens without reference states
+
+`GET /api/workspaces` returns the active workspace's `refs` because that is what
+the sidebar and session header show; reading every workspace's primary config on
+a list request is not part of the contract. The manage list can still open the
+same form: the draft and diff come from the stored workspace, and the server
+revalidates every change, answering `409` with the alias when a hand-edited entry
+needs a confirmation the client could not show in advance. Editing the active
+workspace keeps the full diff and confirmations.

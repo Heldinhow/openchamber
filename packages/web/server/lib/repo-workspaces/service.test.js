@@ -1109,6 +1109,118 @@ describe('workspace service: remove created references', () => {
   });
 });
 
+describe('workspace service: delete', () => {
+  const deleteFixture = (name, createdRefs = ['web']) => {
+    const root = caseRoot(name);
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const docs = projectAt(root, 'docs', 'Docs');
+    const file = writeProjectConfig(api, JSON.stringify({
+      references: {
+        web: { path: path.resolve(web.path), description: 'Web' },
+        docs: { path: '/user/docs', description: 'User docs' },
+      },
+    }));
+    const stored = storedWorkspaceFor(api, [web, docs], createdRefs);
+    return { api, web, docs, file, projects: [api, web, docs], stored };
+  };
+
+  it('deletes the workspace and clears the pointer without touching config or projects', async () => {
+    const { file, projects, stored } = deleteFixture('delete-last');
+    const before = fs.readFileSync(file, 'utf8');
+    const { service, dependencies } = fixtureService({
+      projects,
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', {});
+
+    expect(result).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(dependencies.persistSettings).toHaveBeenCalledWith({
+      workspaces: [],
+      activeWorkspaceId: null,
+    });
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('keeps another workspace active and never removes a user reference', async () => {
+    const { file, projects, stored } = deleteFixture('delete-other-active');
+    const other = workspace({ id: 'ws_2', name: 'Other' });
+    const { service, dependencies } = fixtureService({
+      projects,
+      workspaces: [stored, other],
+      activeWorkspaceId: 'ws_2',
+    });
+
+    await service.remove('ws_1', { removeCreatedRefs: true });
+
+    expect(dependencies.persistSettings).toHaveBeenCalledWith({
+      workspaces: [other],
+    });
+    expect(readConfigFile(file).references).toEqual({
+      docs: { path: '/user/docs', description: 'User docs' },
+    });
+  });
+
+  it('keeps the workspace when an owned removal fails and names the alias', async () => {
+    const { file, projects, stored } = deleteFixture('delete-remove-fails');
+    const before = fs.readFileSync(file, 'utf8');
+    const { service, dependencies } = fixtureService(
+      { projects, workspaces: [stored], activeWorkspaceId: 'ws_1' },
+      { writeConfig: vi.fn(async () => { throw new Error('permission denied'); }) },
+    );
+
+    const result = await service.remove('ws_1', { removeCreatedRefs: true });
+
+    expect(result.removed).toBe(false);
+    expect(result.failedAlias).toBe('web');
+    expect(result.refs.map((reference) => reference.alias)).toEqual(['web', 'docs']);
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('keeps the workspace when an owned reference was hand-edited', async () => {
+    const { file, projects, stored } = deleteFixture('delete-edited-owned', ['web']);
+    const edited = { references: { web: { path: '/user/edited', description: 'Edited web' } } };
+    fs.writeFileSync(file, JSON.stringify(edited));
+    const { service, dependencies } = fixtureService({
+      projects,
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.remove('ws_1', { removeCreatedRefs: true });
+
+    expect(result).toMatchObject({ removed: false, failedAlias: 'web' });
+    expect(result.refs).toContainEqual(expect.objectContaining({ alias: 'web', status: 'different' }));
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+    expect(readConfigFile(file).references.web).toEqual(edited.references.web);
+  });
+
+  it('puts the removed references back when the settings write fails', async () => {
+    const { file, projects, stored } = deleteFixture('delete-settings-fails');
+    const { service } = fixtureService(
+      { projects, workspaces: [stored], activeWorkspaceId: 'ws_1' },
+      { persistSettings: vi.fn(async () => { throw new Error('Settings write failed'); }) },
+    );
+
+    await expect(service.remove('ws_1', { removeCreatedRefs: true })).rejects.toThrow('Settings write failed');
+
+    expect(readConfigFile(file).references).toEqual({
+      web: { path: path.resolve(projects[1].path), description: 'Web' },
+      docs: { path: '/user/docs', description: 'User docs' },
+    });
+  });
+
+  it('refuses an unknown workspace without writing', async () => {
+    const { service, dependencies } = fixtureService({ projects, workspaces: [], activeWorkspaceId: null });
+
+    await expect(service.remove('ws_missing', {})).rejects.toMatchObject({ status: 404 });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+});
+
 const updateFixture = (name) => {
   const root = caseRoot(name);
   const api = projectAt(root, 'api', 'API');

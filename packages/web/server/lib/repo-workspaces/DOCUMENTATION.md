@@ -6,8 +6,8 @@
 `activeWorkspaceId` settings fields, and the only reader that resolves them
 against the project catalog. It also owns the primary's OpenCode `references`.
 `routes.js` registers `GET /api/workspaces`, `POST /api/workspaces`,
-`PATCH /api/workspaces/:id`, `POST /api/workspaces/active` and
-`POST /api/workspaces/:id/refs/retry`.
+`PATCH /api/workspaces/:id`, `DELETE /api/workspaces/:id`,
+`POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
 
 A folder that is not a project yet is registered through the shared add-project
 rule in `../projects/add-project.js`; its project id comes from there. Settings
@@ -98,6 +98,15 @@ warn that the new layer overrides it, and is never edited.
 - When the settings write fails after an owned removal, the removed entries are
   put back before the error is returned, so the unchanged workspace does not
   lose references it still expects.
+- `DELETE /api/workspaces/:id` deletes in the contract order: remove the owned
+  references first, then drop the workspace. Without `removeCreatedRefs` the
+  primary's config and the projects are untouched; the pointer is cleared only
+  when the deleted workspace was the active one. A failed owned removal answers
+  `removed: false` with the current `refs`, the failing `failedAlias` and, for an
+  unreadable config, `configError`; settings are not written, so the workspace
+  stays. An owned alias whose entry cannot be verified (`skipped`) is treated
+  the same way, because deleting the workspace would orphan it. A settings
+  write that fails after a successful removal restores the removed entries.
 - The config read-modify-write path is serialized per service instance: two
   concurrent saves re-read the previous write instead of losing it.
 - Error bodies carry a field key (`repos[0].alias`) and an English API message.
@@ -202,6 +211,24 @@ service instance, which is per server runtime; the settings runtime already
 serializes settings writes, and this is the config-file equivalent. Rejected
 alternative: relying on the atomic writer alone — it prevents a torn file, not
 a lost update.
+
+### Why a failed deletion answers 200 with `removed: false`
+
+Deletion is a request whose refusal is a normal outcome: the workspace is still
+there untouched and the caller needs the alias to explain why. That does not fit
+the 409 shape of an edit, where a conflict aborts a multi-step save, and it would
+make the dialog handle two failure envelopes. `removed` is the single source of
+truth for the UI; `failedAlias` and `configError` only say why nothing happened.
+An unknown workspace is still 404, and an unreadable settings document still
+throws, because in both cases there is no trustworthy workspace state to report.
+
+### Why an unverifiable owned alias blocks the deletion
+
+`createdRefs` is the only ownership record. If an owned alias has no resolvable
+project path, the workspace cannot prove which config entry it wrote, so it
+cannot remove it safely. Deleting the workspace anyway would leave that entry in
+the file with no owner and no way to remove it later. The answer keeps the
+workspace and names the alias; the user can delete without removing references.
 
 ### Why removal is one write for all removed aliases
 

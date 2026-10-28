@@ -43,6 +43,14 @@ export const registerWorkspaceRoutes = (app, dependencies) => {
     }
   });
 
+  app.delete('/api/workspaces/:id', async (req, res) => {
+    try {
+      return res.json(await service.remove(req.params.id, req.body));
+    } catch (error) {
+      return respondWithError(res, error, 'Failed to delete workspace');
+    }
+  });
+
   app.post('/api/workspaces/active', async (req, res) => {
     try {
       return res.json(await service.activate(req.body));

@@ -15,6 +15,8 @@ type State = {
   status: RepoWorkspacesStatus;
   workspaces: RepoWorkspaceResolved[];
   activeWorkspaceId: string | null;
+  /** Stored workspaces the settings parser dropped; shown, never rewritten. */
+  discarded: number;
   refs: RepoWorkspaceRef[];
   refsError: { path: string; message: string } | null;
   activating: boolean;
@@ -24,6 +26,7 @@ const initialState = (enabled: boolean): State => ({
   status: enabled ? 'loading' : 'unavailable',
   workspaces: [],
   activeWorkspaceId: null,
+  discarded: 0,
   refs: [],
   refsError: null,
   activating: false,
@@ -56,6 +59,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
         status: 'ready',
         workspaces: document.workspaces,
         activeWorkspaceId: document.activeWorkspaceId,
+        discarded: document.discarded,
         refs: document.refs,
         refsError: document.refsError,
         activating: current.activating,

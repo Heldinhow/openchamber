@@ -57,6 +57,7 @@ const refsErrorSchema = z.object({
 const repoWorkspacesDocumentSchema = z.object({
   workspaces: z.array(repoWorkspaceSchema),
   activeWorkspaceId: z.string().min(1).nullable().catch(null),
+  discarded: z.number().int().nonnegative().catch(0),
   refs: z.array(repoWorkspaceRefSchema).catch([]),
   refsError: refsErrorSchema,
 });
@@ -102,6 +103,19 @@ const requestErrorSchema = z.object({
 export type RepoWorkspaceConfigTarget = z.infer<typeof configTargetSchema>;
 export type CreateRepoWorkspaceResult = z.infer<typeof createRepoWorkspaceResultSchema>;
 export type RetryRepoWorkspaceRefsResult = z.infer<typeof retryRepoWorkspaceRefsResultSchema>;
+
+/**
+ * A deletion that could not remove every owned reference answers `removed:
+ * false` and names the alias; the workspace is still there.
+ */
+const deleteRepoWorkspaceResultSchema = z.object({
+  removed: z.boolean(),
+  refs: z.array(repoWorkspaceRefSchema).catch([]),
+  failedAlias: z.string().nullable().catch(null),
+  configError: refsErrorSchema,
+});
+
+export type DeleteRepoWorkspaceResult = z.infer<typeof deleteRepoWorkspaceResultSchema>;
 
 /** A 4xx answer with the field, config or conflict the dialog puts inline. */
 export class RepoWorkspaceRequestError extends Error {
@@ -256,6 +270,28 @@ export const activateRepoWorkspace = async (id: string | null): Promise<{ active
   const parsed = activeWorkspaceResponseSchema.safeParse(await readJson(response));
   if (!parsed.success) {
     throw new Error('Workspace switch response was invalid');
+  }
+  return parsed.data;
+};
+
+/**
+ * Deletes the workspace; the owned references leave only when asked. A failed
+ * removal comes back as `removed: false` with the alias, never as a lost
+ * workspace.
+ */
+export const deleteRepoWorkspace = async (
+  id: string,
+  removeCreatedRefs: boolean,
+): Promise<DeleteRepoWorkspaceResult> => {
+  const response = await runtimeFetch(`/api/workspaces/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ removeCreatedRefs }),
+  });
+  if (!response.ok) throw await requestFailure(response);
+  const parsed = deleteRepoWorkspaceResultSchema.safeParse(await readJson(response));
+  if (!parsed.success) {
+    throw new Error('Workspace deletion response was invalid');
   }
   return parsed.data;
 };

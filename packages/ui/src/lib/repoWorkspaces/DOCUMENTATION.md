@@ -3,13 +3,13 @@
 ## Ownership
 
 `client.ts` is the UI's only reader of `/api/workspaces` and the only caller of
-`POST /api/workspaces`, `PATCH /api/workspaces/:id`, `POST /api/workspaces/active`
-and `POST /api/workspaces/:id/refs/retry`. `useRepoWorkspaces` holds the resolved
-list, the active pointer and the active workspace's reference states for the
-sidebar; the workspace dialog uses `createRepoWorkspace`,
-`updateRepoWorkspace` and `retryRepoWorkspaceRefs` and parses every response at
-the boundary. Ticket 03 reads this state; deleting workspaces stays with the
-dialog of ticket 08.
+`POST /api/workspaces`, `PATCH /api/workspaces/:id`, `DELETE /api/workspaces/:id`,
+`POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
+`useRepoWorkspaces` holds the resolved list, the active pointer, the count of
+discarded workspaces and the active workspace's reference states for the
+sidebar; the workspace dialogs use `createRepoWorkspace`, `updateRepoWorkspace`,
+`deleteRepoWorkspace` and `retryRepoWorkspaceRefs` and parse every response at
+the boundary.
 
 The server owns both writes and the project catalog. The client never writes a
 workspace document and never stores one locally.
@@ -32,6 +32,11 @@ workspace document and never stores one locally.
   `RepoWorkspaceRequestError` carrying the field key, config path or conflict
   alias the dialog puts inline; a failed reference write is a successful create
   or edit with `refWrites[].status === 'failed'`.
+- A delete answer is parsed at the boundary too. `removed: false` is a normal
+  answer, not a transport error: the workspace still exists and `failedAlias`
+  or `configError` explains why. Only a non-2xx answer becomes an error.
+- The document's `discarded` count is read-only: it names stored workspaces the
+  parser dropped so the sidebar can show them, and nothing writes them back.
 - The document's `refs` and `refsError` describe the active workspace's primary
   config. They are cleared when the active pointer moves, and read again for the
   newly active workspace, so the edit dialog never diffs against another
