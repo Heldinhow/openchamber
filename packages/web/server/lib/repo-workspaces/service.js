@@ -720,8 +720,9 @@ export const createWorkspaceService = (dependencies) => {
     projectsById,
     previousRules,
     desiredRules,
+    primaryPath = null,
   }) => {
-    const primary = projectsById.get(workspace.primaryProjectId) ?? null;
+    const primary = primaryPath ? { path: primaryPath } : projectsById.get(workspace.primaryProjectId) ?? null;
     if (!primary) {
       return { status: 'failed', path: null, message: 'The workspace primary project is not available' };
     }
@@ -1333,12 +1334,30 @@ export const createWorkspaceService = (dependencies) => {
       writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
     ));
 
-    const permissionWrites = await withRefsLock(() => reconcilePermissions({
-      workspace,
-      projectsById: nextProjectsById,
-      previousRules: existing.editRules ?? [],
-      desiredRules: workspace.editRules,
-    }));
+    const permissionResults = await withRefsLock(async () => {
+      const results = [];
+      // A new primary means a new config file: the previous rules live in the
+      // old one and would otherwise be orphaned there. A missing old primary
+      // has no config to touch, the same rule the reference removal follows.
+      if (primaryChanged && oldPrimary) {
+        results.push(await reconcilePermissions({
+          workspace: existing,
+          projectsById: oldProjectsById,
+          previousRules: existing.editRules ?? [],
+          desiredRules: [],
+        }));
+      }
+      results.push(await reconcilePermissions({
+        workspace,
+        projectsById: nextProjectsById,
+        previousRules: existing.editRules ?? [],
+        desiredRules: workspace.editRules,
+      }));
+      return results;
+    });
+    const permissionWrites = permissionResults.find((result) => result.status === 'failed')
+      ?? permissionResults.find((result) => result.status === 'written')
+      ?? { status: 'unchanged' };
 
     const { refs, error: refsError } = safeRefsFor(workspace, nextProjects);
     return {

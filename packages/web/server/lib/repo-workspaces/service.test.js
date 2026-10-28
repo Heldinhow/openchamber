@@ -1524,6 +1524,42 @@ describe('workspace service: permission rules', () => {
     ]);
   });
 
+  it('removes its rules from the old primary when the primary changes', async () => {
+    const root = caseRoot('permission-primary-change');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const userRule = { action: 'edit', resource: '/user/*', effect: 'deny' };
+    const apiConfig = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {
+      permissions: [userRule],
+    }).file;
+    const settings = { projects: [api, web], workspaces: [], activeWorkspaceId: null };
+    const { service } = fixtureService(settings);
+
+    const created = await service.create(createPayloadWith(api, [web]));
+    expect(readConfigFile(apiConfig).permissions).toEqual([
+      userRule,
+      ...configPermissionRules(web.path, 'allow'),
+    ]);
+    settings.workspaces = [created.workspace];
+
+    const result = await service.update(created.workspace.id, {
+      name: 'Shop Platform',
+      repos: [
+        { projectId: web.id, alias: web.id, primary: true },
+        { projectId: api.id, alias: api.id },
+      ],
+    });
+
+    expect(result.workspace.primaryProjectId).toBe(web.id);
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(api.path, 'api', 'allow'));
+    // The old primary keeps the user's rule and loses only the app's.
+    expect(readConfigFile(apiConfig).permissions).toEqual([userRule]);
+    expect(readConfigFile(path.join(web.path, '.opencode', 'opencode.json'))).toEqual({
+      references: { api: { path: path.resolve(api.path), description: 'API' } },
+      permissions: configPermissionRules(api.path, 'allow'),
+    });
+  });
+
   it('removes only the rules it wrote when the workspace is deleted', async () => {
     const root = caseRoot('permission-delete');
     const api = projectAt(root, 'api', 'API');

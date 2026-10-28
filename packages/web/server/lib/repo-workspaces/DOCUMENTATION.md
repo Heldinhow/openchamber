@@ -88,11 +88,14 @@ the target layer.
   and rule is preserved. A `permissions` value that is not an array of objects
   fails without a write.
 - Create and edit persist the desired `editRules` before the config write and
-  reconcile after the references are written, under the refs lock. A failed
-  permission write is `permissionWrites: { status: 'failed', path, message }`
-  and never fails the saved workspace. Deletion removes the app-owned rules
-  after the settings write, best effort, and reports `permissionRemoved`
-  (plus `configError` on failure) without keeping the workspace.
+  reconcile after the references are written, under the refs lock. When the
+  primary changes, the previous rules are removed from the old primary's config
+  before the new primary is reconciled; a missing old primary is skipped, like
+  its reference removal. A failed permission write is
+  `permissionWrites: { status: 'failed', path, message }` and never fails the
+  saved workspace. Deletion removes the app-owned rules after the settings
+  write, best effort, and reports `permissionRemoved` (plus `configError` on
+  failure) without keeping the workspace.
 - `GET /api/workspaces/config-target?path=<folder>` reads only the target for a
   folder that may not be a project yet: the folder must be absolute and exist,
   an unreadable config is 422 `configError`, and the answer is
