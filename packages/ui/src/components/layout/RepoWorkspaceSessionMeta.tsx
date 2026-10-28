@@ -105,7 +105,10 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
   }, [refs]);
 
   return (
-    <div className="app-region-no-drag flex min-w-0 max-w-full items-center gap-2 overflow-hidden ps-2 text-start">
+    // `flex-1` gives the chips a width fixed by the header, not by how many
+    // entries are currently rendered; without it the count collapses to just
+    // the `+N` control and every entry stays hidden.
+    <div className={`app-region-no-drag flex min-w-0 max-w-full items-center gap-2 overflow-hidden ps-2 text-start ${refs.length > 0 ? 'flex-1' : ''}`}>
       <div className="flex min-w-0 flex-col justify-center">
         <span className="truncate typography-meta leading-tight text-muted-foreground" title={workspaceName}>
           {workspaceName}
