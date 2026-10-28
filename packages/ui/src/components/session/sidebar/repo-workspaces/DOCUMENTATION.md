@@ -19,6 +19,13 @@ The dialogs are mounted only by the desktop/web sidebar, from the empty card and
 the workspace header (new, edit, manage). Mobile and VS Code do not register the
 route and never mount them.
 
+`RepoWorkspaceReview.tsx` is the "Workspace view" panel. The sidebar row under
+the repo list opens it for the active workspace; it reads each repo's git once
+through `useGitStore` (no watcher), renders one card per repo and hands the diff
+to the existing context panel with the repo as `targetDirectory`. The header
+total, partial flag and branch divergence come from
+`lib/repoWorkspaces/workspaceReview.ts`; the panel does not recompute them.
+
 ## Invariants
 
 - Nothing is written before submit. Picking a folder reads the directory to
@@ -65,6 +72,13 @@ route and never mount them.
   shows the failing alias (or the config path when it could not be read), and
   never claims the workspace was deleted. Only `removed: true` reloads the
   sidebar and closes.
+- The review panel reads each repo on open and keeps a read failure in that
+  repo's card; the other cards and the total stay. A repo without git is shown
+  as "No git", a missing project as "Project not found", and neither becomes a
+  silent zero. A diverged live branch adds a muted "current branch" line and
+  leaves the saved snapshot alone. "View diff" opens the existing diff on the
+  repo whose card was clicked. "Open session" targets the primary and "Edit
+  workspace" opens the edit dialog.
 
 ## Decisions
 

@@ -12,6 +12,11 @@ sidebar and the session header; the workspace dialogs use
 `createRepoWorkspace`, `updateRepoWorkspace`, `deleteRepoWorkspace` and
 `retryRepoWorkspaceRefs` and parse every response at the boundary.
 
+`workspaceReview.ts` is the workspace review panel's only projection. It reads
+the resolved workspace, its reference states and a per-repo git readout, and
+returns the cards, the header total and the partial flag. It does not fetch and
+does not write.
+
 The server owns both writes and the project catalog. The client never writes a
 workspace document and never stores one locally.
 
@@ -46,6 +51,13 @@ workspace document and never stores one locally.
   config. They are cleared when the active pointer moves, and read again for the
   newly active workspace, so the edit dialog never diffs against another
   workspace's references.
+- The review total sums only the repos whose git status was read. A repo whose
+  project is gone, or whose read failed, keeps its own card and makes the total
+  partial; it is never shown as a clean zero. A repo without git is its own
+  state, not zero changes.
+- The review reads each repo once per open through the existing git store and
+  shows the live branch beside the saved snapshot. A divergence adds a muted
+  "current branch" line; nothing checks out or rewrites the snapshot.
 - The session header shows the active workspace only when the session's
   directory lands in that workspace's primary repo
   (`sessionPlacement.ts`; the deepest project root wins, so a nested secondary
@@ -59,6 +71,13 @@ workspace document and never stores one locally.
   header never show different states for the same workspace.
 
 ## Decisions
+
+### Why the review panel reads git on open instead of watching branches
+
+Branch is a label saved when the workspace is created or edited, not a checkout
+instruction. A watcher would refresh behind the user and imply the snapshot
+should follow the live branch; one read per open keeps the review honest and
+cheap. Rejected alternative: subscribing the panel to each repo's branch.
 
 ### Why the route, and not the settings document, lists the repos
 

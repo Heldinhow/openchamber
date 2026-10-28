@@ -24,6 +24,7 @@ import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
 import { WorkspaceDiscardedNotice, WorkspaceEmptyCard, WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
 import { RepoWorkspaceDialog } from './sidebar/repo-workspaces/RepoWorkspaceDialog';
+import { RepoWorkspaceReview } from './sidebar/repo-workspaces/RepoWorkspaceReview';
 import { RepoWorkspaceDeleteDialog, RepoWorkspaceManageDialog } from './sidebar/repo-workspaces/RepoWorkspaceManageDialogs';
 import { updateRepoWorkspace, type RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
@@ -457,6 +458,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     | { mode: 'delete'; workspaceId: string }
     | null
   >(null);
+  const [workspaceReviewOpen, setWorkspaceReviewOpen] = React.useState(false);
   const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialog({ mode: 'create' }), []);
   const activeWorkspaceId = repoWorkspaces.activeWorkspace?.id ?? null;
   const openWorkspaceEditDialog = React.useCallback(() => {
@@ -515,6 +517,35 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       toast.error(t('sessions.sidebar.workspace.removeRepoFailed'));
     }
   }, [activeRepoWorkspace, handleWorkspaceRefsChanged, t]);
+
+  const handleEditWorkspaceFromReview = React.useCallback(() => {
+    setWorkspaceReviewOpen(false);
+    openWorkspaceEditDialog();
+  }, [openWorkspaceEditDialog]);
+
+  const handleOpenWorkspaceSession = React.useCallback(() => {
+    if (!activeRepoWorkspace) return;
+    const primary = activeRepoWorkspace.repos.find((repo) => repo.projectId === activeRepoWorkspace.primaryProjectId);
+    if (!primary?.project) return;
+    setActiveProjectIdOnly(primary.projectId);
+    openNewSessionDraft({ selectedProjectId: primary.projectId, directoryOverride: primary.project.path });
+    setWorkspaceReviewOpen(false);
+  }, [activeRepoWorkspace, openNewSessionDraft, setActiveProjectIdOnly]);
+
+  // The diff belongs to the repo whose card was clicked; the panel it opens in
+  // stays the current one, and the target directory is what DiffView reads.
+  const handleOpenWorkspaceDiff = React.useCallback((path: string) => {
+    const primaryPath = activeRepoWorkspace
+      ? activeRepoWorkspace.repos.find((repo) => repo.projectId === activeRepoWorkspace.primaryProjectId)?.project?.path
+      : null;
+    const owner = projects.find((project) => project.id === activeProjectId)?.path ?? primaryPath ?? path;
+    useUIStore.getState().openContextPanelTab(owner, {
+      mode: 'diff',
+      diffScope: 'working',
+      targetDirectory: path,
+    });
+    setWorkspaceReviewOpen(false);
+  }, [activeProjectId, activeRepoWorkspace, projects]);
 
 
   const normalizedProjects = React.useMemo(() => {
@@ -843,6 +874,15 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
             <WorkspaceDiscardedNotice count={repoWorkspaces.discarded} />
           ) : null}
           {collection}
+          {repoWorkspaces.status === 'ready' && repoWorkspaces.activeWorkspace ? (
+            <button
+              type="button"
+              onClick={() => setWorkspaceReviewOpen(true)}
+              className="mx-2.5 mt-1 flex min-h-7 shrink-0 items-center rounded-md px-1.5 text-start typography-meta text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {t('sessions.sidebar.workspace.review')}
+            </button>
+          ) : null}
         </>
       )}
 
@@ -926,6 +966,17 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
           if (!open) setWorkspaceDialog(null);
         }}
         onDeleted={handleWorkspaceCreated}
+      />
+
+      <RepoWorkspaceReview
+        open={workspaceReviewOpen}
+        onOpenChange={setWorkspaceReviewOpen}
+        workspace={repoWorkspaces.activeWorkspace}
+        refs={repoWorkspaces.refs}
+        refsError={repoWorkspaces.refsError}
+        onEdit={handleEditWorkspaceFromReview}
+        onOpenSession={handleOpenWorkspaceSession}
+        onOpenDiff={handleOpenWorkspaceDiff}
       />
 
     </div>
