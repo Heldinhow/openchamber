@@ -57,6 +57,11 @@ import {
 interface DirectoryExplorerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Picks an existing folder for a caller that registers nothing itself. The
+   * dialog then adds no project and opens no draft.
+   */
+  onPickDirectory?: (path: string) => void;
 }
 
 type BrowseEntry = {
@@ -181,8 +186,10 @@ const resolveFreshFilesystemHome = async (): Promise<string | null> => {
 export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = ({
   open,
   onOpenChange,
+  onPickDirectory,
 }) => {
   const { t } = useI18n();
+  const pickMode = Boolean(onPickDirectory);
   const { git, sourceControl, runtime } = useRuntimeAPIs();
   const runtimeKey = getRuntimeKey();
   const openContextSurface = useUIStore((s) => s.openContextSurface);
@@ -427,13 +434,22 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     && browseErrorReason !== 'invalid-response'
     && browseErrorReason !== 'unknown'
     && ((!isCloneMode && selectionPaths.length > 0) || (!isAlreadyAdded && Boolean(submitTarget)));
+  // Picking writes nothing and may choose a folder that is already a project.
+  const canPickDirectory = !isConfirming
+    && !isOpeningFinder
+    && !isBrowseDirectoryMissing
+    && !shouldCreateTarget
+    && browseErrorReason !== 'os-permission'
+    && browseErrorReason !== 'invalid-response'
+    && browseErrorReason !== 'unknown'
+    && Boolean(submitTarget);
   // Adding a directory that is already a repository: read what its own .git
   // states so the association can be offered instead of asked for. Nothing is
   // written until the project is added with the proposal still selected. A
   // closed dialog adds nothing: its path is the home, which it would read on
   // every launch.
   const existingRepository = useExistingRepositorySummary(targetPath, { sourceControl, git },
-    open && !isCloneMode && !runtime.isVSCode && !isAlreadyAdded && !shouldCreateTarget && selectionPaths.length === 0);
+    open && !isCloneMode && !pickMode && !runtime.isVSCode && !isAlreadyAdded && !shouldCreateTarget && selectionPaths.length === 0);
   React.useEffect(() => {
     if (existingRepository && !runtime.isVSCode) void refreshAccounts(sourceControl);
   }, [existingRepository, refreshAccounts, runtime.isVSCode, runtimeKey, sourceControl]);
@@ -506,24 +522,27 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
 
   const canSubmitClone = canAddProject && !runtime.isVSCode && !cloneRecovery.blocked && cloneRemoteUrl.trim().length > 0
     && Boolean(cloneSelection);
+  const canSubmitDirectory = pickMode ? canPickDirectory : isCloneMode ? canSubmitClone : canAddProject;
   const highlightedRow = rows[highlightedIndex] ?? null;
   const hasHighlightedBrowseItem = Boolean(
     highlightedRow && (highlightedRow.type === 'up' || highlightedRow.type === 'directory')
   );
   const submitModifierLabel = formatShortcutForDisplay('mod');
-  const submitActionLabel = !isCloneMode && selectionPaths.length > 0
-    ? t('directoryExplorerDialog.actions.addSelected')
-    : isAlreadyAdded
-    ? t('directoryExplorerDialog.actions.alreadyAdded')
-    : isCloneMode
-      ? isConfirming
-        ? t('directoryExplorerDialog.actions.cloning')
-        : t('directoryExplorerDialog.actions.cloneAndAdd')
-    : isConfirming
-      ? t('directoryExplorerDialog.actions.adding')
-    : shouldCreateTarget
-      ? t('directoryExplorerDialog.actions.createAndAdd')
-      : t('directoryExplorerDialog.actions.addProject');
+  const submitActionLabel = pickMode
+    ? t('directoryExplorerDialog.actions.selectFolder')
+    : !isCloneMode && selectionPaths.length > 0
+      ? t('directoryExplorerDialog.actions.addSelected')
+      : isAlreadyAdded
+        ? t('directoryExplorerDialog.actions.alreadyAdded')
+        : isCloneMode
+          ? isConfirming
+            ? t('directoryExplorerDialog.actions.cloning')
+            : t('directoryExplorerDialog.actions.cloneAndAdd')
+          : isConfirming
+            ? t('directoryExplorerDialog.actions.adding')
+            : shouldCreateTarget
+              ? t('directoryExplorerDialog.actions.createAndAdd')
+              : t('directoryExplorerDialog.actions.addProject');
 
   React.useLayoutEffect(() => {
     const button = addButtonRef.current;
@@ -566,8 +585,31 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     handleClose();
   }, [handleClose, isMobile, openNewSessionDraft, setSessionSwitcherOpen]);
 
+  const completePick = React.useCallback(async (path: string) => {
+    if (!onPickDirectory) return;
+    const normalized = normalizeDirectoryPath(path);
+    if (!normalized) return;
+    setIsConfirming(true);
+    try {
+      // Reading the folder proves it exists; picking itself writes nothing.
+      await opencodeClient.listLocalDirectory(normalized);
+      onPickDirectory(normalized);
+      handleClose();
+    } catch {
+      toast.error(t('directoryExplorerDialog.toast.failedToAddProject'), {
+        description: t('directoryExplorerDialog.toast.selectValidDirectoryPath'),
+      });
+    } finally {
+      setIsConfirming(false);
+    }
+  }, [handleClose, onPickDirectory, t]);
+
   const handleQuickAdd = React.useCallback(async (event: React.MouseEvent, path: string) => {
     event.stopPropagation();
+    if (pickMode) {
+      await completePick(path);
+      return;
+    }
     const normalized = normalizeDirectoryPath(path);
     if (normalized && addedProjectPaths.has(normalized)) return;
     const project = await addProject(path);
@@ -578,9 +620,13 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       return;
     }
     openProjectDraft(project.id, project.path);
-  }, [addProject, addedProjectPaths, openProjectDraft, t]);
+  }, [addProject, addedProjectPaths, completePick, openProjectDraft, pickMode, t]);
 
   const finalizeSelection = React.useCallback(async (target: string) => {
+    if (pickMode) {
+      await completePick(target);
+      return;
+    }
     if (runtimeKey !== getRuntimeKey()) return;
     if (isConfirming) return;
     if (isCloneMode && (!canSubmitClone || cloneController.current)) return;
@@ -687,7 +733,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       cloneController.current = null;
       setIsConfirming(false);
     }
-  }, [addProject, addProjects, addedProjectPaths, canSubmitClone, cloneRecovery, cloneSelection, identityChosen, cloneRemoteUrl, existingRepository, git, handleClose, isCloneMode, isConfirming, mobileActions, openContextSurface, openProjectDraft, runtimeKey, selectedGitIdentity, selectedPaths, shouldCreateTarget, sourceControl, targetPath, t]);
+  }, [addProject, addProjects, addedProjectPaths, canSubmitClone, cloneRecovery, cloneSelection, completePick, identityChosen, cloneRemoteUrl, existingRepository, git, handleClose, isCloneMode, isConfirming, mobileActions, openContextSurface, openProjectDraft, pickMode, runtimeKey, selectedGitIdentity, selectedPaths, shouldCreateTarget, sourceControl, targetPath, t]);
 
   const browseToDisplayPath = React.useCallback((displayPath: string) => {
     setQuery(ensureBrowseDirectoryPath(displayPath));
@@ -866,7 +912,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
             size="xs"
             tabIndex={-1}
             className="absolute inset-e-1.5 top-1/2 h-7 -translate-y-1/2 gap-1 px-2 typography-meta"
-            disabled={isCloneMode ? !canSubmitClone : !canAddProject}
+            disabled={!canSubmitDirectory}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void finalizeSelection(submitTarget)}
             title={submitActionLabel}
@@ -952,10 +998,21 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate typography-ui-label text-foreground">{row.name}</span>
                   </span>
-                  {row.type === 'directory' && row.added ? (
+                  {row.type === 'directory' && row.added && !pickMode ? (
                     <span className="rounded-full border border-border/60 px-2 py-0.5 typography-meta text-muted-foreground">
                       {t('directoryExplorerDialog.browse.addedBadge')}
                     </span>
+                  ) : row.type === 'directory' && pickMode ? (
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => void handleQuickAdd(event, row.path)}
+                      className="flex-shrink-0 rounded-full p-1 text-muted-foreground transition-colors hover:bg-interactive-hover/60 hover:text-foreground"
+                      title={t('directoryExplorerDialog.actions.selectFolder')}
+                      aria-label={t('directoryExplorerDialog.actions.selectFolder')}
+                    >
+                      <Icon name="add" className="h-3.5 w-3.5" />
+                    </button>
                   ) : row.type === 'directory' && !isCloneMode ? (
                     <>
                       <button
@@ -1029,12 +1086,12 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
           size="xs"
           onClick={() => { setIsCloneMode((value) => !value); setSelectedPaths([]); }}
           disabled={isConfirming || isOpeningFinder}
-          className={cn(isMobile && 'flex-1')}
+          className={cn(isMobile && 'flex-1', pickMode && 'hidden')}
         >
           {isCloneMode ? t('directoryExplorerDialog.actions.addLocalProject') : t('directoryExplorerDialog.actions.cloneRepository')}
         </Button>
         {isMobile ? (
-          <Button size="xs" onClick={() => void finalizeSelection(submitTarget)} disabled={isCloneMode ? !canSubmitClone : !canAddProject} className="flex-1">
+          <Button size="xs" onClick={() => void finalizeSelection(submitTarget)} disabled={!canSubmitDirectory} className="flex-1">
             {submitActionLabel}
           </Button>
         ) : null}
@@ -1042,12 +1099,19 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     </>
   );
 
+  const dialogTitle = pickMode
+    ? t('sessions.sidebar.workspace.pickFolderTitle')
+    : t('directoryExplorerDialog.title');
+  const dialogDescription = pickMode
+    ? t('sessions.sidebar.workspace.pickFolderDescription')
+    : t('directoryExplorerDialog.description');
+
   if (isMobile) {
     return (
       <MobileOverlayPanel
         open={open}
         onClose={handleClose}
-        title={t('directoryExplorerDialog.title')}
+        title={dialogTitle}
         // Height only — the width stays on MobileOverlayPanel's shared max-w-lg
         // so this sheet matches every other mobile overlay on wide screens.
         className="h-[88dvh] max-h-[720px]"
@@ -1071,8 +1135,8 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         <DialogHeader className="px-5 pb-2 pt-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <DialogTitle>{t('directoryExplorerDialog.title')}</DialogTitle>
-              <DialogDescription className="mt-2">{t('directoryExplorerDialog.description')}</DialogDescription>
+              <DialogTitle>{dialogTitle}</DialogTitle>
+              <DialogDescription className="mt-2">{dialogDescription}</DialogDescription>
             </div>
             {showHiddenToggle}
           </div>

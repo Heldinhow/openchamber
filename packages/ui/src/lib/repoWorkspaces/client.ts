@@ -36,6 +36,90 @@ const repoWorkspacesDocumentSchema = z.object({
 
 export type RepoWorkspaceResolved = z.infer<typeof repoWorkspaceSchema>;
 
+const referenceEntrySchema = z.object({
+  path: z.string().nullable().catch(null),
+  description: z.string().catch(''),
+});
+
+const referenceStatusSchema = z.enum(['ok', 'missing', 'different', 'outside', 'overridden', 'unknown']);
+
+const repoWorkspaceRefSchema = z.object({
+  alias: z.string(),
+  path: z.string().nullable().catch(null),
+  description: z.string().catch(''),
+  status: referenceStatusSchema.catch('unknown'),
+  owned: z.boolean().catch(false),
+  current: referenceEntrySchema.nullable().catch(null),
+});
+
+const refWriteSchema = z.object({
+  alias: z.string(),
+  status: z.enum(['written', 'unchanged', 'failed']).catch('failed'),
+  message: z.string().optional(),
+});
+
+const configTargetSchema = z.object({
+  path: z.string(),
+  rootConfigPath: z.string().nullable().catch(null),
+});
+
+const refsErrorSchema = z.object({
+  path: z.string(),
+  message: z.string(),
+}).nullable().catch(null);
+
+const refsResultFields = {
+  refs: z.array(repoWorkspaceRefSchema),
+  refWrites: z.array(refWriteSchema),
+  refsError: refsErrorSchema,
+  configTarget: configTargetSchema,
+};
+
+const createRepoWorkspaceResultSchema = z.object({
+  workspace: repoWorkspaceSchema,
+  ...refsResultFields,
+});
+
+const retryRepoWorkspaceRefsResultSchema = z.object(refsResultFields);
+
+const requestErrorSchema = z.object({
+  error: z.string().optional(),
+  fields: z.record(z.string(), z.string()).optional(),
+  configError: z.object({ path: z.string(), message: z.string() }).optional(),
+  conflict: z.object({
+    alias: z.string().optional(),
+    path: z.string().nullable().optional(),
+  }).optional(),
+});
+
+export type RepoWorkspaceConfigTarget = z.infer<typeof configTargetSchema>;
+export type CreateRepoWorkspaceResult = z.infer<typeof createRepoWorkspaceResultSchema>;
+export type RetryRepoWorkspaceRefsResult = z.infer<typeof retryRepoWorkspaceRefsResultSchema>;
+
+/** A 4xx answer with the field, config or conflict the dialog puts inline. */
+export class RepoWorkspaceRequestError extends Error {
+  readonly status: number;
+  readonly fields: Record<string, string>;
+  readonly configError: { path: string; message: string } | null;
+  readonly conflict: { alias: string | null; path: string | null } | null;
+
+  constructor(status: number, payload: z.infer<typeof requestErrorSchema> | null) {
+    super(payload?.error ?? `Workspace request failed with ${status}`);
+    this.name = 'RepoWorkspaceRequestError';
+    this.status = status;
+    this.fields = payload?.fields ?? {};
+    this.configError = payload?.configError ?? null;
+    this.conflict = payload?.conflict
+      ? { alias: payload.conflict.alias ?? null, path: payload.conflict.path ?? null }
+      : null;
+  }
+}
+
+const requestFailure = async (response: Response) => {
+  const parsed = requestErrorSchema.safeParse(await readJson(response));
+  return new RepoWorkspaceRequestError(response.status, parsed.success ? parsed.data : null);
+};
+
 /** The runtime has no `/api/workspaces` route, as on mobile and in VS Code. */
 export class RepoWorkspacesUnavailableError extends Error {
   constructor() {
@@ -73,6 +157,50 @@ export const fetchRepoWorkspaces = async () => {
 const activeWorkspaceResponseSchema = z.object({
   activeWorkspaceId: z.string().min(1).nullable(),
 });
+
+export type CreateRepoWorkspaceInput = {
+  name: string;
+  repos: Array<{
+    alias: string;
+    path: string;
+    branch: string;
+    primary: boolean;
+  }>;
+};
+
+/**
+ * Creates and activates the workspace. The response names the config target and
+ * one write result per alias; a failed write is a pending reference, not a
+ * failed creation.
+ */
+export const createRepoWorkspace = async (input: CreateRepoWorkspaceInput): Promise<CreateRepoWorkspaceResult> => {
+  const response = await runtimeFetch('/api/workspaces', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await requestFailure(response);
+  const parsed = createRepoWorkspaceResultSchema.safeParse(await readJson(response));
+  if (!parsed.success) {
+    throw new Error('Workspace creation response was invalid');
+  }
+  return parsed.data;
+};
+
+/** Retries the named pending aliases; the route only rewrites what is not `ok`. */
+export const retryRepoWorkspaceRefs = async (id: string, aliases?: string[]): Promise<RetryRepoWorkspaceRefsResult> => {
+  const response = await runtimeFetch(`/api/workspaces/${encodeURIComponent(id)}/refs/retry`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(aliases ? { aliases } : {}),
+  });
+  if (!response.ok) throw await requestFailure(response);
+  const parsed = retryRepoWorkspaceRefsResultSchema.safeParse(await readJson(response));
+  if (!parsed.success) {
+    throw new Error('Workspace reference retry response was invalid');
+  }
+  return parsed.data;
+};
 
 export const activateRepoWorkspace = async (id: string | null): Promise<{ activeWorkspaceId: string | null }> => {
   const response = await runtimeFetch('/api/workspaces/active', {

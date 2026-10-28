@@ -22,7 +22,8 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { SidebarHeader } from './sidebar/shell/SidebarHeader';
 import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
-import { WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
+import { WorkspaceEmptyCard, WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
+import { CreateRepoWorkspaceDialog } from './sidebar/repo-workspaces/CreateRepoWorkspaceDialog';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
 import type { SessionProjectListProps } from './sidebar/projects/SessionProjectScroller';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -57,6 +58,7 @@ import {
 } from './sidebar/sessionWorktreeMenu';
 import { resolveProjectRef } from '@/lib/worktreeSessionCreator';
 import { useRepoWorkspaces } from '@/hooks/useRepoWorkspaces';
+import { syncDesktopSettings } from '@/lib/persistence';
 
 const PROJECT_ACTIVE_SESSION_STORAGE_KEY = 'oc.sessions.activeSessionByProject';
 const activeSessionByProjectSchema = z.record(z.string(), z.string().min(1).catch(''));
@@ -446,6 +448,19 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     }
   }, [selectWorkspace, t]);
 
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = React.useState(false);
+  const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialogOpen(true), []);
+  const reloadRepoWorkspaces = repoWorkspaces.reload;
+  // Creation registers folders and activates the workspace on the server; the
+  // settings document is the only way this window learns the new projects.
+  const handleWorkspaceCreated = React.useCallback(() => {
+    void syncDesktopSettings();
+    reloadRepoWorkspaces();
+  }, [reloadRepoWorkspaces]);
+  const handleWorkspaceRefsChanged = React.useCallback(() => {
+    reloadRepoWorkspaces();
+  }, [reloadRepoWorkspaces]);
+
 
   const normalizedProjects = React.useMemo(() => {
     return projects.flatMap((project) => {
@@ -752,12 +767,16 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
       ) : (
         <>
           {repoWorkspaces.status === 'error' ? <WorkspaceSidebarError onRetry={repoWorkspaces.reload} /> : null}
+          {repoWorkspaces.status === 'ready' && repoWorkspaces.workspaces.length === 0 ? (
+            <WorkspaceEmptyCard onCreate={openWorkspaceDialog} />
+          ) : null}
           {repoWorkspaces.activeWorkspace ? (
             <WorkspaceSidebarHeader
               workspaces={repoWorkspaces.workspaces}
               activeWorkspace={repoWorkspaces.activeWorkspace}
               activating={repoWorkspaces.activating}
               onSelect={handleSelectWorkspace}
+              onCreate={openWorkspaceDialog}
             />
           ) : null}
           {collection}
@@ -808,6 +827,13 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
           }
           openNewSessionDraft({ directoryOverride: worktreePath, preserveDirectoryOverride: true });
         }}
+      />
+
+      <CreateRepoWorkspaceDialog
+        open={workspaceDialogOpen}
+        onOpenChange={setWorkspaceDialogOpen}
+        onCreated={handleWorkspaceCreated}
+        onRefsChanged={handleWorkspaceRefsChanged}
       />
 
     </div>

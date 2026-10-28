@@ -139,6 +139,8 @@ A workspace (`lib/repoWorkspaces`) narrows the sidebar to its repos. `projects/r
 
 The UI does not filter again. `SessionProjectCollection` scopes ordered, archived and root sessions to the sections' sessions, so zones, prefetch, drafts and PR discovery cannot list a hidden repo's work; Chats and the single-project/list-by-time views do not apply while a workspace is active. The workspace header (name, repo count, menu with every workspace and "All projects") is `shell/WorkspaceSidebarHeader.tsx`; choosing the active workspace or "All projects" clears the pointer. Loading shows three skeleton lines, a failed read shows Retry above an otherwise usable project list, and mobile and VS Code never mount the feature because the route is not part of their runtime.
 
+With no workspace at all, `WorkspaceEmptyCard` sits above the project list instead of taking over the sidebar, and its "Create workspace" button, the header's "+" and the menu's "New workspace" open the same `repo-workspaces/CreateRepoWorkspaceDialog.tsx`. The dialog keeps the draft until submit; a creation whose reference writes failed swaps the form for its pending card and keeps the created workspace. The module owns the validation and pending-card invariants in its own `DOCUMENTATION.md`.
+
 ## The phone
 
 Hosted mobile and Capacitor list the same works as the desktop. The phone's

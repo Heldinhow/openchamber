@@ -18,17 +18,20 @@ type Props = {
   activeWorkspace: RepoWorkspaceResolved;
   activating: boolean;
   onSelect: (id: string | null) => void;
+  onCreate: () => void;
 };
 
 /**
  * The filter's name, its repo count and the menu that switches workspaces or
- * leaves the filter. Creating and managing workspaces belong to tickets 06/08.
+ * leaves the filter. "New workspace" opens the create dialog; managing
+ * workspaces belongs to ticket 08.
  */
 export const WorkspaceSidebarHeader: React.FC<Props> = ({
   workspaces,
   activeWorkspace,
   activating,
   onSelect,
+  onCreate,
 }) => {
   const { t } = useI18n();
   const check = <Icon name="check" className="h-4 w-4 flex-shrink-0 text-interactive-selection-foreground" />;
@@ -78,11 +81,71 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
               {emptyColumn}
               <span className="truncate">{t('sessions.sidebar.workspace.allProjects')}</span>
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={onCreate}
+              className="flex items-center gap-2"
+            >
+              <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
+                <Icon name="add" className="h-4 w-4" />
+              </span>
+              <span className="truncate">{t('sessions.sidebar.workspace.new')}</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <span className="ms-auto shrink-0 text-[0.6875rem] font-normal text-muted-foreground">
           {repoCountLabel(t, activeWorkspace.repos.length)}
         </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0"
+          aria-label={t('sessions.sidebar.workspace.new')}
+          onClick={onCreate}
+        >
+          <Icon name="add" className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * The feature's empty state: a card above the projects, which stay usable
+ * without a workspace. It is not the whole sidebar's empty state.
+ */
+export const WorkspaceEmptyCard: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-2 px-2.5 py-1">
+      <div className="flex min-h-8 items-center gap-2">
+        <span className="typography-ui-section font-semibold text-foreground">
+          {t('sessions.sidebar.workspace.menuLabel')}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="ms-auto size-7 shrink-0"
+          aria-label={t('sessions.sidebar.workspace.new')}
+          onClick={onCreate}
+        >
+          <Icon name="add" className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="rounded-lg bg-[var(--surface-elevated)] px-4 py-4 text-center">
+        <p className="typography-ui-section font-semibold text-foreground">
+          {t('sessions.sidebar.workspace.emptyTitle')}
+        </p>
+        <p className="mt-1 typography-meta text-muted-foreground">
+          {t('sessions.sidebar.workspace.emptyBody')}
+        </p>
+        <Button size="sm" className="mt-3" onClick={onCreate}>
+          <Icon name="add" className="h-3.5 w-3.5" />
+          {t('sessions.sidebar.workspace.create')}
+        </Button>
+        <p className="mt-2 typography-micro text-muted-foreground">
+          {t('sessions.sidebar.workspace.emptyNote')}
+        </p>
       </div>
     </div>
   );
