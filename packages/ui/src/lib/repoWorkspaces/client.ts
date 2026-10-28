@@ -74,7 +74,8 @@ const refWriteSchema = z.object({
 
 const permissionWriteSchema = z.object({
   status: z.enum(['written', 'unchanged', 'failed']).catch('unchanged'),
-  path: z.string().optional(),
+  // Null when the primary project is gone and there is no config path.
+  path: z.string().nullable().optional(),
   message: z.string().optional(),
 });
 

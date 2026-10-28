@@ -1670,7 +1670,7 @@ describe('workspace service: permission rules', () => {
     // The primary is always editable, even when the payload says otherwise.
     expect(result.workspace.editRules.some((rule) => rule.alias === 'api')).toBe(false);
     expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
-      ['api', true],
+      ['api', false],
       ['web', false],
       ['docs', true],
     ]);
@@ -1759,6 +1759,95 @@ describe('workspace service: permission rules', () => {
       references: { api: { path: path.resolve(api.path), description: 'API' } },
       permissions: configPermissionRules(api.path, 'allow'),
     });
+  });
+
+  it('keeps an identical pre-existing rule when the workspace is deleted', async () => {
+    const root = caseRoot('permission-duplicate-rule');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const userRule = { action: 'edit', resource: `${path.resolve(web.path)}/*`, effect: 'allow' };
+    const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {
+      permissions: [userRule],
+    }).file;
+    const settings = { projects: [api, web], workspaces: [], activeWorkspaceId: null };
+    const { service } = fixtureService(settings);
+
+    const created = await service.create(createPayloadWith(api, [web]));
+    expect(readConfigFile(file).permissions).toEqual([
+      userRule,
+      ...configPermissionRules(web.path, 'allow'),
+    ]);
+    settings.workspaces = [created.workspace];
+
+    const result = await service.remove(created.workspace.id, {});
+
+    expect(result.permissionRemoved).toBe(true);
+    // One occurrence per owned rule is removed, so the user's copy remains.
+    expect(readConfigFile(file).permissions).toEqual([userRule]);
+  });
+
+  it('keeps a secondary rule when its project leaves the catalog', async () => {
+    const root = caseRoot('permission-missing-project');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const file = writeJson(path.join(api.path, '.opencode', 'opencode.json'), {}).file;
+    const settings = { projects: [api, web], workspaces: [], activeWorkspaceId: null };
+    const { service } = fixtureService(settings);
+
+    const created = await service.create({
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true },
+        { projectId: 'web', alias: 'web', readOnly: true },
+      ],
+    });
+    const written = readConfigFile(file).permissions;
+    expect(written).toEqual(configPermissionRules(web.path, 'deny'));
+    settings.projects = [api];
+    settings.workspaces = [created.workspace];
+
+    const result = await service.update(created.workspace.id, {
+      name: 'Renamed Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true },
+        { projectId: 'web', alias: 'web', readOnly: true },
+      ],
+    });
+
+    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
+      ['api', false],
+      ['web', true],
+    ]);
+    expect(result.workspace.editRules).toEqual(storedPermissionRules(web.path, 'web', 'deny'));
+    expect(result.permissionWrites.status).toBe('unchanged');
+    expect(readConfigFile(file).permissions).toEqual(written);
+  });
+
+  it('stores the primary as editable whatever the payload or settings say', async () => {
+    const root = caseRoot('permission-primary-read-only');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', 'Web');
+    const stored = storedWorkspaceFor(api, [web], []);
+    stored.repos[0].readOnly = true;
+    const { service } = fixtureService({
+      projects: [api, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.update('ws_1', {
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true, readOnly: true },
+        { projectId: 'web', alias: 'web' },
+      ],
+    });
+
+    expect(result.workspace.repos.map((repo) => [repo.alias, repo.readOnly])).toEqual([
+      ['api', false],
+      ['web', false],
+    ]);
+    expect(result.workspace.editRules.some((rule) => rule.alias === 'api')).toBe(false);
   });
 
   it('removes only the rules it wrote when the workspace is deleted', async () => {

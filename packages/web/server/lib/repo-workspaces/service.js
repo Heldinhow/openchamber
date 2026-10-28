@@ -338,9 +338,16 @@ const resolveRepos = async ({
     throw invalid(fields);
   }
 
+  const primaryProjectId = resolved[primaryIndex].projectId;
+  // The session runs in the primary, so it is always editable; a payload or a
+  // hand-edited settings document cannot store it otherwise.
+  for (const repo of resolved) {
+    if (repo.projectId === primaryProjectId) repo.readOnly = false;
+  }
+
   return {
     repos: resolved,
-    primaryProjectId: resolved[primaryIndex].projectId,
+    primaryProjectId,
     projects: nextProjects,
   };
 };
@@ -767,12 +774,18 @@ export const createWorkspaceService = (dependencies) => {
    * repo whose folder is available. The primary is always editable because the
    * session runs in it.
    */
-  const permissionRulesFor = async (workspace, projectsById) => {
+  const permissionRulesFor = async (workspace, projectsById, previousRules = []) => {
     const rules = [];
     for (const repo of workspace.repos) {
       if (repo.projectId === workspace.primaryProjectId) continue;
       const project = projectsById.get(repo.projectId) ?? null;
-      if (!project) continue;
+      if (!project) {
+        // The catalog lost the project, not the repo: keep what this workspace
+        // already wrote for the alias so an edit does not drop its rule. A repo
+        // removed from `repos` is not visited, so its rules are not carried.
+        rules.push(...previousRules.filter((rule) => rule.alias === repo.alias));
+        continue;
+      }
 
       const configured = path.resolve(project.path);
       const resources = [configured];
@@ -822,7 +835,13 @@ export const createWorkspaceService = (dependencies) => {
         return { status: 'failed', path: targetPath, message: 'The "permissions" section must contain rule objects' };
       }
 
-      const kept = current.filter((entry) => !previousRules.some((rule) => samePermissionRule(entry, rule)));
+      // One occurrence per owned rule: an identical rule the user already had
+      // stays in place instead of being removed along with the app's copy.
+      const kept = [...current];
+      for (const rule of previousRules) {
+        const index = kept.findIndex((entry) => samePermissionRule(entry, rule));
+        if (index !== -1) kept.splice(index, 1);
+      }
       const next = [
         ...kept,
         ...desiredRules.map((rule) => ({ action: 'edit', resource: rule.resource, effect: rule.effect })),
@@ -1400,7 +1419,7 @@ export const createWorkspaceService = (dependencies) => {
 
     const retainedOwned = existing.createdRefs.filter((alias) => nextAliases.has(alias));
     workspace.createdRefs = [...new Set([...retainedOwned, ...toWrite.map((reference) => reference.alias)])];
-    workspace.editRules = await permissionRulesFor(workspace, nextProjectsById);
+    workspace.editRules = await permissionRulesFor(workspace, nextProjectsById, existing.editRules ?? []);
 
     const changes = {
       workspaces: stored.map((candidate) => (candidate.id === workspace.id ? workspace : candidate)),

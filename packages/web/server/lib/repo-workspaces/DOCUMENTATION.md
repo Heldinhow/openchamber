@@ -74,11 +74,12 @@ the target layer.
   unreadable config neither fails the request nor hides the other workspaces.
 - An expected alias is `owned` only when `createdRefs` lists it; ownership never
   changes the classification.
-- Every repo carries `readOnly` (default `false`); the primary is always
-  editable when rules are built, whatever the payload says. Each workspace also
-  stores `editRules`: the exact `{ alias, resource, effect }` entries it wrote
-  into the primary's `permissions`. Rules for an alias that left `repos` stay
-  stored so they can still be removed; they are never filtered on read.
+- Every repo carries `readOnly` (default `false`); the primary is stored as
+  editable (`readOnly: false`) whatever the payload or stored settings say, and
+  no rule is written for it. Each workspace also stores `editRules`: the exact
+  `{ alias, resource, effect }` entries it wrote into the primary's
+  `permissions`. Rules for an alias that left `repos` stay stored so they can
+  still be removed; they are never filtered on read.
 - A repo's stored `description` is the project label when non-empty. Otherwise
   create and edit derive it, in order, from `package.json` (`description`, then
   `name`), the first heading or non-empty line of `README.md`/`README.txt`/
@@ -92,10 +93,12 @@ the target layer.
   through `writeConfig`. A secondary repo gets `allow` (editable) or `deny`
   (`readOnly`) for `<configured>/*` and, when `realpath` differs, for
   `<canonical>/*`. Desired rules are appended after everything already in
-  `permissions`, because the last matching rule wins. Only entries exactly
-  equal to the workspace's previous `editRules` are removed; every other key
-  and rule is preserved. A `permissions` value that is not an array of objects
-  fails without a write.
+  `permissions`, because the last matching rule wins. Removal removes one
+  occurrence per previous `editRules` entry, so an identical rule the user
+  already had survives; every other key and rule is preserved. A secondary
+  whose project left the catalog keeps the rules already stored for its alias;
+  a repo removed from the workspace does not. A `permissions` value that is not
+  an array of objects fails without a write.
 - Create and edit persist the desired `editRules` before the config write and
   reconcile after the references are written, under the refs lock. When the
   primary changes, the previous rules are removed from the old primary's config
@@ -343,14 +346,16 @@ provenance the pending card needs.
 ### Why permission rules are appended and removed by exact match
 
 OpenCode applies the last matching rule, so the workspace's rules go at the end
-of `permissions`; anything before them stays untouched and user rules keep
-winning nothing. Ownership is `editRules`, which records exactly the triples
-this workspace wrote, so an edit or a deletion removes only those and leaves
-every other rule and key alone. Removal includes rules whose alias is gone from
-`repos`, which is why the parser does not filter `editRules` by the current
-aliases: filtering on read would strand those entries in the config. Both the
-configured path and its canonical `realpath` are written when they differ,
-because they are distinct resources to the permission check. Rejected
+of `permissions`; anything before them stays untouched. Ownership is
+`editRules`, which records exactly the triples this workspace wrote. Removal
+takes one occurrence per stored rule, so a user rule identical to an app rule is
+not deleted along with it, and includes rules whose alias is gone from `repos`,
+which is why the parser does not filter `editRules` by the current aliases:
+filtering on read would strand those entries in the config. A missing project
+keeps the rules already stored for its alias, so an edit does not silently drop
+a deny. Both the configured path and its canonical `realpath` are written when
+they differ, because they are distinct resources to the permission check.
+Rejected
 alternative: rewriting the whole `permissions` array from the workspace state,
 which would discard rules the user added by hand.
 

@@ -534,7 +534,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       // reported and the dialog keeps its normal close and refresh path.
       if (result.permissionWrites.status === 'failed') {
         toast.error(t('sessions.sidebar.workspace.permissionWriteFailed'), {
-          description: result.permissionWrites.path,
+          description: result.permissionWrites.path ?? undefined,
         });
       }
       onCreated();
