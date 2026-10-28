@@ -174,4 +174,19 @@ describe('RepoWorkspaceSessionMeta', () => {
     expect(group?.textContent).toContain('@docs');
     expect([...document.querySelectorAll('button')].some((element) => element.textContent?.startsWith('+'))).toBe(false);
   });
+
+  test('keeps a slot for the overflow control when the header is narrow', async () => {
+    // Only the `+N` control fits, as at 720px where the name takes the row.
+    stubMeasurements(40);
+    await render([
+      ref({ alias: 'web', status: 'ok', path: '/shop/web' }),
+      ref({ alias: 'api', status: 'ok', path: '/shop/api' }),
+      ref({ alias: 'ui', status: 'ok', path: '/shop/ui' }),
+    ]);
+
+    const group = document.querySelector('[role="group"]');
+    // The container keeps the control's slot (min-w-8, just over its 31.25px).
+    expect(group?.parentElement?.className).toContain('min-w-8');
+    expect([...document.querySelectorAll('button')].some((element) => element.textContent === '+3')).toBe(true);
+  });
 });

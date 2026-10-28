@@ -118,7 +118,9 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
         </span>
       </div>
       {refs.length > 0 ? (
-        <div ref={containerRef} className="relative flex min-w-0 flex-1 items-center overflow-hidden">
+        // `min-w-8` holds a slot just over the `+N` control's measured width, so
+        // a narrow header truncates the name instead of hiding the count.
+        <div ref={containerRef} className="relative flex min-w-8 flex-1 items-center overflow-hidden">
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden" role="group" aria-label={t('header.repoWorkspace.refsAria')}>
             {refs.slice(0, visible).map(renderRef)}
             {hiddenRefs.length > 0 ? (

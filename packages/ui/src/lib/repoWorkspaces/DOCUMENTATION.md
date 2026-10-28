@@ -106,7 +106,9 @@ workspace document and never stores one locally.
   its alias, path and non-`ok` label, so a hidden state is never silent. The
   row is measured from each entry's natural width plus the control, never
   capped by a fixed count, and without `ResizeObserver` the row clips in that
-  environment rather than collapsing.
+  environment rather than collapsing. The chips keep a minimum width just over
+  the `+N` control, so a narrow header truncates the name instead of leaving
+  the count with no room.
 
 ## Decisions
 
@@ -162,6 +164,8 @@ The entries are text at a user-controlled interface size, and the room left for
 them changes with the window, the workspace name and the retry. A fixed cap
 either clipped the third chip at 1100px or hid entries while space remained.
 Measuring each entry's natural width and the `+N` control, then recounting on
-resize, keeps every visible entry whole and makes the count honest. Rejected
-alternative: a fixed maximum number of chips, which still clipped at narrow
-widths.
+resize, keeps every visible entry whole and makes the count honest. The chips
+also keep a minimum width just over that control: without it, the name block
+took the meta's whole width at 720px and the control was rendered with no room
+to show. Rejected alternative: a fixed maximum number of chips, which still
+clipped at narrow widths.
