@@ -42,11 +42,14 @@ total, partial flag and branch divergence come from
   valid alias, two rows share an alias, or two rows point at the same folder.
   The server repeats these checks; the client check is what makes the block
   visible without a request.
-- The primary column is one radiogroup named by its legend. Only the checked
-  row is in the Tab order (`0`, or the first enabled row when none is checked);
-  ArrowDown/ArrowRight and ArrowUp/ArrowLeft move the selection and focus to the
-  next or previous row, Home and End to the first and last, both wrapping at the
-  ends. A submitting form has every row disabled and takes no keys.
+- The primary column is grouped by the fieldset's visually hidden legend and
+  claims no ARIA role of its own: the same fieldset holds alias inputs, paths,
+  remove buttons and the group error, so a radiogroup there would report all of
+  them as members. Only the checked row is in the Tab order (`0`, or the first
+  enabled row when none is checked); ArrowDown/ArrowRight and ArrowUp/ArrowLeft
+  move the selection and focus to the next or previous row, Home and End to the
+  first and last, both wrapping at the ends. A submitting form has every row
+  disabled and takes no keys.
 - Edit opens on the saved name, repos, aliases, primary and branch snapshots.
   A repo whose project is gone shows "Project not found" and keeps its id.
 - The create warning is part of the form, not a toast, and stays visible until
@@ -56,9 +59,12 @@ total, partial flag and branch divergence come from
   the discreet no-gain note instead.
 - The target is read again whenever the primary row's path changes and when an
   edit dialog opens. While that read is in flight the card shows no path at all,
-  never the folder plus a guessed `.opencode/opencode.json`. A failed read uses
-  the existing config-error block (path plus `configUnreadable`) and keeps save
-  disabled; it adds no other rule.
+  never the folder plus a guessed `.opencode/opencode.json`. Only a failure that
+  names an unreadable config (`RepoWorkspaceRequestError` with `configError`)
+  uses the config-error block (path plus `configUnreadable`) and keeps save
+  disabled. A network failure or a 500 leaves the target blank and save enabled:
+  the server still owns the answer, and a blip must not block the dialog until
+  it is reopened.
 - When the server reports `rootConfigPath`, both the create and edit warning
   cards say that this layer shadows the existing root config file and show that
   path in mono. It is a warning, not an error, and does not block save.
@@ -96,10 +102,13 @@ total, partial flag and branch divergence come from
   shows the failing alias (or the config path when it could not be read), and
   never claims the workspace was deleted. Only `removed: true` reloads the
   sidebar and closes. When the failure names an alias, the same block offers two
-  retries: delete again with `removeCreatedRefs: false`, leaving the reference
-  file untouched, or retry with `removeCreatedRefs: true` and
-  `confirmRefs: [alias]` to overwrite the hand-edited entry. Both keep the
-  submitting guard, and a second failure leaves the dialog as it was.
+  retries: delete again with `removeCreatedRefs: false`, which keeps every owned
+  reference and says so without naming one alias, or remove the reference file
+  entries with `removeCreatedRefs: true`. The second accumulates: each click
+  adds its alias to the dialog's confirmed set and sends the whole set, because
+  the server refuses the first hand-edited alias before writing anything. A
+  second failure names the next alias, and the delete completes once all of
+  them are confirmed. Both keep the submitting guard.
 - The review panel reads each repo on open and keeps a read failure in that
   repo's card; the other cards and the total stay. A repo without git is shown
   as "No git", a missing project as "Project not found", and neither becomes a
@@ -186,10 +195,13 @@ clean removal, so the dialog never has to undo an optimistic close.
 The user already decided to delete the workspace; the only thing left is whether
 the hand-edited reference goes with it. A checkbox after the failure would repeat
 the question the dialog already asked, and a second confirmation modal would hide
-the alias being decided on. The two buttons name the outcome: one leaves the
-reference file untouched, the other overwrites that entry. Both reuse the
-request and the submitting guard, so a second failure stays in the same block.
-Rejected alternative: a new confirmation dialog inside the existing one.
+the alias being decided on. The two buttons name the outcome: one leaves every
+owned reference file untouched, the other overwrites the entries the user
+confirmed. Both reuse the request and the submitting guard. Each "remove anyway"
+sends the aliases confirmed so far, because the server stops at the first
+unedited entry it meets and writes nothing; sending only the latest alias would
+alternate between two edited entries forever. Rejected alternative: a new
+confirmation dialog inside the existing one.
 
 ### Why every workspace carries its reference state
 

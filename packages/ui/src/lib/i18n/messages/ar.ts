@@ -685,7 +685,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteAction": "حذف",
   "sessions.sidebar.workspace.deleteFailed": "تعذّر حذف مساحة العمل.",
   "sessions.sidebar.workspace.deleteFailedAlias": "تعذّر إزالة @{alias}. لم يُحذف شيء.",
-  "sessions.sidebar.workspace.deleteWithoutRefs": "حذف دون إزالة @{alias}",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "حذف دون إزالة المراجع",
   "sessions.sidebar.workspace.deleteOverwriteRef": "إزالة @{alias} على أي حال",
   "sessions.sidebar.workspace.discardedSingle": "تم تجاهل {count} مساحة عمل",
   "sessions.sidebar.workspace.discardedPlural": "تم تجاهل {count} مساحات عمل",

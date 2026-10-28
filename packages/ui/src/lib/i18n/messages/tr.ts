@@ -652,7 +652,7 @@ export const dict = {
   "sessions.sidebar.workspace.deleteAction": "Sil",
   "sessions.sidebar.workspace.deleteFailed": "Çalışma alanı silinemedi.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias} kaldırılamadı. Hiçbir şey silinmedi.",
-  "sessions.sidebar.workspace.deleteWithoutRefs": "@{alias} kaldırılmadan sil",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Başvuruları kaldırmadan sil",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Yine de @{alias} kaldır",
   "sessions.sidebar.workspace.discardedSingle": "{count} çalışma alanı yok sayıldı",
   "sessions.sidebar.workspace.discardedPlural": "{count} çalışma alanı yok sayıldı",

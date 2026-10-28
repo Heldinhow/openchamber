@@ -186,8 +186,45 @@ describe('delete workspace question', () => {
     expect(deleted).toBe(0);
     expect(closed).toBe(0);
     expect(document.body.textContent).toContain("Couldn't remove @web. Nothing was deleted.");
-    expect(buttonLabels()).toContain('Delete without removing @web');
+    expect(buttonLabels()).toContain('Delete without removing the references');
     expect(buttonLabels()).toContain('Remove @web anyway');
+  });
+
+  test('confirming edited aliases one at a time accumulates until the delete succeeds', async () => {
+    const calls: Array<[string, boolean, string[]?]> = [];
+    let closed = 0;
+    let deleted = 0;
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <DeleteDialog
+          open
+          workspace={workspaceWith({ createdRefs: ['api', 'web'] })}
+          onOpenChange={(open) => { if (!open) closed += 1; }}
+          onDeleted={() => { deleted += 1; }}
+          deleteWorkspace={async (id, removeRefs, confirmRefs) => {
+            calls.push(confirmRefs ? [id, removeRefs, confirmRefs] : [id, removeRefs]);
+            if (calls.length === 1) return deleteResult({ removed: false, failedAlias: 'api' });
+            if (calls.length === 2) return deleteResult({ removed: false, failedAlias: 'web' });
+            return deleteResult({});
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    await clickButton('Delete');
+    expect(document.body.textContent).toContain("Couldn't remove @api. Nothing was deleted.");
+    await clickButton('Remove @api anyway');
+    expect(document.body.textContent).toContain("Couldn't remove @web. Nothing was deleted.");
+    await clickButton('Remove @web anyway');
+
+    expect(calls).toEqual([
+      ['ws_1', true],
+      ['ws_1', true, ['api']],
+      ['ws_1', true, ['api', 'web']],
+    ]);
+    expect(deleted).toBe(1);
+    expect(closed).toBe(1);
   });
 
   test('deleting without removing the reference retries with removeCreatedRefs false and closes', async () => {
@@ -211,7 +248,7 @@ describe('delete workspace question', () => {
     ));
 
     await clickButton('Delete');
-    await clickButton('Delete without removing @web');
+    await clickButton('Delete without removing the references');
 
     expect(calls).toEqual([['ws_1', true], ['ws_1', false]]);
     expect(deleted).toBe(1);
@@ -260,7 +297,7 @@ describe('delete workspace question', () => {
     await clickButton('Delete');
 
     expect(document.body.textContent).toContain("Couldn't delete the workspace.");
-    expect(buttonLabels()).not.toContain('Delete without removing @web');
+    expect(buttonLabels()).not.toContain('Delete without removing the references');
     expect(buttonLabels()).not.toContain('Remove @web anyway');
   });
 

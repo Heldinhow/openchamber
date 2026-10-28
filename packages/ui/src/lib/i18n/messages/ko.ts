@@ -732,7 +732,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteAction": "삭제",
   "sessions.sidebar.workspace.deleteFailed": "워크스페이스를 삭제하지 못했습니다.",
   "sessions.sidebar.workspace.deleteFailedAlias": "@{alias}을(를) 제거하지 못했습니다. 아무것도 삭제되지 않았습니다.",
-  "sessions.sidebar.workspace.deleteWithoutRefs": "@{alias}을(를) 남기고 삭제",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "참조를 남기고 삭제",
   "sessions.sidebar.workspace.deleteOverwriteRef": "그래도 @{alias} 제거",
   "sessions.sidebar.workspace.discardedSingle": "워크스페이스 {count}개를 버렸습니다",
   "sessions.sidebar.workspace.discardedPlural": "워크스페이스 {count}개를 버렸습니다",

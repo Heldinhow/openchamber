@@ -245,7 +245,6 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   const contentId = React.useId();
   const importErrorId = React.useId();
   const primaryErrorId = React.useId();
-  const primaryGroupLabelId = React.useId();
 
   const registeredPaths = React.useMemo(() => new Set(
     projects.map((project) => normalizePath(project.path)).filter((path): path is string => Boolean(path)),
@@ -288,8 +287,11 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       })
       .catch((error) => {
         if (!active) return;
+        // Only the unreadable-config answer names a file the user must fix.
+        // Any other failure leaves the target blank and Save enabled; the
+        // server still answers the request if the read was a blip.
         const targetError = error instanceof RepoWorkspaceRequestError ? error.configError : null;
-        setConfigError(targetError ?? { path: primaryPath, message: '' });
+        setConfigError(targetError);
       });
     return () => { active = false; };
   }, [primaryPath, fetchConfigTarget]);
@@ -708,7 +710,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       ) : null}
 
       <fieldset className="min-w-0" aria-describedby={primaryError ? primaryErrorId : undefined}>
-        <legend id={primaryGroupLabelId} className="sr-only">{t('sessions.sidebar.workspace.primary')}</legend>
+        <legend className="sr-only">{t('sessions.sidebar.workspace.primary')}</legend>
         <div className={`grid ${ROW_GRID_COLS} items-center gap-2 pb-1 text-[0.6875rem] uppercase tracking-wide text-muted-foreground`}>
           <span>{t('sessions.sidebar.workspace.primaryColumn')}</span>
           <span>{t('sessions.sidebar.workspace.aliasColumn')}</span>
@@ -716,8 +718,6 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           <span>{t('sessions.sidebar.workspace.branchColumn')}</span>
         </div>
         <div
-          role="radiogroup"
-          aria-labelledby={primaryGroupLabelId}
           className="flex flex-col gap-2"
           onKeyDown={handlePrimaryKeyDown}
         >

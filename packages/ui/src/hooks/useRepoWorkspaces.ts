@@ -24,6 +24,30 @@ type RepoWorkspaceRefsUpdatedDetail = {
   refsError: { path: string; message: string } | null;
 };
 
+/** The fields a settings save holds, so a resolved list can be compared to it. */
+type WorkspaceListEntry = {
+  id: string;
+  name: string;
+  primaryProjectId: string;
+  repos: readonly { projectId: string; alias: string; description: string; branch: string }[];
+  createdRefs: readonly string[];
+};
+
+const workspaceListSignature = (workspaces: readonly WorkspaceListEntry[]): string => JSON.stringify(
+  workspaces.map((workspace) => ({
+    id: workspace.id,
+    name: workspace.name,
+    primaryProjectId: workspace.primaryProjectId,
+    repos: workspace.repos.map((repo) => ({
+      projectId: repo.projectId,
+      alias: repo.alias,
+      description: repo.description,
+      branch: repo.branch,
+    })),
+    createdRefs: workspace.createdRefs,
+  })),
+);
+
 type State = {
   status: RepoWorkspacesStatus;
   workspaces: RepoWorkspaceResolved[];
@@ -59,6 +83,12 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
   const selectionGenerationRef = React.useRef(0);
   const settingsSignatureRef = React.useRef<string | null>(null);
   const activationInFlightRef = React.useRef(false);
+  const heldWorkspacesSignatureRef = React.useRef<string | null>(null);
+  const pendingSettingsReadRef = React.useRef(false);
+
+  React.useEffect(() => {
+    heldWorkspacesSignatureRef.current = workspaceListSignature(state.workspaces);
+  }, [state.workspaces]);
 
   const load = React.useCallback(async (options?: { silent?: boolean }): Promise<RepoWorkspacesLoadResult> => {
     if (!enabled) return 'failed';
@@ -103,6 +133,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       selectionGenerationRef.current += 1;
       settingsSignatureRef.current = null;
       activationInFlightRef.current = false;
+      pendingSettingsReadRef.current = false;
       setState(initialState(true));
       void load();
     });
@@ -113,7 +144,15 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       if (!('workspaces' in settings) && !('activeWorkspaceId' in settings)) return;
       // A pointer written elsewhere while this hook's own switch is in flight
       // may predate the activation, which reads after it and wins.
-      if (activationInFlightRef.current) return;
+      if (activationInFlightRef.current) {
+        // A list change does not: the route owns the list, so read it once the
+        // switch settles instead of losing the other window's work.
+        const workspaces = settings.workspaces ?? null;
+        if (workspaces && workspaceListSignature(workspaces) !== heldWorkspacesSignatureRef.current) {
+          pendingSettingsReadRef.current = true;
+        }
+        return;
+      }
       // The pointer is not applied here: pairing the new name with the previous
       // workspace's references is the empty-chips flash. The read below answers
       // with the pointer and its reference states together.
@@ -172,6 +211,10 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       if (selection === selectionGenerationRef.current) {
         activationInFlightRef.current = false;
         setState((current) => ({ ...current, activating: false }));
+        if (pendingSettingsReadRef.current) {
+          pendingSettingsReadRef.current = false;
+          void load({ silent: true });
+        }
       }
     }
   }, [enabled, load]);

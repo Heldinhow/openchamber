@@ -198,6 +198,103 @@ describe('useRepoWorkspaces', () => {
     expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
   });
 
+  test('a list changed elsewhere during a switch is read once the switch settles', async () => {
+    let reads = 0;
+    fetchResponse = async () => {
+      reads += 1;
+      return Response.json(documentPayload);
+    };
+    await act(async () => root.render(<Probe />));
+    expect(reads).toBe(1);
+    expect(state()).toMatchObject({ active: 'ws_1', ids: ['ws_1', 'ws_2'] });
+
+    const updatedPayload = {
+      ...documentPayload,
+      activeWorkspaceId: 'ws_2',
+      refs: [docsRef],
+      workspaces: [
+        documentPayload.workspaces[0],
+        { ...documentPayload.workspaces[1], name: 'Docs renamed' },
+        {
+          id: 'ws_3',
+          name: 'New',
+          primaryProjectId: 'p_new',
+          repos: [{ projectId: 'p_new', alias: 'new', description: 'new', branch: 'main', missing: false, project: null }],
+          createdRefs: [],
+          refs: [],
+          refsError: null,
+        },
+      ],
+    };
+
+    let resolveSwitchRead: (response: Response) => void = () => undefined;
+    const switchRead = new Promise<Response>((resolve) => { resolveSwitchRead = resolve; });
+    fetchResponse = async (input) => {
+      if (!String(input).endsWith('/api/workspaces')) return Response.json({ activeWorkspaceId: 'ws_2' });
+      reads += 1;
+      return reads === 2 ? switchRead : Response.json(updatedPayload);
+    };
+
+    await pressSwitch();
+    expect(reads).toBe(2);
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('openchamber:settings-synced', {
+        detail: { settings: { workspaces: updatedPayload.workspaces, activeWorkspaceId: 'ws_2' } },
+      }));
+    });
+    // The pointer still waits for the switch's read; the list change is queued.
+    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
+
+    await act(async () => {
+      resolveSwitchRead(Response.json(documentPayload));
+    });
+    await act(async () => {});
+
+    expect(reads).toBe(3);
+    expect(state()).toMatchObject({ ids: ['ws_1', 'ws_2', 'ws_3'], active: 'ws_2', name: 'Docs renamed' });
+  });
+
+  test('a pointer-only settings event during a switch does not flash an empty reference list', async () => {
+    let reads = 0;
+    fetchResponse = async () => {
+      reads += 1;
+      return Response.json(documentPayload);
+    };
+    await act(async () => root.render(<Probe />));
+
+    let resolveSwitchRead: (response: Response) => void = () => undefined;
+    const switchRead = new Promise<Response>((resolve) => { resolveSwitchRead = resolve; });
+    fetchResponse = async (input) => {
+      if (!String(input).endsWith('/api/workspaces')) return Response.json({ activeWorkspaceId: 'ws_2' });
+      reads += 1;
+      return switchRead;
+    };
+
+    await pressSwitch();
+    expect(reads).toBe(2);
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('openchamber:settings-synced', {
+        detail: { settings: { activeWorkspaceId: 'ws_1' } },
+      }));
+    });
+    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
+
+    await act(async () => {
+      resolveSwitchRead(Response.json({
+        ...documentPayload,
+        activeWorkspaceId: 'ws_2',
+        refs: [docsRef],
+      }));
+    });
+
+    // A pointer-only change queues no extra read.
+    expect(reads).toBe(2);
+    expect(state()).toMatchObject({ status: 'ready', active: 'ws_2', name: 'Docs', refs: ['docs'] });
+    expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
+  });
+
   test('a failed switch read applies the activated pointer with that workspace\'s last refs', async () => {
     fetchResponse = async () => Response.json(documentPayload);
     await act(async () => root.render(<Probe />));

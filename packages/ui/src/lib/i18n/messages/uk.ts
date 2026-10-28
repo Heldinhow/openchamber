@@ -741,7 +741,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteAction": "Видалити",
   "sessions.sidebar.workspace.deleteFailed": "Не вдалося видалити робочий простір.",
   "sessions.sidebar.workspace.deleteFailedAlias": "Не вдалося видалити @{alias}. Нічого не видалено.",
-  "sessions.sidebar.workspace.deleteWithoutRefs": "Видалити, не видаляючи @{alias}",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Видалити, не видаляючи посилання",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Усе одно видалити @{alias}",
   "sessions.sidebar.workspace.discardedSingle": "{count} робочий простір відкинуто",
   "sessions.sidebar.workspace.discardedPlural": "{count} робочих просторів відкинуто",

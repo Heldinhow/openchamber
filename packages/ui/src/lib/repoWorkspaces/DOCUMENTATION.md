@@ -42,7 +42,10 @@ workspace document and never stores one locally.
   a late response from another runtime or from before a selection can neither
   replace the list nor re-activate the old workspace. A settings-synced pointer
   from another window only triggers that read, and is ignored while this hook's
-  own activation is in flight.
+  own activation is in flight. A settings payload whose workspace list differs
+  from the one this hook holds queues one silent read after the activation
+  settles, so another window's create, rename or delete is not lost; the pointer
+  in that payload is still never applied directly.
 - Create, update and retry answers are parsed at the boundary. A 4xx is a
   `RepoWorkspaceRequestError` carrying the field key, config path or conflict
   alias the dialog puts inline; a failed reference write is a successful create
@@ -70,7 +73,8 @@ workspace document and never stores one locally.
   complete view until the read reports the new workspace and its references.
   A failed switch read applies the activated pointer from the last resolved
   document, with that workspace's own pair, and keeps the `error` status; it
-  never shows the old workspace or a fabricated empty list.
+  never shows the old workspace, and it never shows a fabricated empty list
+  while the activated workspace is in the last resolved document.
 - A retry names the aliases it retries and may carry `confirmRefs`; retrying
   from the pending card confirms the alias the user clicked, so a user-edited
   entry can be written instead of answering `409` forever.
@@ -97,8 +101,8 @@ workspace document and never stores one locally.
   hidden entry, `ok` or not, is counted in a `+N` control whose tooltip lists
   its alias, path and non-`ok` label, so a hidden state is never silent. The
   row is measured from each entry's natural width plus the control, never
-  capped by a fixed count, and without `ResizeObserver` the whole row stays
-  visible rather than guessing.
+  capped by a fixed count, and without `ResizeObserver` the row clips in that
+  environment rather than collapsing.
 
 ## Decisions
 

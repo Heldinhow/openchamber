@@ -166,15 +166,23 @@ const RepoWorkspaceDeleteContent: React.FC<DeleteContentProps> = ({
   const [removeRefs, setRemoveRefs] = React.useState(ownedAliases.length > 0);
   const [deleting, setDeleting] = React.useState(false);
   const [failure, setFailure] = React.useState<DeleteFailure | null>(null);
+  // The server refuses the first hand-edited owned alias it meets, so each
+  // "remove anyway" must carry every alias already confirmed in this dialog.
+  const confirmedRefs = React.useRef(new Set<string>());
   const aliasList = ownedAliases.map((alias) => `@${alias}`).join(', ');
   const failedAlias = failure?.alias ?? null;
 
-  const submit = async (nextRemoveRefs = removeRefs, confirmRefs?: string[]) => {
+  const submit = async (nextRemoveRefs = removeRefs) => {
     if (deleting) return;
+    const confirmRefs = nextRemoveRefs ? Array.from(confirmedRefs.current) : [];
     setDeleting(true);
     setFailure(null);
     try {
-      const result = await deleteWorkspace(workspace.id, nextRemoveRefs, confirmRefs);
+      const result = await deleteWorkspace(
+        workspace.id,
+        nextRemoveRefs,
+        confirmRefs.length > 0 ? confirmRefs : undefined,
+      );
       if (result.removed) {
         onDeleted();
         onClose();
@@ -241,12 +249,15 @@ const RepoWorkspaceDeleteContent: React.FC<DeleteContentProps> = ({
           {failedAlias ? (
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <Button variant="ghost" size="sm" onClick={() => void submit(false)} disabled={deleting}>
-                {t('sessions.sidebar.workspace.deleteWithoutRefs', { alias: failedAlias })}
+                {t('sessions.sidebar.workspace.deleteWithoutRefs')}
               </Button>
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => void submit(true, [failedAlias])}
+                onClick={() => {
+                  confirmedRefs.current.add(failedAlias);
+                  void submit(true);
+                }}
                 disabled={deleting}
               >
                 {t('sessions.sidebar.workspace.deleteOverwriteRef', { alias: failedAlias })}

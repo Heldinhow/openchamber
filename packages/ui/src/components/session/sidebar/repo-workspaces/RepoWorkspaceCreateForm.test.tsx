@@ -345,7 +345,7 @@ describe('workspace create form', () => {
     expect(error?.textContent).toBe('Add at least one folder.');
   });
 
-  test('the primary column is one radiogroup with a single Tab stop', async () => {
+  test('the primary column is grouped by its fieldset legend with a single Tab stop', async () => {
     await act(async () => root.render(
       <I18nProvider>
         <Form
@@ -359,11 +359,14 @@ describe('workspace create form', () => {
       </I18nProvider>,
     ));
 
-    const group = document.querySelector('[role="radiogroup"]');
-    expect(group !== null).toBe(true);
-    const legend = document.getElementById(group!.getAttribute('aria-labelledby') ?? '');
+    const fieldset = document.querySelector('fieldset');
+    expect(fieldset !== null).toBe(true);
+    const legend = fieldset!.querySelector('legend');
     expect(legend?.textContent).toBe('Primary repository');
-    expect(radios()).toHaveLength(2);
+    // The fieldset holds inputs and buttons too, so it must not claim to be a
+    // radiogroup; the native legend names it and the radios live inside it.
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(fieldset!.querySelectorAll('[role="radio"]')).toHaveLength(2);
     expect(radios()[0].tabIndex).toBe(0);
     expect(radios()[1].tabIndex).toBe(-1);
   });
@@ -857,6 +860,29 @@ describe('workspace create form', () => {
     });
 
     expect(document.body.textContent).toContain('/canonical/repos/api/.opencode/opencode.json');
+  });
+
+  test('a transport failure reading the target leaves Create enabled', async () => {
+    const fetchTarget = async (): Promise<RepoWorkspaceConfigTarget> => {
+      throw new Error('offline');
+    };
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          fetchConfigTarget={fetchTarget}
+          initialDraft={draft}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).not.toContain('Couldn\'t read this configuration file.');
+    expect(document.body.textContent).not.toContain('/repos/api/.opencode/opencode.json');
+    expect(document.querySelector<HTMLButtonElement>('form button[type="submit"]')?.disabled).toBe(false);
   });
 
   test('shows the config error and blocks saving when the target cannot be read', async () => {

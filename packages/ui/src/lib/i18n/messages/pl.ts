@@ -573,7 +573,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.deleteAction": "Usuń",
   "sessions.sidebar.workspace.deleteFailed": "Nie udało się usunąć przestrzeni roboczej.",
   "sessions.sidebar.workspace.deleteFailedAlias": "Nie udało się usunąć @{alias}. Nic nie zostało usunięte.",
-  "sessions.sidebar.workspace.deleteWithoutRefs": "Usuń, zostawiając @{alias}",
+  "sessions.sidebar.workspace.deleteWithoutRefs": "Usuń, zostawiając odwołania",
   "sessions.sidebar.workspace.deleteOverwriteRef": "Mimo to usuń @{alias}",
   "sessions.sidebar.workspace.discardedSingle": "Odrzucono {count} przestrzeń roboczą",
   "sessions.sidebar.workspace.discardedPlural": "Odrzucono {count} przestrzeni roboczych",
