@@ -46,6 +46,8 @@ type Props = {
   searchMatchCount: number;
   collapseAll: () => void;
   expandAll: () => void;
+  /** A workspace owns the repo order; sort, grouping and single-project display do not apply. */
+  workspaceActive: boolean;
 };
 
 /**
@@ -140,6 +142,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     searchMatchCount,
     collapseAll,
     expandAll,
+    workspaceActive,
   } = props;
 
   const rowRef = React.useRef<HTMLDivElement>(null);
@@ -181,8 +184,8 @@ export function SidebarHeader(props: Props): React.ReactNode {
   const projectDisplayMode = useSessionDisplayStore((state) => state.projectDisplayMode);
   const setProjectDisplayMode = useSessionDisplayStore((state) => state.setProjectDisplayMode);
   // VS Code always groups under its workspace.
-  const timeGrouping = showProjectDisplayControls && sidebarGrouping === 'time';
-  const isSingleProjectMode = showProjectDisplayControls && projectDisplayMode === 'single';
+  const timeGrouping = showProjectDisplayControls && !workspaceActive && sidebarGrouping === 'time';
+  const isSingleProjectMode = showProjectDisplayControls && !workspaceActive && projectDisplayMode === 'single';
 
   // One choice per line, rarely touched orders behind submenus that name the
   // current choice, so the menu stays short: selection first, then the view,
@@ -228,7 +231,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
   ];
   // One view: works under their projects, or every project's works in one
   // list by time, which has no project headers to sort.
-  if (showProjectDisplayControls) {
+  if (showProjectDisplayControls && !workspaceActive) {
     displayMenuSections.push(choiceSubmenu('sessions.sidebar.header.listGrouping.label', [
       ['project', 'sessions.sidebar.header.listGrouping.project'],
       ['time', 'sessions.sidebar.header.listGrouping.time'],
@@ -238,7 +241,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     }));
   }
   displayMenuSections.push(<>
-    {!timeGrouping ? choiceSubmenu('sessions.sidebar.header.actions.sortProjects', [
+    {!timeGrouping && !workspaceActive ? choiceSubmenu('sessions.sidebar.header.actions.sortProjects', [
       ['manual', 'sessions.sidebar.header.projectSort.manual'],
       ['a-z', 'sessions.sidebar.header.projectSort.aToZ'],
       ['z-a', 'sessions.sidebar.header.projectSort.zToA'],
@@ -248,7 +251,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
       setProjectSortOrder(order);
       void updateDesktopSettings({ sidebarProjectSortOrder: order });
     }) : null}
-    {showProjectDisplayControls ? choiceSubmenu('sessions.sidebar.header.projectDisplay.label', [
+    {showProjectDisplayControls && !workspaceActive ? choiceSubmenu('sessions.sidebar.header.projectDisplay.label', [
       ['all', 'sessions.sidebar.header.projectDisplay.all'],
       ['single', 'sessions.sidebar.header.projectDisplay.single'],
     ] as const, projectDisplayMode, (mode) => {

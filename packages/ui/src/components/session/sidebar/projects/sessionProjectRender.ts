@@ -1,5 +1,16 @@
 import type { SessionGroup } from '../types';
 
+/** Workspace metadata a repo header carries; plain projects have none. */
+export type ProjectSectionWorkspace = {
+  alias: string;
+  primary: boolean;
+  showSessions: boolean;
+  showNewSession: boolean;
+  branchChip: string | null;
+  git: { isRepo: boolean | null; changes: number | null } | null;
+  missing: boolean;
+};
+
 export type ProjectSection = {
   project: {
     id: string;
@@ -11,6 +22,7 @@ export type ProjectSection = {
     iconBackground?: string;
   };
   groups: SessionGroup[];
+  workspace?: ProjectSectionWorkspace;
 };
 
 export const selectRenderedProjectSections = (

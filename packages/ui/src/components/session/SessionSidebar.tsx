@@ -22,6 +22,7 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { SidebarHeader } from './sidebar/shell/SidebarHeader';
 import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
+import { WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
 import type { SessionProjectListProps } from './sidebar/projects/SessionProjectScroller';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -55,6 +56,7 @@ import {
   type StartSessionWorktreeMenuLoadArgs,
 } from './sidebar/sessionWorktreeMenu';
 import { resolveProjectRef } from '@/lib/worktreeSessionCreator';
+import { useRepoWorkspaces } from '@/hooks/useRepoWorkspaces';
 
 const PROJECT_ACTIVE_SESSION_STORAGE_KEY = 'oc.sessions.activeSessionByProject';
 const activeSessionByProjectSchema = z.record(z.string(), z.string().min(1).catch(''));
@@ -174,6 +176,10 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const gitBranches = useGitAllBranches(isVisible);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+  // Mobile and VS Code have no `/api/workspaces` route in this version: the
+  // feature stays absent instead of breaking the sidebar.
+  const repoWorkspaces = useRepoWorkspaces({ enabled: !isVSCode && !mobileVariant && !phone });
+  const workspaceActive = repoWorkspaces.activeWorkspace !== null;
   // sessionAttentionStates removed — now using notification-store directly in SessionNodeItem
   const worktreeMetadata = useSessionUIStore((state) => state.worktreeMetadata);
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
@@ -431,6 +437,15 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     sessionEvents.requestDirectoryDialog();
   }, []);
 
+  const selectWorkspace = repoWorkspaces.selectWorkspace;
+  const handleSelectWorkspace = React.useCallback(async (id: string | null) => {
+    try {
+      await selectWorkspace(id);
+    } catch {
+      toast.error(t('sessions.sidebar.workspace.switchFailed'));
+    }
+  }, [selectWorkspace, t]);
+
 
   const normalizedProjects = React.useMemo(() => {
     return projects.flatMap((project) => {
@@ -637,9 +652,14 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         isVSCode,
         worktreeMetadata,
         gitBranches,
+        gitRepoStatus,
         projectRepoStatus,
         projectRootBranches,
         lastRepoStatus: lastRepoStatusRef.current,
+      }}
+      workspace={{
+        workspaces: repoWorkspaces.status === 'ready' ? repoWorkspaces.workspaces : [],
+        activeWorkspaceId: repoWorkspaces.status === 'ready' ? repoWorkspaces.activeWorkspaceId : null,
       }}
       view={{
         isVisible,
@@ -724,9 +744,25 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         searchMatchCount={searchMatchCount}
         collapseAll={projectView.actions.collapseAll}
         expandAll={projectView.actions.expandAll}
+        workspaceActive={workspaceActive}
       />
 
-      {collection}
+      {repoWorkspaces.status === 'loading' ? (
+        <WorkspaceSidebarSkeleton />
+      ) : (
+        <>
+          {repoWorkspaces.status === 'error' ? <WorkspaceSidebarError onRetry={repoWorkspaces.reload} /> : null}
+          {repoWorkspaces.activeWorkspace ? (
+            <WorkspaceSidebarHeader
+              workspaces={repoWorkspaces.workspaces}
+              activeWorkspace={repoWorkspaces.activeWorkspace}
+              activating={repoWorkspaces.activating}
+              onSelect={handleSelectWorkspace}
+            />
+          ) : null}
+          {collection}
+        </>
+      )}
 
       <SidebarFooter
         onOpenSettings={handleOpenSettings}

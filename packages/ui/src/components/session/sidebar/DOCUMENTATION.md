@@ -133,6 +133,12 @@ reads sessions and spaces only in `recent` and only while its list is shown
 hold the order under the pointer the way the sidebar does. Search ranking keeps its own order; the
 command palette lists projects only for a query, so it does not use it.
 
+## Workspace filter
+
+A workspace (`lib/repoWorkspaces`) narrows the sidebar to its repos. `projects/repoWorkspaceSections.ts` is the only filter: it takes the resolved workspaces, the project catalog, sessions already owned by each project, the active pointer and the existing per-project git status, and returns one section per repo. Without an active workspace it passes the current grouping through unchanged; while a workspace is active the section order is the workspace's `repos` order, the primary alone lists sessions and offers "+ session", and a secondary row shows its alias, its saved branch snapshot (only when it differs from `main`), the live git state and its change count. A repo whose project left the catalog keeps its row as a missing project, with Relocate opening the existing add-project dialog; the workspace and the other repos stay usable. Removal and relocation of the repo belong to the workspace edit dialog (ticket 07).
+
+The UI does not filter again. `SessionProjectCollection` scopes ordered, archived and root sessions to the sections' sessions, so zones, prefetch, drafts and PR discovery cannot list a hidden repo's work; Chats and the single-project/list-by-time views do not apply while a workspace is active. The workspace header (name, repo count, menu with every workspace and "All projects") is `shell/WorkspaceSidebarHeader.tsx`; choosing the active workspace or "All projects" clears the pointer. Loading shows three skeleton lines, a failed read shows Retry above an otherwise usable project list, and mobile and VS Code never mount the feature because the route is not part of their runtime.
+
 ## The phone
 
 Hosted mobile and Capacitor list the same works as the desktop. The phone's

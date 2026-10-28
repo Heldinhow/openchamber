@@ -25,6 +25,7 @@ const baseProps = {
   searchMatchCount: 0,
   collapseAll: () => undefined,
   expandAll: () => undefined,
+  workspaceActive: false,
 };
 
 function StatefulHeader({

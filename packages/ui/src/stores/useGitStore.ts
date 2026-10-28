@@ -1637,7 +1637,7 @@ export const useGitAllBranches = (enabled = true) => {
 
 /** `enabled: false` holds the last result instead of following the store. */
 export const useGitRepoStatusMap = (directories: string[], enabled = true) => {
-  const cacheRef = React.useRef<Map<string, { isGitRepo: boolean | null; branch: string | null }>>(new Map());
+  const cacheRef = React.useRef<Map<string, { isGitRepo: boolean | null; branch: string | null; changes: number | null }>>(new Map());
   return useGitStore((state) => {
     const prev = cacheRef.current;
     if (!enabled) return prev;
@@ -1646,14 +1646,23 @@ export const useGitRepoStatusMap = (directories: string[], enabled = true) => {
       for (const dir of directories) {
         const d = state.directories.get(dir);
         const pv = prev.get(dir);
-        if (!pv || (d?.isGitRepo ?? null) !== pv.isGitRepo || (d?.status?.current ?? null) !== pv.branch) { same = false; break; }
+        if (
+          !pv
+          || (d?.isGitRepo ?? null) !== pv.isGitRepo
+          || (d?.status?.current ?? null) !== pv.branch
+          || (d?.status ? d.status.files.length : null) !== pv.changes
+        ) { same = false; break; }
       }
     }
     if (same) return prev;
-    const result = new Map<string, { isGitRepo: boolean | null; branch: string | null }>();
+    const result = new Map<string, { isGitRepo: boolean | null; branch: string | null; changes: number | null }>();
     for (const dir of directories) {
       const d = state.directories.get(dir);
-      result.set(dir, { isGitRepo: d?.isGitRepo ?? null, branch: d?.status?.current ?? null });
+      result.set(dir, {
+        isGitRepo: d?.isGitRepo ?? null,
+        branch: d?.status?.current ?? null,
+        changes: d?.status ? d.status.files.length : null,
+      });
     }
     cacheRef.current = result;
     return result;

@@ -11,12 +11,15 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Icon } from '@/components/icon/Icon';
+import { Button } from '@/components/ui/button';
 import { cn, getRevealLabelKey } from '@/lib/utils';
 import { PROJECT_ICON_MAP, resolveProjectColor, ProjectIconImage } from '@/lib/projectMeta';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
+import { sessionEvents } from '@/lib/sessionEvents';
 import { CrossfadeZoneHeader } from './CrossfadeZoneHeaders';
 import { useProjectFolderMissing } from './useProjectFolderMissing';
+import type { ProjectSectionWorkspace } from './sessionProjectRender';
 
 type ProjectIdentityProps = {
   id: string;
@@ -31,6 +34,7 @@ type ProjectHeaderIdentityProps = ProjectIdentityProps & {
   isCollapsed?: boolean;
   alwaysShowActions?: boolean;
   labelClassName?: string;
+  workspace?: ProjectSectionWorkspace;
 };
 
 type ProjectPickerOption = ProjectIdentityProps & { projectDescription: string };
@@ -45,7 +49,9 @@ const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
   isCollapsed,
   alwaysShowActions = false,
   labelClassName,
+  workspace,
 }) => {
+  const { t } = useI18n();
   const { currentTheme } = useThemeSystem();
   const projectIconName = projectIcon ? PROJECT_ICON_MAP[projectIcon] : null;
   const iconColor = resolveProjectColor(projectColor);
@@ -66,7 +72,26 @@ const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
             <Icon name={isCollapsed ? 'arrow-right-s' : 'arrow-down-s'} className="h-3.5 w-3.5" />
           </span>
         ) : null}
-        {projectIconImage ? (
+        {workspace ? (
+          <span
+            className={cn(
+              'h-3.5 w-3.5 items-center justify-center rounded-[3px]',
+              hasCollapseControl && alwaysShowActions ? 'hidden' : 'inline-flex',
+              iconVisibilityClassName,
+            )}
+            role={workspace.primary ? 'img' : undefined}
+            aria-label={workspace.primary ? t('sessions.sidebar.workspace.primary') : undefined}
+            title={workspace.primary ? t('sessions.sidebar.workspace.primary') : undefined}
+          >
+            <span
+              className={cn(
+                'h-1.5 w-1.5 rounded-full',
+                workspace.primary ? 'bg-foreground' : 'border border-muted-foreground',
+              )}
+              aria-hidden="true"
+            />
+          </span>
+        ) : projectIconImage ? (
           <span
             className={cn(
               'h-3.5 w-3.5 items-center justify-center overflow-hidden rounded-[3px]',
@@ -97,7 +122,7 @@ const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
       </span>
       {/* A clear step up from rows, in size and weight: projects and zones
           are the top level of the tree and must not read as one of its rows. */}
-      <span className={cn('truncate typography-ui-section font-bold text-foreground', labelClassName)}>{projectLabel}</span>
+      <span className={cn('min-w-0 truncate typography-ui-section font-bold text-foreground', labelClassName)}>{projectLabel}</span>
     </>
   );
 };
@@ -126,6 +151,8 @@ interface SortableProjectItemProps extends ProjectIdentityProps {
   onClose: () => void;
   children?: React.ReactNode;
   showCreateButtons?: boolean;
+  /** False hides the new-session and new-worktree controls; the menu stays. */
+  showNewSession?: boolean;
   hideHeader?: boolean;
   /** Aggregated activity/attention indicator shown while the project is collapsed. */
   statusIndicator?: React.ReactNode;
@@ -133,7 +160,68 @@ interface SortableProjectItemProps extends ProjectIdentityProps {
   setOpenSidebarMenuKey: (key: string | null) => void;
   projectPickerOptions?: ProjectPickerOption[];
   onProjectSelect?: (projectId: string) => void;
+  workspace?: ProjectSectionWorkspace;
 }
+
+const WorkspaceGitState: React.FC<{ git: NonNullable<ProjectSectionWorkspace['git']> }> = ({ git }) => {
+  const { t } = useI18n();
+  if (git.isRepo === false) {
+    return <span className="text-[0.6875rem] font-medium text-muted-foreground">{t('sessions.sidebar.workspace.noGit')}</span>;
+  }
+  if (git.changes === null) {
+    return null;
+  }
+  if (git.changes === 0) {
+    const label = t('sessions.sidebar.workspace.noChanges');
+    return <span className="inline-flex h-1.5 w-1.5 rounded-full bg-status-success" title={label} role="img" aria-label={label} />;
+  }
+  const label = git.changes === 1
+    ? t('sessions.sidebar.workspace.changeCountSingle', { count: git.changes })
+    : t('sessions.sidebar.workspace.changeCountPlural', { count: git.changes });
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[0.6875rem] font-medium text-muted-foreground" title={label}>
+      <Icon name="pencil" className="h-3 w-3" aria-hidden="true" />
+      <span aria-hidden="true">{git.changes}</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+};
+
+/**
+ * A workspace repo whose project left the catalog. The row stays in the
+ * workspace's order so one missing project cannot drop the others; relocating
+ * registers the folder again through the existing add-project path.
+ */
+export const MissingWorkspaceRepoItem: React.FC<{ alias: string; primary: boolean }> = ({ alias, primary }) => {
+  const { t } = useI18n();
+  return (
+    <div className="relative flex items-center gap-1.5 py-1 ps-4 pe-3.5">
+      <span
+        className="relative inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center"
+        role={primary ? 'img' : undefined}
+        aria-label={primary ? t('sessions.sidebar.workspace.primary') : undefined}
+      >
+        <span
+          className={cn('h-1.5 w-1.5 rounded-full', primary ? 'bg-foreground' : 'border border-muted-foreground')}
+          aria-hidden="true"
+        />
+      </span>
+      <span className="min-w-0 truncate typography-ui-section font-bold text-foreground">{alias}</span>
+      <span className="inline-flex flex-shrink-0 items-center gap-1 text-[0.6875rem] font-medium text-status-warning">
+        <Icon name="alert" className="h-3 w-3" />
+        {t('sessions.sidebar.workspace.missingProject')}
+      </span>
+      <Button
+        variant="link"
+        size="xs"
+        className="ms-auto h-auto shrink-0 p-0 typography-micro"
+        onClick={() => sessionEvents.requestDirectoryDialog()}
+      >
+        {t('sessions.sidebar.workspace.relocate')}
+      </Button>
+    </div>
+  );
+};
 
 export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   id,
@@ -161,12 +249,14 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   onClose,
   children,
   showCreateButtons = true,
+  showNewSession = true,
   hideHeader = false,
   statusIndicator = null,
   openSidebarMenuKey,
   setOpenSidebarMenuKey,
   projectPickerOptions,
   onProjectSelect,
+  workspace,
 }) => {
   const { t } = useI18n();
   const folderMissing = useProjectFolderMissing(projectDirectory);
@@ -193,7 +283,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
 
   const renderProjectMenuItems = (Item: React.ElementType) => (
     <>
-      {showCreateButtons && !isRepo && !hideDirectoryControls && onNewSession && (
+      {showCreateButtons && showNewSession && !isRepo && !hideDirectoryControls && onNewSession && (
         <Item onClick={onNewSession}>
           <Icon name="add" className="me-1.5 h-4 w-4" />
           {t('sessions.sidebar.project.actions.newSession')}
@@ -265,15 +355,17 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   // reach in past the header's 14px right padding: the new-session button
   // 2px from the edge, then the worktree and menu buttons (24px, 4px apart)
   // from 28px.
-  const showWorktreeAction = showCreateButtons && isRepo && !hideDirectoryControls && Boolean(onNewWorktreeSession);
+  const showWorktreeAction = showCreateButtons && showNewSession && isRepo && !hideDirectoryControls && Boolean(onNewWorktreeSession);
   const groupedHeaderActionCount = (showWorktreeAction ? 1 : 0) + (hideDirectoryControls ? 0 : 1);
-  const headerActionsReserveClass = groupedHeaderActionCount === 2
-    ? '[--oc-actions-reserve:4.125rem]'
-    : groupedHeaderActionCount === 1 && showCreateButtons
-      ? '[--oc-actions-reserve:2.375rem]'
-      : showCreateButtons || groupedHeaderActionCount === 1
-        ? '[--oc-actions-reserve:0.75rem]'
-        : undefined;
+  const headerActionsReserveClass = !showNewSession
+    ? '[--oc-actions-reserve:1.625rem]'
+    : groupedHeaderActionCount === 2
+      ? '[--oc-actions-reserve:4.125rem]'
+      : groupedHeaderActionCount === 1 && showCreateButtons
+        ? '[--oc-actions-reserve:2.375rem]'
+        : showCreateButtons || groupedHeaderActionCount === 1
+          ? '[--oc-actions-reserve:0.75rem]'
+          : undefined;
   const headerLabelMaskClass = alwaysShowActions
     ? undefined
     : isMenuOpen
@@ -373,7 +465,17 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       alwaysShowActions={alwaysShowActions}
                       // The label starts past the 14px icon and the 6px gap.
                       labelClassName={cn('[--oc-actions-inset:1.25rem]', headerLabelMaskClass)}
+                      workspace={workspace}
                     />
+                    {workspace?.branchChip ? (
+                      <span
+                        className={cn('inline-flex min-w-0 max-w-[7rem] flex-shrink items-center gap-1 text-[0.6875rem] font-medium text-muted-foreground', headerCoveredFadeClass)}
+                        title={workspace.branchChip}
+                      >
+                        <Icon name="git-branch" className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate font-mono">{workspace.branchChip}</span>
+                      </span>
+                    ) : null}
                     {folderMissing ? (
                       <span
                         className={cn('inline-flex flex-shrink-0 items-center text-status-warning', headerCoveredFadeClass)}
@@ -386,7 +488,12 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                     {statusIndicator ? (
                       <span className={cn('ms-1 inline-flex flex-shrink-0 items-center', headerCoveredFadeClass)}>{statusIndicator}</span>
                     ) : null}
-                    {projectDirectory ? <DirectoryActionIndicator directory={projectDirectory} className={cn('ms-auto', headerCoveredFadeClass)} /> : null}
+                    {workspace ? (
+                      <span className={cn('ms-auto inline-flex flex-shrink-0 items-center gap-1.5', headerCoveredFadeClass)}>
+                        {workspace.git ? <WorkspaceGitState git={workspace.git} /> : null}
+                        {projectDirectory ? <DirectoryActionIndicator directory={projectDirectory} /> : null}
+                      </span>
+                    ) : projectDirectory ? <DirectoryActionIndicator directory={projectDirectory} className={cn('ms-auto', headerCoveredFadeClass)} /> : null}
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8}>
@@ -396,9 +503,9 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
 
               <div className={cn(
                 'absolute top-1/2 z-10 flex -translate-y-1/2 items-center gap-1',
-                showCreateButtons ? 'inset-e-7' : 'inset-e-0.5',
+                showCreateButtons && showNewSession ? 'inset-e-7' : 'inset-e-0.5',
               )}>
-                {showCreateButtons && isRepo && !hideDirectoryControls && onNewWorktreeSession ? (
+                {showCreateButtons && showNewSession && isRepo && !hideDirectoryControls && onNewWorktreeSession ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -453,7 +560,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                 ) : null}
               </div>
 
-              {showCreateButtons && onNewSession ? (
+              {showCreateButtons && showNewSession && onNewSession ? (
                 <div className="absolute inset-e-0.5 top-1/2 z-10 -translate-y-1/2">
                   <Tooltip>
                     <TooltipTrigger asChild>
