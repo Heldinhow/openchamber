@@ -19,6 +19,12 @@ the resolved workspace, its reference states and a per-repo git readout, and
 returns the cards, the header total and the partial flag. It does not fetch and
 does not write.
 
+`useWorkspaceGitStatuses.ts` is the live branch/ahead/behind/changed-files
+readout for every repo of the active workspace, keyed by `projectId`. Its data
+comes from the shared git store: each repo path is warmed with `ensureStatus`
+(no forced read) and kept fresh from `sessionEvents.onGitRefreshHint`, which
+refreshes only the paths the hint names. It reads no API of its own.
+
 The server owns both writes and the project catalog. The client never writes a
 workspace document and never stores one locally.
 
@@ -86,6 +92,11 @@ workspace document and never stores one locally.
   project is gone, or whose read failed, keeps its own card and makes the total
   partial; it is never shown as a clean zero. A repo without git is its own
   state, not zero changes.
+- The workspace status hook skips repos whose resolved path is null and reports
+  unknown as `changes: null`, `isGitRepo: null`, `branch: null`; only a status
+  that actually arrived can make `changes` zero. `isGitRepo: false` stays
+  `false`. While disabled it neither reads nor subscribes and keeps the last map
+  it returned, so a closing surface does not lose its lines.
 - The review reads each repo once per open through the existing git store and
   shows the live branch beside the saved snapshot. A divergence adds a muted
   "current branch" line; nothing checks out or rewrites the snapshot.
@@ -118,6 +129,17 @@ Branch is a label saved when the workspace is created or edited, not a checkout
 instruction. A watcher would refresh behind the user and imply the snapshot
 should follow the live branch; one read per open keeps the review honest and
 cheap. Rejected alternative: subscribing the panel to each repo's branch.
+
+### Why the workspace status hook watches the store instead of reading per open
+
+The work-status panel has to follow agent edits, so it subscribes once to the
+git store and lets `ensureStatus` and the refresh hints keep each repo current.
+The review panel's one-read-per-open would show a stale branch seconds after a
+tool wrote files. `ensureStatus` keeps its 5s staleness window instead of
+forcing, so several mounted workspaces do not multiply git reads, and unknown
+stays `null` rather than `0`: a read that has not landed or failed must not
+read as clean. Rejected alternatives: a fetch per repo on mount, which fans out
+with no shared dedupe, and one store subscription per repo path.
 
 ### Why the route, and not the settings document, lists the repos
 
