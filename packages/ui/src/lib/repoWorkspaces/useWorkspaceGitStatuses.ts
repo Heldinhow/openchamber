@@ -103,16 +103,19 @@ export const useWorkspaceGitStatuses = ({
 
   React.useEffect(() => {
     if (!enabled || !git || watched.length === 0) return;
-    const watchedPaths = new Set<string>();
+    // Git state is keyed by the exact watched path, so a hint normalized to a
+    // watched path must still read that watched path (not the hint's own text).
+    const watchedPaths = new Map<string, string>();
     for (const repo of watched) {
       const path = normalizePath(repo.path);
-      if (path) watchedPaths.add(path);
+      if (path) watchedPaths.set(path, repo.path);
     }
     return sessionEvents.onGitRefreshHint((hint) => {
       const hinted = normalizePath(hint.directory);
-      if (!hinted || !watchedPaths.has(hinted)) return;
+      const watchedPath = hinted === null ? undefined : watchedPaths.get(hinted);
+      if (watchedPath === undefined) return;
       const { fetchStatus } = useGitStore.getState();
-      void runBackgroundNetworkTask(() => fetchStatus(hint.directory, git, { silent: true }));
+      void runBackgroundNetworkTask(() => fetchStatus(watchedPath, git, { silent: true }));
     });
   }, [enabled, git, watched]);
 

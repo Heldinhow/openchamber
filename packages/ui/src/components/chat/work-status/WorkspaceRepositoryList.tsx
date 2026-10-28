@@ -77,15 +77,17 @@ export const WorkspaceRepositoryList: React.FC<WorkspaceRepositoryListProps> = (
         const primarySuffix = repo.primary ? (
           <span className="text-muted-foreground">{` ${t('chat.workStatus.repository.primary')}`}</span>
         ) : null;
+        const aliasLabel = `@${repo.alias}`;
+        const savedBranchNote = t('chat.workStatus.repository.savedBranch', { branch: repo.savedBranch });
 
         return (
           <React.Fragment key={repo.projectId}>
             <WorkStatusRow
               icon={repo.primary && !missing ? 'git-branch' : undefined}
               leading={repo.primary && !missing ? undefined : (
-                <span className="truncate font-mono text-muted-foreground">{`@${repo.alias}`}</span>
+                <span title={aliasLabel} className="truncate font-mono text-muted-foreground">{aliasLabel}</span>
               )}
-              label={repo.primary ? <>{branch}{primarySuffix}</> : branch}
+              label={repo.primary ? <>{branch ?? aliasLabel}{primarySuffix}</> : branch}
               muted={missing}
               onClick={!missing && path !== null && onOpenRepo ? () => onOpenRepo(path) : undefined}
               ariaLabel={t('chat.workStatus.action.openChanges')}
@@ -106,8 +108,8 @@ export const WorkspaceRepositoryList: React.FC<WorkspaceRepositoryListProps> = (
               )}
             />
             {!missing && branch !== null && repo.savedBranch !== '' && branch !== repo.savedBranch ? (
-              <WorkStatusNote truncate>
-                {t('chat.workStatus.repository.savedBranch', { branch: repo.savedBranch })}
+              <WorkStatusNote truncate title={savedBranchNote}>
+                {savedBranchNote}
               </WorkStatusNote>
             ) : null}
           </React.Fragment>

@@ -378,9 +378,11 @@ rows. `WorkspaceRepositoryList` renders the rows and owns nothing else:
 
 Primary first, then the workspace's own repo order. A row reads its live
 branch, ahead/behind and changed count from the shared git store; a repo whose
-status has not arrived shows no branch and no count, never a false clean. A
-repo without git reads "not a Git repository", and a repo whose project left
-the catalog keeps its alias row as `missing`, unclickable and never fetched.
+status has not arrived shows no branch and no count, never a false clean. The
+primary row falls back to its `@alias` until a branch arrives, so it never
+reads only `(primary)`. A repo without git reads "not a Git repository", and a
+repo whose project left the catalog keeps its alias row as `missing`,
+unclickable and never fetched.
 A live branch that differs from the branch saved on the workspace adds a
 `saved branch: …` note; nothing checks out or rewrites the snapshot.
 

@@ -148,6 +148,20 @@ describe('WorkspaceRepositoryList', () => {
     expect(text).not.toContain('changed');
   });
 
+  test('a primary row with no branch names its alias until a status arrives', async () => {
+    await render(new Map<string, WorkspaceGitRepoStatus>(), [primaries[0]]);
+
+    const text = section().textContent ?? '';
+    expect(text).toContain('@api');
+    expect(text).toContain('(primary)');
+  });
+
+  test('a secondary alias carries its full text as a title', async () => {
+    await render(new Map([['web', status()]]), [repo({ projectId: 'web', alias: 'a-rather-long-alias' })]);
+
+    expect(section().querySelector<HTMLElement>('[title="@a-rather-long-alias"]')?.textContent).toBe('@a-rather-long-alias');
+  });
+
   test('a non-git repo reads as not a Git repository', async () => {
     await render(new Map([['api', status({ isGitRepo: false, branch: null, changes: null })]]));
 
@@ -160,6 +174,7 @@ describe('WorkspaceRepositoryList', () => {
     ]);
 
     expect(section().textContent).toContain('saved branch: feat/saved');
+    expect(section().querySelector('[title="saved branch: feat/saved"]')).not.toBeNull();
   });
 
   test('a missing project keeps its alias row, reads missing and cannot be opened', async () => {

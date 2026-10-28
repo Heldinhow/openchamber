@@ -95,8 +95,8 @@ workspace document and never stores one locally.
 - The workspace status hook skips repos whose resolved path is null and reports
   unknown as `changes: null`, `isGitRepo: null`, `branch: null`; only a status
   that actually arrived can make `changes` zero. `isGitRepo: false` stays
-  `false`. While disabled it neither reads nor subscribes and keeps the last map
-  it returned, so a closing surface does not lose its lines.
+  `false`. While disabled it does not read: it returns the last map it handed
+  out, so a closing surface does not re-render on git changes.
 - The review reads each repo once per open through the existing git store and
   shows the live branch, falling back to the saved snapshot. A divergence adds a
   muted "saved branch" line naming the snapshot; nothing checks out or rewrites

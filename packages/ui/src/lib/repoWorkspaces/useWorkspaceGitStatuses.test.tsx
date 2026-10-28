@@ -199,8 +199,10 @@ describe('useWorkspaceGitStatuses', () => {
     });
     await settle();
 
+    // The hint is normalized for matching, but the read uses the watched path
+    // so the status lands on the key the row reads.
     expect(reads.length).toBe(3);
-    expect(reads[2]).toBe('/repos/api/');
+    expect(reads[2]).toBe('/repos/api');
   });
 
   test('disabled performs no read and holds the last map', async () => {

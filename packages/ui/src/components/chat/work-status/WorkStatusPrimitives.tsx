@@ -360,10 +360,11 @@ export const WorkStatusMeter: React.FC<{ percent: number; color: string }> = ({ 
  * A line explaining the readout above it (a cost split, a compaction note):
  * no icon and no label column, since it reports nothing of its own.
  */
-export const WorkStatusNote: React.FC<{ children: React.ReactNode; truncate?: boolean }> = ({ children, truncate }) => {
+export const WorkStatusNote: React.FC<{ children: React.ReactNode; truncate?: boolean; title?: string }> = ({ children, truncate, title }) => {
   const touch = React.useContext(WorkStatusTouchContext);
   return (
     <p
+      title={title}
       className={cn(
         'text-muted-foreground tabular-nums',
         touch ? 'mb-2 ms-[2.625rem] me-2.5 typography-meta' : 'mx-1 mb-1 text-[0.6875rem] leading-4',
