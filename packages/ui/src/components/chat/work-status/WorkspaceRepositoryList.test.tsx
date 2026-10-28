@@ -55,20 +55,10 @@ const render = async (
   ));
 };
 
-const section = () => {
-  const node = container.querySelector('[data-work-status-section="repository-repos"]');
-  if (!node) throw new Error('Expected the repository section');
-  return node;
-};
+const triggers = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'));
 
-const heading = () => {
-  const button = section().querySelector<HTMLButtonElement>('button[aria-expanded]');
-  if (!button) throw new Error('Expected the section heading');
-  return button;
-};
-
-/** The rows' own buttons; the heading is the one carrying `aria-expanded`. */
-const rowButtons = () => Array.from(section().querySelectorAll<HTMLButtonElement>('button:not([aria-expanded])'));
+/** The detail rows' own buttons; the repo triggers carry `aria-expanded`. */
+const rowButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button:not([aria-expanded])'));
 
 beforeEach(() => {
   dom = new Window({ url: 'http://localhost' });
@@ -113,70 +103,89 @@ afterEach(async () => {
 });
 
 describe('WorkspaceRepositoryList', () => {
-  test('puts the primary repo first with its marker and names secondaries by alias', async () => {
+  test('puts the primary repo first with a discreet marker and names every repo by alias', async () => {
     await render(new Map([
       ['api', status({ branch: 'main', changes: 2 })],
       ['web', status({ branch: 'develop', changes: 1 })],
     ]));
 
-    const text = section().textContent ?? '';
-    expect(text.indexOf('main')).toBeLessThan(text.indexOf('@web'));
-    expect(text).toContain('(primary)');
-    expect(text).toContain('@web');
-    expect(text).toContain('develop');
+    const text = container.textContent ?? '';
+    expect(text.indexOf('api')).toBeLessThan(text.indexOf('web'));
+    expect(triggers()[0]?.textContent).toContain('primary');
+    expect(triggers()[1]?.textContent).not.toContain('primary');
+    expect(text).not.toContain('@');
+    expect(triggers()[1]?.textContent).toContain('develop');
   });
 
-  test('shows live branch, ahead/behind, changed count and clean', async () => {
+  test('expanded shows changes and ahead/behind under the repo', async () => {
     await render(new Map([
       ['api', status({ branch: 'feat/live', ahead: 2, behind: 1, changes: 3 })],
       ['web', status({ branch: 'main', changes: 0 })],
     ]));
 
-    const text = section().textContent ?? '';
+    const text = container.textContent ?? '';
+    expect(triggers().every((button) => button.getAttribute('aria-expanded') === 'true')).toBe(true);
     expect(text).toContain('feat/live');
     expect(text).toContain('↑2');
     expect(text).toContain('↓1');
-    expect(text).toContain('3 changed');
-    expect(text).toContain('clean');
+    expect(text).toContain('3 files changed');
+    expect(text).toContain('No changes');
+  });
+
+  test('collapsed keeps the branch and shows the compact change count', async () => {
+    await act(async () => useUIStore.setState({
+      workStatusExpandedSections: { 'repository-repo:api': false, 'repository-repo:web': false },
+    }));
+    await render(new Map([
+      ['api', status({ branch: 'main', ahead: 1, changes: 2 })],
+      ['web', status({ branch: 'develop', changes: 0 })],
+    ]));
+
+    expect(triggers()[0]?.textContent).toContain('main');
+    expect(triggers()[0]?.querySelector('[title="2 changes"]')).not.toBeNull();
+    expect(triggers()[1]?.querySelector('[aria-label="No changes"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('↑1');
+    expect(rowButtons().length).toBe(0);
+  });
+
+  test('more than three repos start collapsed', async () => {
+    await render(new Map(), ['a', 'b', 'c', 'd'].map((projectId) => repo({ projectId })));
+
+    expect(triggers().map((button) => button.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false', 'false']);
   });
 
   test('a repo with no status shows no count and is never clean', async () => {
     await render(new Map<string, WorkspaceGitRepoStatus>(), [primaries[0]]);
 
-    const text = section().textContent ?? '';
-    expect(text).not.toContain('clean');
+    const text = container.textContent ?? '';
+    expect(text).toContain('api');
+    expect(text).not.toContain('No changes');
     expect(text).not.toContain('changed');
   });
 
-  test('a primary row with no branch names its alias until a status arrives', async () => {
-    await render(new Map<string, WorkspaceGitRepoStatus>(), [primaries[0]]);
-
-    const text = section().textContent ?? '';
-    expect(text).toContain('@api');
-    expect(text).toContain('(primary)');
-    expect(section().querySelector('[title="@api"]')).not.toBeNull();
-  });
-
-  test('a missing primary names its alias once and reads missing', async () => {
-    await render(new Map<string, WorkspaceGitRepoStatus>(), [
-      repo({ projectId: 'api', alias: 'api', primary: true, path: null }),
+  test('a missing repo keeps its row, reads missing and cannot be opened or expanded', async () => {
+    await render(new Map([['api', status()]]), [
+      repo({ projectId: 'api', alias: 'api', primary: true }),
+      repo({ projectId: 'gone', alias: 'gone', path: null }),
     ]);
 
-    const text = section().textContent ?? '';
-    expect(text.match(/@api/g)?.length).toBe(1);
+    const text = container.textContent ?? '';
+    expect(text).toContain('gone');
     expect(text).toContain('missing');
+    expect(triggers().length).toBe(1);
   });
 
-  test('a secondary alias carries its full text as a title', async () => {
+  test('a repo alias carries its full text as a title', async () => {
     await render(new Map([['web', status()]]), [repo({ projectId: 'web', alias: 'a-rather-long-alias' })]);
 
-    expect(section().querySelector<HTMLElement>('[title="@a-rather-long-alias"]')?.textContent).toBe('@a-rather-long-alias');
+    expect(container.querySelector<HTMLElement>('[title="a-rather-long-alias"]')?.textContent).toBe('a-rather-long-alias');
   });
 
   test('a non-git repo reads as not a Git repository', async () => {
     await render(new Map([['api', status({ isGitRepo: false, branch: null, changes: null })]]));
 
-    expect(section().textContent).toContain('not a Git repository');
+    expect(container.textContent).toContain('not a Git repository');
+    expect(triggers().length).toBe(1);
   });
 
   test('a live branch that moved away from the saved snapshot adds a note', async () => {
@@ -184,62 +193,34 @@ describe('WorkspaceRepositoryList', () => {
       repo({ projectId: 'api', alias: 'api', primary: true, savedBranch: 'feat/saved' }),
     ]);
 
-    expect(section().textContent).toContain('saved branch: feat/saved');
-    expect(section().querySelector('[title="saved branch: feat/saved"]')).not.toBeNull();
+    expect(container.textContent).toContain('saved branch: feat/saved');
+    expect(container.querySelector('[title="saved branch: feat/saved"]')).not.toBeNull();
   });
 
-  test('a missing project keeps its alias row, reads missing and cannot be opened', async () => {
-    await render(new Map([['api', status()]]), [
-      repo({ projectId: 'api', alias: 'api', primary: true }),
-      repo({ projectId: 'gone', alias: 'gone', path: null }),
-    ]);
-
-    const text = section().textContent ?? '';
-    expect(text).toContain('@gone');
-    expect(text).toContain('missing');
-    expect(rowButtons().length).toBe(1);
-  });
-
-  test('collapsed unmounts the rows and keeps the total only when every repo answered', async () => {
-    await act(async () => useUIStore.setState({ workStatusExpandedSections: { 'repository-repos': false } }));
+  test('folding a repo persists per repo through the shared store', async () => {
     await render(new Map([
-      ['api', status({ branch: 'main', changes: 2 })],
+      ['api', status({ branch: 'main', changes: 1 })],
       ['web', status({ branch: 'develop', changes: 1 })],
     ]));
 
-    expect(heading().textContent).toBe('Repositories2 repos · 3 changed');
-    expect(section().textContent).not.toContain('main');
+    await act(async () => triggers()[1]?.click());
 
-    await act(async () => useUIStore.setState({ workStatusExpandedSections: { 'repository-repos': false } }));
-    await render(new Map([
-      ['api', status({ branch: 'main', changes: 2 })],
-      // No status: the total must stay hidden instead of reading as a partial sum.
-    ]));
-    expect(heading().textContent).toBe('Repositories2 repos');
+    expect(useUIStore.getState().workStatusExpandedSections['repository-repo:web']).toBe(false);
+    expect(useUIStore.getState().workStatusExpandedSections['repository-repo:api']).toBeUndefined();
+    expect(triggers()[1]?.getAttribute('aria-expanded')).toBe('false');
+    expect(rowButtons().length).toBe(1);
   });
 
-  test('expanding persists through the shared store', async () => {
-    await act(async () => useUIStore.setState({ workStatusExpandedSections: { 'repository-repos': false } }));
+  test('clicking a repo\'s changes opens that repo by its project path', async () => {
     await render(new Map([
-      ['api', status({ branch: 'main' })],
-      ['web', status({ branch: 'develop' })],
+      ['api', status({ changes: 0 })],
+      ['web', status({ changes: 2 })],
     ]));
 
-    await act(async () => heading().click());
-
-    expect(useUIStore.getState().workStatusExpandedSections['repository-repos']).toBe(true);
-    expect(section().textContent).toContain('main');
-  });
-
-  test('clicking a row opens that repo by its project path', async () => {
-    await render(new Map([
-      ['api', status()],
-      ['web', status()],
-    ]));
-
+    // A clean repo has no diff to open.
     const buttons = rowButtons();
-    expect(buttons.length).toBe(2);
-    await act(async () => buttons[1]?.click());
+    expect(buttons.length).toBe(1);
+    await act(async () => buttons[0]?.click());
 
     expect(opened).toEqual(['/repos/web']);
   });

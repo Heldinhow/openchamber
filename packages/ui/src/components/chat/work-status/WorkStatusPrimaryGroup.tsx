@@ -106,12 +106,12 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     repositoryDirectory,
     workspaceProjects,
   );
-  // More than one repo in the workspace this session lands in is what turns
-  // the single-repo readouts into the repo list. A one-repo workspace keeps
-  // the section exactly as it was.
+  // A session that lands in a repo of the workspace reads the workspace: its
+  // name titles the section and every repo gets its own row, one-repo
+  // workspaces included.
   const workspaceRepositories = React.useMemo<readonly WorkspaceRepositoryRow[]>(() => {
     const workspace = repositoryWorkspaces.activeWorkspace;
-    if (!workspace || workspace.repos.length <= 1) return [];
+    if (!workspace || workspace.repos.length === 0) return [];
     if (workspacePlacement !== 'primary' && workspacePlacement !== 'secondary') return [];
     const primary = workspace.repos.find((repo) => repo.projectId === workspace.primaryProjectId) ?? null;
     const ordered = primary
@@ -125,6 +125,12 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
       savedBranch: repo.branch,
     }));
   }, [repositoryWorkspaces.activeWorkspace, workspacePlacement]);
+
+  // The workspace names the section instead of the project, so the repo rows
+  // below are not named twice.
+  const workspaceName = workspaceRepositories.length > 0
+    ? repositoryWorkspaces.activeWorkspace?.name ?? null
+    : null;
 
   const repositoryStatuses = useWorkspaceGitStatuses({
     repos: workspaceRepositories,
@@ -396,8 +402,9 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
 
       repository: hasRepository ? (
         <WorkStatusSection
-          title={t('chat.workStatus.section.project')}
-          subject={projectLabel}
+          title={workspaceName ?? t('chat.workStatus.section.project')}
+          icon={workspaceName ? 'stack' : undefined}
+          subject={workspaceName ? undefined : projectLabel}
           summary={projectActionsContext?.directory
             ? <OpenInAppButton directory={projectActionsContext.directory} />
             : null}

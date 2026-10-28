@@ -43,18 +43,28 @@ const TouchCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 export const WorkStatusSection: React.FC<{
   title: string;
+  /**
+   * Marks a title that names user content (the workspace): the icon leads it,
+   * and the name keeps its own direction and its full text on hover.
+   */
+  icon?: IconName;
   /** Names what the section is about, right after the title (the project). */
   subject?: React.ReactNode;
   /** Aggregate for the whole section; belongs on the heading, not on a row. */
   summary?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, subject, summary, children }) => {
+}> = ({ title, icon, subject, summary, children }) => {
   const touch = React.useContext(WorkStatusTouchContext);
   return (
     <section className={SECTION_CLASS}>
       <div data-work-status-heading className={cn('flex items-center gap-2', touch ? 'mb-1.5 min-h-6 px-2.5' : 'mb-0.5 px-1')}>
-        <h3 className={cn(touch ? TOUCH_HEADING_CLASS : HEADING_CLASS, 'min-w-0 flex-1 truncate')}>
-          {title}
+        <h3 className={cn(touch ? TOUCH_HEADING_CLASS : HEADING_CLASS, 'min-w-0 flex-1 truncate', icon && 'flex items-center gap-1.5')}>
+          {icon ? (
+            <>
+              <Icon name={icon} className="size-3.5 shrink-0 text-muted-foreground" />
+              <span dir="auto" title={title} className="min-w-0 truncate">{title}</span>
+            </>
+          ) : title}
           {subject ? <span className="ms-1.5 font-normal text-muted-foreground">{subject}</span> : null}
         </h3>
         {summary !== undefined && summary !== null ? (
