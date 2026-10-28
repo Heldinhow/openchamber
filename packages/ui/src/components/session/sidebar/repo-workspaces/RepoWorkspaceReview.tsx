@@ -122,6 +122,15 @@ const changeLabel = (t: ReturnType<typeof useI18n>['t'], count: number): string 
     : t('sessions.sidebar.workspace.changeCountPlural', { count })
 );
 
+const changeStatusKey = (status: string): I18nKey => {
+  if (status.includes('?')) return 'diffView.change.untracked';
+  if (status.includes('A')) return 'diffView.change.new';
+  if (status.includes('D')) return 'diffView.change.deleted';
+  if (status.includes('R')) return 'diffView.change.renamed';
+  if (status.includes('U')) return 'diffView.change.conflicted';
+  return 'diffView.change.modified';
+};
+
 const repoCountLabel = (t: ReturnType<typeof useI18n>['t'], count: number): string => (
   count === 1
     ? t('sessions.sidebar.workspace.repoCountSingle', { count })
@@ -142,7 +151,7 @@ const RepoReviewCard: React.FC<{
   const refState = reference && reference.status !== 'ok' ? reference : null;
 
   return (
-    <div className="flex min-w-0 flex-col rounded-lg border border-border/60 bg-[var(--surface-elevated)] p-3">
+    <div className="flex min-w-0 flex-col rounded-lg bg-[var(--surface-elevated)] p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -200,6 +209,7 @@ const RepoReviewCard: React.FC<{
                 <span className="w-4 shrink-0 font-mono text-[0.6875rem] text-muted-foreground" aria-hidden="true">
                   {file.status}
                 </span>
+                <span className="sr-only">{t(changeStatusKey(file.status))}</span>
                 <span className="truncate font-mono text-[0.6875rem] text-muted-foreground" title={file.path}>
                   {file.path}
                 </span>
@@ -215,7 +225,7 @@ const RepoReviewCard: React.FC<{
 
       {refState ? (
         <p
-          className="mt-1 flex min-w-0 items-center gap-1 text-[0.6875rem] text-muted-foreground"
+          className={`mt-1 flex min-w-0 items-center gap-1 text-[0.6875rem] ${refState.status === 'missing' || refState.status === 'unknown' ? 'text-status-warning' : 'text-muted-foreground'}`}
           title={refState.status === 'unknown' && refsError ? `${refsError.path}: ${refsError.message}` : undefined}
         >
           <span className="shrink-0 font-mono">@{refState.alias}</span>
