@@ -1,15 +1,42 @@
 import { normalizePath } from '@/lib/pathNormalization';
+import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 
 export type RepoWorkspaceDraftRow = {
   key: string;
   path: string;
   alias: string;
+  /** An existing repo keeps its catalog id; a new folder only carries a path. */
+  projectId?: string;
+  /** The project left the catalog: the id is kept and the path is unknown. */
+  missing?: boolean;
+  /** The saved branch snapshot, used until live git status answers. */
+  branch?: string;
 };
 
 export type RepoWorkspaceDraft = {
   name: string;
   rows: RepoWorkspaceDraftRow[];
   primaryKey: string | null;
+};
+
+const normalizedRowPath = (path: string): string => normalizePath(path) ?? path.trim();
+
+/** The edit dialog opens on exactly the saved workspace. */
+export const draftFromWorkspace = (workspace: RepoWorkspaceResolved): RepoWorkspaceDraft => {
+  const rows: RepoWorkspaceDraftRow[] = workspace.repos.map((repo, index) => ({
+    key: `repo-${index}`,
+    path: repo.project ? (normalizePath(repo.project.path) ?? repo.project.path) : '',
+    alias: repo.alias,
+    projectId: repo.projectId,
+    missing: repo.missing,
+    branch: repo.branch,
+  }));
+  const primaryIndex = workspace.repos.findIndex((repo) => repo.projectId === workspace.primaryProjectId);
+  return {
+    name: workspace.name,
+    rows,
+    primaryKey: rows[primaryIndex]?.key ?? rows[0]?.key ?? null,
+  };
 };
 
 export type RepoWorkspaceRowError = {
@@ -32,8 +59,6 @@ export const emptyRepoWorkspaceDraft = (): RepoWorkspaceDraft => ({
   rows: [],
   primaryKey: null,
 });
-
-const normalizedRowPath = (path: string): string => normalizePath(path) ?? path.trim();
 
 /**
  * One place decides whether the dialog may submit: the server repeats these
@@ -116,3 +141,78 @@ export const createPayloadFromDraft = (
     primary: row.key === draft.primaryKey,
   })),
 });
+
+/**
+ * The `PATCH` body: repos already in the catalog keep their id (a missing
+ * project included), new folders travel by path. `keepRefs` names the owned
+ * references the user chose not to delete when their repo left.
+ */
+export const updatePayloadFromDraft = (
+  draft: RepoWorkspaceDraft,
+  branchFor: (path: string) => string,
+  {
+    confirmRefs = [],
+    keepRefs = [],
+  }: { confirmRefs?: string[]; keepRefs?: string[] } = {},
+) => ({
+  name: draft.name.trim(),
+  repos: draft.rows.map((row) => {
+    const path = normalizedRowPath(row.path);
+    return {
+      alias: row.alias.trim(),
+      ...(row.projectId ? { projectId: row.projectId } : { path }),
+      branch: branchFor(path) || row.branch || '',
+      primary: row.key === draft.primaryKey,
+    };
+  }),
+  confirmRefs,
+  keepRefs,
+});
+
+type RepoWorkspaceRefDiff = {
+  removed: string[];
+  added: string[];
+  changed: string[];
+};
+
+/** The reference diff the edit notice shows, computed from the saved state. */
+export const diffRepoWorkspaceRefs = ({
+  workspace,
+  draft,
+  labels,
+}: {
+  workspace: RepoWorkspaceResolved;
+  draft: RepoWorkspaceDraft;
+  labels: ReadonlyMap<string, string>;
+}): RepoWorkspaceRefDiff => {
+  const previous = new Map(
+    workspace.repos
+      .filter((repo) => repo.projectId !== workspace.primaryProjectId)
+      .map((repo) => [repo.alias, repo]),
+  );
+  const next = new Map(
+    draft.rows
+      .filter((row) => row.key !== draft.primaryKey && row.alias.trim())
+      .map((row) => [row.alias.trim(), row]),
+  );
+
+  const removed = [...previous.keys()].filter((alias) => !next.has(alias));
+  const added = [...next.keys()].filter((alias) => !previous.has(alias));
+  const changed = [...next.keys()].filter((alias) => {
+    const before = previous.get(alias);
+    const row = next.get(alias);
+    if (!before || !row) return false;
+    // A missing project has no path to compare; leaving it untouched is not a change.
+    if (before.missing && row.projectId === before.projectId) return false;
+    const beforePath = before.project
+      ? (normalizePath(before.project.path) ?? before.project.path)
+      : '';
+    const nextPath = normalizedRowPath(row.path);
+    // A label the catalog does not know yet keeps the saved description, so an
+    // unrelated row never shows as changed.
+    const nextDescription = labels.has(nextPath) ? (labels.get(nextPath) ?? '') : before.description;
+    return beforePath !== nextPath || before.description !== nextDescription;
+  });
+
+  return { removed, added, changed };
+};

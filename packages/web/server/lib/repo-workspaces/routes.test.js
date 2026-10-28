@@ -185,6 +185,51 @@ describe('workspace routes', () => {
     expect(dependencies.persistSettings).not.toHaveBeenCalled();
   });
 
+  it('answers PATCH 409 with the alias when an owned removal needs confirmation', async () => {
+    const projectConfig = {
+      references: { web: { path: '/user/edited', description: 'Edited' } },
+    };
+    const { app, dependencies } = createApp({
+      readSettings: vi.fn(async () => ({
+        projects: [
+          { id: 'api', path: '/repos/api', label: 'API' },
+          { id: 'web', path: '/repos/web', label: 'Web' },
+        ],
+        workspaces: [{
+          id: 'ws_1',
+          name: 'Shop Platform',
+          primaryProjectId: 'api',
+          repos: [
+            { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+            { projectId: 'web', alias: 'web', description: 'Web', branch: '' },
+          ],
+          createdRefs: ['web'],
+        }],
+        activeWorkspaceId: 'ws_1',
+      })),
+      readConfigLayers: vi.fn(() => ({
+        ...emptyLayers(),
+        projectConfig,
+        mergedConfig: projectConfig,
+      })),
+      readConfigFile: vi.fn(() => projectConfig),
+    });
+
+    const response = await request(app)
+      .patch('/api/workspaces/ws_1')
+      .send({
+        name: 'Shop Platform',
+        repos: [{ projectId: 'api', alias: 'api', primary: true }],
+      })
+      .expect(409);
+
+    expect(response.body).toEqual({
+      error: 'Reference alias is already in use',
+      conflict: { alias: 'web', path: '/user/edited' },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
+  });
+
   it('retries pending references by workspace id', async () => {
     const { app, state } = createApp({
       readSettings: vi.fn(async () => ({

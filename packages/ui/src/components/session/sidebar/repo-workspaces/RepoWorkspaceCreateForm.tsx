@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Radio } from '@/components/ui/radio';
 import { Icon } from '@/components/icon/Icon';
@@ -11,18 +12,25 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import {
   createRepoWorkspace,
   retryRepoWorkspaceRefs,
+  updateRepoWorkspace,
   RepoWorkspaceRequestError,
   type CreateRepoWorkspaceInput,
   type CreateRepoWorkspaceResult,
   type RepoWorkspaceConfigTarget,
+  type RepoWorkspaceRef,
+  type RepoWorkspaceResolved,
   type RetryRepoWorkspaceRefsResult,
+  type UpdateRepoWorkspaceInput,
 } from '@/lib/repoWorkspaces/client';
 import { DirectoryExplorerDialog } from '../../DirectoryExplorerDialog';
 import {
   aliasForFolder,
   createPayloadFromDraft,
+  diffRepoWorkspaceRefs,
+  draftFromWorkspace,
   emptyRepoWorkspaceDraft,
   suggestedAlias,
+  updatePayloadFromDraft,
   validateRepoWorkspaceDraft,
   type RepoWorkspaceDraft,
   type RepoWorkspaceDraftRow,
@@ -49,6 +57,12 @@ const emptySubmitErrors = (): SubmitErrors => ({ name: false, primary: false, ro
 type RepoWorkspaceCreateFormProps = {
   /** Rows the form opens with; empty for a new workspace. */
   initialDraft?: RepoWorkspaceDraft;
+  /** Present when the same form edits an existing workspace. */
+  editing?: {
+    workspace: RepoWorkspaceResolved;
+    refs: readonly RepoWorkspaceRef[];
+    refsError: { path: string; message: string } | null;
+  };
   titleId: string;
   onClose: () => void;
   /** The workspace exists and is active; refresh the catalog and the filter. */
@@ -56,6 +70,7 @@ type RepoWorkspaceCreateFormProps = {
   /** References changed shape while the workspace already existed. */
   onRefsChanged: () => void;
   createWorkspace?: (input: CreateRepoWorkspaceInput) => Promise<CreateRepoWorkspaceResult>;
+  updateWorkspace?: (id: string, input: UpdateRepoWorkspaceInput) => Promise<CreateRepoWorkspaceResult>;
   retryRefs?: (id: string, aliases?: string[]) => Promise<RetryRepoWorkspaceRefsResult>;
 };
 
@@ -82,12 +97,12 @@ const RepoRow: React.FC<{
 }> = ({ row, isPrimary, registered, error, suggestion, disabled, onPrimary, onAlias, onRemove }) => {
   const { t } = useI18n();
   const status = useGitStatus(row.path);
-  const branch = status?.current ?? '';
+  const branch = status?.current ?? row.branch ?? '';
   const aliasErrorId = `workspace-alias-error-${row.key}`;
 
   React.useEffect(() => {
     const git = getRegisteredRuntimeAPIs()?.git;
-    if (!git) return;
+    if (!git || !row.path) return;
     void useGitStore.getState().ensureStatus(row.path, git).catch(() => undefined);
   }, [row.path]);
 
@@ -130,7 +145,9 @@ const RepoRow: React.FC<{
         className="h-8 font-mono"
       />
       <div className="flex h-8 min-w-0 items-center">
-        <span className="truncate font-mono typography-micro" title={row.path}>{row.path}</span>
+        <span className={`truncate font-mono typography-micro ${row.missing ? 'text-status-warning' : ''}`} title={row.path || undefined}>
+          {row.missing ? t('sessions.sidebar.workspace.missingProject') : row.path}
+        </span>
       </div>
       <div className="flex h-8 min-w-0 items-center gap-1 text-muted-foreground">
         <Icon name="git-branch" className="h-3 w-3 shrink-0" />
@@ -145,7 +162,7 @@ const RepoRow: React.FC<{
         disabled={disabled || isPrimary}
         aria-label={isPrimary
           ? t('sessions.sidebar.workspace.primaryCannotRemove')
-          : t('sessions.sidebar.workspace.removeRepo', { path: row.path })}
+          : t('sessions.sidebar.workspace.removeRepo', { path: row.path || row.alias })}
         onClick={onRemove}
       >
         <Icon name="close" className="h-3.5 w-3.5" />
@@ -155,37 +172,47 @@ const RepoRow: React.FC<{
         role={errorText ? 'alert' : undefined}
         className={`col-start-2 col-span-4 min-h-4 truncate typography-micro ${errorText ? 'text-status-error' : 'text-muted-foreground'}`}
       >
-        {errorText ?? (registered ? '' : t('sessions.sidebar.workspace.unregisteredProject'))}
+        {errorText ?? (registered || row.missing ? '' : t('sessions.sidebar.workspace.unregisteredProject'))}
       </p>
     </div>
   );
 };
 
 /**
- * The create form. The dialog around it only supplies the window; the form owns
- * the draft, the inline errors and the pending-references card, so the two
- * halves of a failed creation stay one screen.
+ * The one dialog form. In create mode it owns a new draft; in edit mode it
+ * opens on the saved workspace and shows the reference diff and the explicit
+ * confirmations a user-edited entry requires.
  */
 export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = ({
   initialDraft,
+  editing,
   titleId,
   onClose,
   onCreated,
   onRefsChanged,
   createWorkspace = createRepoWorkspace,
+  updateWorkspace = updateRepoWorkspace,
   retryRefs = retryRepoWorkspaceRefs,
 }) => {
   const { t } = useI18n();
   const projects = useProjectsStore((state) => state.projects);
-  const [draft, setDraft] = React.useState<RepoWorkspaceDraft>(() => initialDraft ?? emptyRepoWorkspaceDraft());
+  const [draft, setDraft] = React.useState<RepoWorkspaceDraft>(() => (
+    editing ? draftFromWorkspace(editing.workspace) : (initialDraft ?? emptyRepoWorkspaceDraft())
+  ));
   const [submitErrors, setSubmitErrors] = React.useState<SubmitErrors>(emptySubmitErrors);
-  const [configError, setConfigError] = React.useState<{ path: string; message: string } | null>(null);
+  const [configError, setConfigError] = React.useState<{ path: string; message: string } | null>(
+    editing?.refsError ?? null,
+  );
+  const [conflictAlias, setConflictAlias] = React.useState<string | null>(null);
+  // True means "keep the owned reference" for a repo that leaves the workspace.
+  const [keepChoices, setKeepChoices] = React.useState<Record<string, boolean>>({});
+  const [confirmations, setConfirmations] = React.useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [pending, setPending] = React.useState<PendingRefs | null>(null);
   const [retryingAlias, setRetryingAlias] = React.useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [showContent, setShowContent] = React.useState(false);
-  const nextRowKey = React.useRef(0);
+  const nextRowKey = React.useRef(draft.rows.length);
   const nameId = React.useId();
   const nameErrorId = React.useId();
 
@@ -193,7 +220,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
     projects.map((project) => normalizePath(project.path)).filter((path): path is string => Boolean(path)),
   ), [projects]);
   const projectLabels = React.useMemo(() => new Map(
-    projects.map((project) => [normalizePath(project.path) ?? project.path, project.label]),
+    projects.map((project) => [normalizePath(project.path) ?? project.path, project.label ?? '']),
   ), [projects]);
 
   const validation = validateRepoWorkspaceDraft(draft);
@@ -203,17 +230,65 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   }
   const nameError = validation.nameError || submitErrors.name;
   const primaryError = validation.primaryError || submitErrors.primary;
-  const canSubmit = !nameError && !primaryError && Object.keys(rowErrors).length === 0 && !submitting;
-
-  const updateDraft = (next: (current: RepoWorkspaceDraft) => RepoWorkspaceDraft) => {
-    setSubmitErrors(emptySubmitErrors());
-    setDraft(next);
-  };
 
   const primaryRow = draft.rows.find((row) => row.key === draft.primaryKey) ?? null;
   const secondaryRows = draft.rows.filter((row) => row.key !== draft.primaryKey && row.alias.trim());
-  const targetPath = primaryRow ? configFilePath(primaryRow.path) : '';
-  const hasUnregistered = draft.rows.some((row) => !registeredPaths.has(normalizePath(row.path) ?? row.path));
+  const targetPath = primaryRow?.path ? configFilePath(primaryRow.path) : '';
+  const hasUnregistered = draft.rows.some((row) => (
+    !row.projectId && !registeredPaths.has(normalizePath(row.path) ?? row.path)
+  ));
+
+  const editingRefs = editing?.refs ?? [];
+  const refsByAlias = new Map(editingRefs.map((reference) => [reference.alias, reference]));
+  const nextSecondaryAliases = React.useMemo(
+    () => new Set(secondaryRows.map((row) => row.alias.trim())),
+    [secondaryRows],
+  );
+  const diff = editing
+    ? diffRepoWorkspaceRefs({ workspace: editing.workspace, draft, labels: projectLabels })
+    : null;
+  const oldSecondaryAliases = editing
+    ? editing.workspace.repos
+      .filter((repo) => repo.projectId !== editing.workspace.primaryProjectId)
+      .map((repo) => repo.alias)
+    : [];
+  const removedOwnedAliases = oldSecondaryAliases.filter((alias) => (
+    !nextSecondaryAliases.has(alias) && editing?.workspace.createdRefs.includes(alias)
+  ));
+  // The removal question belongs to a repo leaving the workspace, not to an
+  // alias rename or to the repo that became primary.
+  const removedRepoAliases = editing
+    ? editing.workspace.repos
+      .filter((repo) => (
+        repo.projectId !== editing.workspace.primaryProjectId
+        && !draft.rows.some((row) => row.projectId === repo.projectId)
+      ))
+      .map((repo) => repo.alias)
+    : [];
+  const keepQuestions = removedOwnedAliases.filter((alias) => removedRepoAliases.includes(alias));
+  // A `different` entry was edited outside the app: overwriting or removing it
+  // needs an explicit check, and the removal question already is one.
+  const overwriteDifferent = secondaryRows
+    .map((row) => row.alias.trim())
+    .filter((alias) => refsByAlias.get(alias)?.status === 'different');
+  const removeDifferent = removedOwnedAliases.filter((alias) => (
+    refsByAlias.get(alias)?.status === 'different' && !keepQuestions.includes(alias)
+  ));
+  const neededConfirmations = [...overwriteDifferent, ...removeDifferent];
+  const pendingConfirmation = neededConfirmations.some((alias) => !confirmations[alias]);
+
+  const canSubmit = !nameError
+    && !primaryError
+    && Object.keys(rowErrors).length === 0
+    && !pendingConfirmation
+    && !configError
+    && !submitting;
+
+  const updateDraft = (next: (current: RepoWorkspaceDraft) => RepoWorkspaceDraft) => {
+    setSubmitErrors(emptySubmitErrors());
+    setConflictAlias(null);
+    setDraft(next);
+  };
 
   const addFolder = (pickedPath: string) => {
     setPickerOpen(false);
@@ -240,10 +315,11 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
     setSubmitting(true);
     setSubmitErrors(emptySubmitErrors());
     setConfigError(null);
+    setConflictAlias(null);
 
     const git = getRegisteredRuntimeAPIs()?.git;
     if (git) {
-      await Promise.all(draft.rows.map(async (row) => {
+      await Promise.all(draft.rows.filter((row) => row.path).map(async (row) => {
         try {
           await useGitStore.getState().ensureStatus(row.path, git);
         } catch {
@@ -254,7 +330,15 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
     const branchFor = (path: string) => useGitStore.getState().directories.get(path)?.status?.current ?? '';
 
     try {
-      const result = await createWorkspace(createPayloadFromDraft(draft, branchFor));
+      const result = editing
+        ? await updateWorkspace(editing.workspace.id, updatePayloadFromDraft(draft, branchFor, {
+          confirmRefs: [
+            ...keepQuestions.filter((alias) => !keepChoices[alias]),
+            ...neededConfirmations.filter((alias) => confirmations[alias]),
+          ],
+          keepRefs: keepQuestions.filter((alias) => keepChoices[alias]),
+        }))
+        : await createWorkspace(createPayloadFromDraft(draft, branchFor));
       onCreated();
       const failedAliases = result.refWrites
         .filter((write) => write.status === 'failed')
@@ -274,12 +358,19 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       if (error instanceof RepoWorkspaceRequestError) {
         if (error.configError) {
           setConfigError(error.configError);
-        } else if (error.status === 409 && error.conflict?.alias) {
-          const row = draft.rows.find((entry) => entry.alias.trim() === error.conflict?.alias);
-          if (row) {
-            setSubmitErrors({ ...emptySubmitErrors(), rows: { [row.key]: { alias: 'in-use' } } });
+        } else if (error.status === 409) {
+          if (editing) {
+            setConflictAlias(error.conflict?.alias ?? error.conflict?.aliases[0] ?? null);
+            if (!error.conflict?.alias && (error.conflict?.aliases.length ?? 0) === 0) {
+              setSubmitErrors({ ...emptySubmitErrors(), form: true });
+            }
           } else {
-            setSubmitErrors({ ...emptySubmitErrors(), form: true });
+            const row = draft.rows.find((entry) => entry.alias.trim() === error.conflict?.alias);
+            if (row) {
+              setSubmitErrors({ ...emptySubmitErrors(), rows: { [row.key]: { alias: 'in-use' } } });
+            } else {
+              setSubmitErrors({ ...emptySubmitErrors(), form: true });
+            }
           }
         } else if (Object.keys(error.fields).length > 0) {
           const next = emptySubmitErrors();
@@ -341,7 +432,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         <div className="flex items-start gap-2">
           <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
           <h2 id={titleId} className="typography-ui-header font-semibold leading-none text-foreground">
-            {t('sessions.sidebar.workspace.pendingTitle')}
+            {t(editing ? 'sessions.sidebar.workspace.pendingTitleEdit' : 'sessions.sidebar.workspace.pendingTitle')}
           </h2>
         </div>
         <p className="break-all font-mono typography-micro text-muted-foreground">{pending.configTarget.path}</p>
@@ -381,7 +472,9 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
   return (
     <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)} noValidate>
       <h2 id={titleId} className="typography-ui-header font-semibold leading-none text-foreground">
-        {t('sessions.sidebar.workspace.new')}
+        {editing
+          ? t('sessions.sidebar.workspace.editTitle', { name: editing.workspace.name })
+          : t('sessions.sidebar.workspace.new')}
       </h2>
 
       <div className="flex flex-col gap-1.5">
@@ -459,7 +552,69 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       </fieldset>
 
       {draft.rows.length > 0 && primaryRow ? (
-        secondaryRows.length === 0 ? (
+        editing ? (
+          <div className="rounded-lg bg-[var(--status-warning)]/10 p-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Icon name="error-warning" className="size-3.5 shrink-0 text-[var(--status-warning)]" />
+              <p className="min-w-0 flex-1 typography-ui-label font-medium">
+                {t('sessions.sidebar.workspace.diffTitle')}
+              </p>
+            </div>
+            <p className="mt-1 break-all font-mono typography-micro text-muted-foreground">{targetPath}</p>
+            <ul className="mt-1 flex flex-col gap-0.5 font-mono typography-micro text-foreground">
+              {diff?.removed.map((alias) => (
+                <li key={`removed-${alias}`}>{`- ${t('sessions.sidebar.workspace.diffRemoved', { alias })}`}</li>
+              ))}
+              {diff?.changed.map((alias) => (
+                <li key={`changed-${alias}`}>{`~ ${t('sessions.sidebar.workspace.diffChanged', { alias })}`}</li>
+              ))}
+              {diff?.added.map((alias) => (
+                <li key={`added-${alias}`}>{`+ ${t('sessions.sidebar.workspace.diffAdded', { alias })}`}</li>
+              ))}
+            </ul>
+            {hasUnregistered ? (
+              <p className="mt-1 typography-micro text-muted-foreground">
+                {t('sessions.sidebar.workspace.noticeUnregistered')}
+              </p>
+            ) : null}
+            {keepQuestions.length > 0 ? (
+              <div className="mt-2 flex flex-col gap-1">
+                {keepQuestions.map((alias) => {
+                  const label = t('sessions.sidebar.workspace.removeRefQuestion', { alias });
+                  return (
+                    <label key={`keep-${alias}`} className="flex items-center gap-2 typography-micro">
+                      <Checkbox
+                        checked={!keepChoices[alias]}
+                        onChange={(checked) => setKeepChoices((current) => ({ ...current, [alias]: !checked }))}
+                        ariaLabel={label}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
+            {neededConfirmations.length > 0 ? (
+              <div className="mt-2 flex flex-col gap-1">
+                {neededConfirmations.map((alias) => {
+                  const label = overwriteDifferent.includes(alias)
+                    ? t('sessions.sidebar.workspace.confirmOverwrite', { alias })
+                    : t('sessions.sidebar.workspace.confirmRemove', { alias });
+                  return (
+                    <label key={`confirm-${alias}`} className="flex items-center gap-2 typography-micro">
+                      <Checkbox
+                        checked={Boolean(confirmations[alias])}
+                        onChange={(checked) => setConfirmations((current) => ({ ...current, [alias]: checked }))}
+                        ariaLabel={label}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : secondaryRows.length === 0 ? (
           <div className="rounded-lg bg-[var(--status-info)]/10 p-3">
             <p className="typography-meta text-muted-foreground">
               {t('sessions.sidebar.workspace.oneRepoNotice')}
@@ -529,7 +684,12 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
       ) : null}
       {submitErrors.form ? (
         <p role="alert" className="typography-micro text-status-error">
-          {t('sessions.sidebar.workspace.createFailed')}
+          {t(editing ? 'sessions.sidebar.workspace.editFailed' : 'sessions.sidebar.workspace.createFailed')}
+        </p>
+      ) : null}
+      {conflictAlias ? (
+        <p role="alert" className="typography-micro text-status-error">
+          {t('sessions.sidebar.workspace.editConflict', { alias: conflictAlias })}
         </p>
       ) : null}
 
@@ -538,7 +698,7 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
           {t('dialog.common.actions.cancel')}
         </Button>
         <Button type="submit" disabled={!canSubmit}>
-          {t('sessions.sidebar.workspace.createAction')}
+          {t(editing ? 'sessions.sidebar.workspace.saveAction' : 'sessions.sidebar.workspace.createAction')}
         </Button>
       </div>
 

@@ -160,6 +160,8 @@ type SessionProjectCollectionProps = {
     openWorktreesPage: (id: string) => void;
     openProjectEditDialog: (id: string) => void;
     removeProject: (id: string) => void;
+    /** Removes a repo whose project is gone, through the edit route. */
+    removeWorkspaceRepo?: (alias: string) => void;
     reorderProjects: (fromIndex: number, toIndex: number) => void;
     startSessionWorktreeMenuLoad: SessionTreeItemProps['startSessionWorktreeMenuLoad'];
     renderProjectStatusIndicator?: (projectId: string, groups: SessionGroup[]) => React.ReactNode;
@@ -1239,6 +1241,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     openWorktreesPage: scrollerActions.openWorktreesPage,
     openProjectEditDialog: scrollerActions.openProjectEditDialog,
     removeProject: scrollerActions.removeProject,
+    removeWorkspaceRepo: scrollerActions.removeWorkspaceRepo,
     reorderProjects: scrollerActions.reorderProjects,
     renderProjectStatusIndicator: scrollerActions.renderProjectStatusIndicator,
     setSingleProjectId,
@@ -1249,6 +1252,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     scrollerActions.openProjectEditDialog,
     scrollerActions.openWorktreesPage,
     scrollerActions.removeProject,
+    scrollerActions.removeWorkspaceRepo,
     scrollerActions.reorderProjects,
     scrollerActions.setActiveProjectIdOnly,
     scrollerActions.setSessionSwitcherOpen,

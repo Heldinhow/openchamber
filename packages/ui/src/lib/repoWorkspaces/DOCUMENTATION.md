@@ -3,12 +3,13 @@
 ## Ownership
 
 `client.ts` is the UI's only reader of `/api/workspaces` and the only caller of
-`POST /api/workspaces`, `POST /api/workspaces/active` and
-`POST /api/workspaces/:id/refs/retry`. `useRepoWorkspaces` holds the resolved
-list and the active pointer for the sidebar; the create dialog uses
-`createRepoWorkspace` and `retryRepoWorkspaceRefs` and parses the response at
-the boundary. Ticket 03 reads this state; editing and deleting workspaces stay
-with the dialogs of tickets 07–08.
+`POST /api/workspaces`, `PATCH /api/workspaces/:id`, `POST /api/workspaces/active`
+and `POST /api/workspaces/:id/refs/retry`. `useRepoWorkspaces` holds the resolved
+list, the active pointer and the active workspace's reference states for the
+sidebar; the workspace dialog uses `createRepoWorkspace`,
+`updateRepoWorkspace` and `retryRepoWorkspaceRefs` and parses every response at
+the boundary. Ticket 03 reads this state; deleting workspaces stays with the
+dialog of ticket 08.
 
 The server owns both writes and the project catalog. The client never writes a
 workspace document and never stores one locally.
@@ -27,10 +28,14 @@ workspace document and never stores one locally.
 - Requests are generation-guarded and keyed to the runtime that started them:
   a late response from another runtime or from before a selection can neither
   replace the list nor re-activate the old workspace.
-- Create and retry answers are parsed at the boundary. A 4xx is a
+- Create, update and retry answers are parsed at the boundary. A 4xx is a
   `RepoWorkspaceRequestError` carrying the field key, config path or conflict
   alias the dialog puts inline; a failed reference write is a successful create
-  with `refWrites[].status === 'failed'`.
+  or edit with `refWrites[].status === 'failed'`.
+- The document's `refs` and `refsError` describe the active workspace's primary
+  config. They are cleared when the active pointer moves, and read again for the
+  newly active workspace, so the edit dialog never diffs against another
+  workspace's references.
 
 ## Decisions
 

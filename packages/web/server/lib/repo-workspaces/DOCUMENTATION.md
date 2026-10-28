@@ -6,7 +6,8 @@
 `activeWorkspaceId` settings fields, and the only reader that resolves them
 against the project catalog. It also owns the primary's OpenCode `references`.
 `routes.js` registers `GET /api/workspaces`, `POST /api/workspaces`,
-`POST /api/workspaces/active` and `POST /api/workspaces/:id/refs/retry`.
+`PATCH /api/workspaces/:id`, `POST /api/workspaces/active` and
+`POST /api/workspaces/:id/refs/retry`.
 
 A folder that is not a project yet is registered through the shared add-project
 rule in `../projects/add-project.js`; its project id comes from there. Settings
@@ -76,6 +77,27 @@ warn that the new layer overrides it, and is never edited.
   `confirmRefs`; a reference outside `createdRefs` is never touched. All
   removals of one call land in one atomic write, so a failed write removes
   nothing.
+- `PATCH /api/workspaces/:id` edits in this order: validate the payload and
+  every new reference against the new primary's config, register new folders,
+  remove the owned references that leave, persist the workspace, then write the
+  new references best effort. A failed owned removal is 409 with the alias and
+  leaves both the workspace and the file untouched; a failed new write is a
+  saved workspace plus `refWrites[].status === 'failed'` for that alias.
+- On edit, a reference leaves when its alias is no longer a secondary alias:
+  the repo was removed, the alias was renamed, or the repo became primary.
+  `keepRefs` names the owned aliases whose repo leaves but whose entry must
+  stay in the config; those aliases also leave `createdRefs`, so the workspace
+  no longer owns them.
+- Edited `createdRefs` keeps an old owned alias only while it is still a
+  secondary alias, and adds every alias the edit actually writes. An entry that
+  was already identical stays the user's.
+- A repo whose project left the catalog can be sent back on edit with its
+  project id; it stays in the workspace and keeps reading as `missing`. A
+  missing secondary is skipped by the write step, and an edit whose old primary
+  is missing cannot remove references (there is no config to edit).
+- When the settings write fails after an owned removal, the removed entries are
+  put back before the error is returned, so the unchanged workspace does not
+  lose references it still expects.
 - The config read-modify-write path is serialized per service instance: two
   concurrent saves re-read the previous write instead of losing it.
 - Error bodies carry a field key (`repos[0].alias`) and an English API message.
@@ -190,6 +212,24 @@ change. One `writeConfig` call makes the removal set atomic; the cost is that a
 failure reports every alias in the set as failed. Rejected alternative:
 per-alias removal with a compensating rewrite, which can itself fail and is
 more code than the contract needs.
+
+### Why an edit removes references before saving the workspace
+
+The contract fixes this order, and it is what makes a removal failure abort the
+whole edit: nothing is persisted until the config is already clean. The risk is
+the opposite failure, a settings write that fails after a successful removal, so
+the removed entries are restored on that path. Rejected alternative: saving the
+workspace first and removing afterwards, which leaves the workspace pointing at
+aliases it no longer owns when a removal fails.
+
+### Why `keepRefs` rather than a boolean on each repo
+
+The removal question belongs to an alias, not to a row: the user may rename an
+alias or change which repo is primary, and only the aliases that leave the
+workspace are candidates. A list of aliases also keeps the payload independent
+of row order, and an alias that stays simply ignores its entry. The kept alias
+leaves `createdRefs`, because a reference the user chose to keep is no longer
+this workspace's to delete.
 
 ## Installed OpenCode check: absolute reference paths
 

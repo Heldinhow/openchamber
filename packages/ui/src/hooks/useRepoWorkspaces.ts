@@ -5,6 +5,7 @@ import {
   activateRepoWorkspace,
   fetchRepoWorkspaces,
   RepoWorkspacesUnavailableError,
+  type RepoWorkspaceRef,
   type RepoWorkspaceResolved,
 } from '@/lib/repoWorkspaces/client';
 
@@ -14,6 +15,8 @@ type State = {
   status: RepoWorkspacesStatus;
   workspaces: RepoWorkspaceResolved[];
   activeWorkspaceId: string | null;
+  refs: RepoWorkspaceRef[];
+  refsError: { path: string; message: string } | null;
   activating: boolean;
 };
 
@@ -21,6 +24,8 @@ const initialState = (enabled: boolean): State => ({
   status: enabled ? 'loading' : 'unavailable',
   workspaces: [],
   activeWorkspaceId: null,
+  refs: [],
+  refsError: null,
   activating: false,
 });
 
@@ -51,6 +56,8 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
         status: 'ready',
         workspaces: document.workspaces,
         activeWorkspaceId: document.activeWorkspaceId,
+        refs: document.refs,
+        refsError: document.refsError,
         activating: current.activating,
       }));
     } catch (error) {
@@ -84,7 +91,9 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       if (!('workspaces' in settings) && !('activeWorkspaceId' in settings)) return;
       const nextActive = settings.activeWorkspaceId ?? null;
       setState((current) => (
-        current.activeWorkspaceId === nextActive ? current : { ...current, activeWorkspaceId: nextActive }
+        current.activeWorkspaceId === nextActive
+          ? current
+          : { ...current, activeWorkspaceId: nextActive, refs: [], refsError: null }
       ));
       // The pointer above can be applied at once; the resolved repos, missing
       // projects included, still come from the server route.
@@ -111,13 +120,15 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
       // A read that started while the switch was in flight may carry the old
       // pointer; the switch's own answer wins over it.
       requestGenerationRef.current += 1;
-      setState((current) => ({ ...current, activeWorkspaceId: result.activeWorkspaceId }));
+      setState((current) => ({ ...current, activeWorkspaceId: result.activeWorkspaceId, refs: [], refsError: null }));
+      // The reference states belong to whichever workspace is active now.
+      void load({ silent: true });
     } finally {
       if (selection === selectionGenerationRef.current) {
         setState((current) => ({ ...current, activating: false }));
       }
     }
-  }, [enabled]);
+  }, [enabled, load]);
 
   const activeWorkspace = React.useMemo(() => (
     state.status === 'ready' && state.activeWorkspaceId

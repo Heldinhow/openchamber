@@ -192,7 +192,11 @@ const WorkspaceGitState: React.FC<{ git: NonNullable<ProjectSectionWorkspace['gi
  * workspace's order so one missing project cannot drop the others; relocating
  * registers the folder again through the existing add-project path.
  */
-export const MissingWorkspaceRepoItem: React.FC<{ alias: string; primary: boolean }> = ({ alias, primary }) => {
+export const MissingWorkspaceRepoItem: React.FC<{
+  alias: string;
+  primary: boolean;
+  onRemove?: () => void;
+}> = ({ alias, primary, onRemove }) => {
   const { t } = useI18n();
   return (
     <div className="relative flex items-center gap-1.5 py-1 ps-4 pe-3.5">
@@ -211,14 +215,27 @@ export const MissingWorkspaceRepoItem: React.FC<{ alias: string; primary: boolea
         <Icon name="alert" className="h-3 w-3" />
         {t('sessions.sidebar.workspace.missingProject')}
       </span>
-      <Button
-        variant="link"
-        size="xs"
-        className="ms-auto h-auto shrink-0 p-0 typography-micro"
-        onClick={() => sessionEvents.requestDirectoryDialog()}
-      >
-        {t('sessions.sidebar.workspace.relocate')}
-      </Button>
+      <span className="ms-auto flex shrink-0 items-center gap-2">
+        <Button
+          variant="link"
+          size="xs"
+          className="h-auto p-0 typography-micro"
+          onClick={() => sessionEvents.requestDirectoryDialog()}
+        >
+          {t('sessions.sidebar.workspace.relocate')}
+        </Button>
+        {onRemove ? (
+          <Button
+            variant="link"
+            size="xs"
+            className="h-auto p-0 typography-micro"
+            aria-label={t('sessions.sidebar.workspace.removeMissingRepo', { alias })}
+            onClick={onRemove}
+          >
+            {t('sessions.sidebar.workspace.remove')}
+          </Button>
+        ) : null}
+      </span>
     </div>
   );
 };

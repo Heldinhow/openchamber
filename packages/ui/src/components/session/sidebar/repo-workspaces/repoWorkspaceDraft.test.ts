@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import {
   aliasForFolder,
   createPayloadFromDraft,
+  diffRepoWorkspaceRefs,
+  draftFromWorkspace,
   suggestedAlias,
+  updatePayloadFromDraft,
   validateRepoWorkspaceDraft,
   type RepoWorkspaceDraft,
 } from './repoWorkspaceDraft';
@@ -78,4 +82,84 @@ describe('workspace create draft', () => {
       ],
     });
   });
+
+  test('the edit draft loads the saved repos, primary and branch snapshots', () => {
+    const loaded = draftFromWorkspace(resolvedWorkspace);
+    expect(loaded).toEqual({
+      name: 'Shop Platform',
+      primaryKey: 'repo-0',
+      rows: [
+        { key: 'repo-0', path: '/repos/api', alias: 'api', projectId: 'p_api', missing: false, branch: 'main' },
+        { key: 'repo-1', path: '/repos/web', alias: 'web', projectId: 'p_web', missing: false, branch: 'feat/tokens' },
+      ],
+    });
+  });
+
+  test('the edit payload keeps project ids and the saved branch when git has no answer', () => {
+    const payload = updatePayloadFromDraft(draftFromWorkspace(resolvedWorkspace), () => '', {
+      confirmRefs: ['web'],
+      keepRefs: ['api'],
+    });
+    expect(payload).toEqual({
+      name: 'Shop Platform',
+      repos: [
+        { alias: 'api', projectId: 'p_api', branch: 'main', primary: true },
+        { alias: 'web', projectId: 'p_web', branch: 'feat/tokens', primary: false },
+      ],
+      confirmRefs: ['web'],
+      keepRefs: ['api'],
+    });
+  });
+
+  test('the diff names removed, added and changed reference aliases', () => {
+    const loaded = draftFromWorkspace(resolvedWorkspace);
+    const removed = diffRepoWorkspaceRefs({
+      workspace: resolvedWorkspace,
+      draft: { ...loaded, rows: [loaded.rows[0]] },
+      labels: new Map(),
+    });
+    expect(removed).toEqual({ removed: ['web'], added: [], changed: [] });
+
+    const added = diffRepoWorkspaceRefs({
+      workspace: resolvedWorkspace,
+      draft: {
+        ...loaded,
+        rows: [...loaded.rows, { key: 'repo-2', path: '/repos/docs', alias: 'docs' }],
+      },
+      labels: new Map(),
+    });
+    expect(added).toEqual({ removed: [], added: ['docs'], changed: [] });
+
+    const changed = diffRepoWorkspaceRefs({
+      workspace: resolvedWorkspace,
+      draft: loaded,
+      labels: new Map([['/repos/web', 'Web app']]),
+    });
+    expect(changed).toEqual({ removed: [], added: [], changed: ['web'] });
+  });
 });
+
+const resolvedWorkspace: RepoWorkspaceResolved = {
+  id: 'ws_1',
+  name: 'Shop Platform',
+  primaryProjectId: 'p_api',
+  createdRefs: ['web'],
+  repos: [
+    {
+      projectId: 'p_api',
+      alias: 'api',
+      description: 'API',
+      branch: 'main',
+      missing: false,
+      project: { id: 'p_api', path: '/repos/api', label: 'API' },
+    },
+    {
+      projectId: 'p_web',
+      alias: 'web',
+      description: 'Web',
+      branch: 'feat/tokens',
+      missing: false,
+      project: { id: 'p_web', path: '/repos/web', label: 'Web' },
+    },
+  ],
+};

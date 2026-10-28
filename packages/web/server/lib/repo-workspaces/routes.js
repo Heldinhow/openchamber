@@ -35,6 +35,14 @@ export const registerWorkspaceRoutes = (app, dependencies) => {
     }
   });
 
+  app.patch('/api/workspaces/:id', async (req, res) => {
+    try {
+      return res.json(await service.update(req.params.id, req.body));
+    } catch (error) {
+      return respondWithError(res, error, 'Failed to update workspace');
+    }
+  });
+
   app.post('/api/workspaces/active', async (req, res) => {
     try {
       return res.json(await service.activate(req.body));

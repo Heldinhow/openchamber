@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React, { act } from 'react';
 import type { Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
-import type { CreateRepoWorkspaceResult } from '@/lib/repoWorkspaces/client';
+import type { CreateRepoWorkspaceResult, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import type { RepoWorkspaceDraft } from './repoWorkspaceDraft';
 
 let Form: typeof import('./RepoWorkspaceCreateForm').RepoWorkspaceCreateForm;
@@ -27,6 +27,41 @@ const workspace = {
   repos: [
     { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', missing: false, project: null },
     { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
+  ],
+  createdRefs: ['web'],
+};
+
+/** Base UI's hidden input is the element that actually changes; a synthetic
+ * click on the styled box does not toggle it in happy-dom. */
+const setCheckbox = (element: Element | undefined, checked: boolean) => {
+  expect(element !== undefined).toBe(true);
+  const input = element!.parentElement?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  expect(input !== null).toBe(true);
+  if (input!.checked !== checked) input!.click();
+  expect(input!.checked).toBe(checked);
+};
+
+const resolvedWorkspace: RepoWorkspaceResolved = {
+  id: 'ws_1',
+  name: 'Shop Platform',
+  primaryProjectId: 'p_api',
+  repos: [
+    {
+      projectId: 'p_api',
+      alias: 'api',
+      description: 'api',
+      branch: 'main',
+      missing: false,
+      project: { id: 'p_api', path: '/repos/api', label: 'api' },
+    },
+    {
+      projectId: 'p_web',
+      alias: 'web',
+      description: 'web',
+      branch: 'main',
+      missing: false,
+      project: { id: 'p_web', path: '/repos/web', label: 'web' },
+    },
   ],
   createdRefs: ['web'],
 };
@@ -155,5 +190,135 @@ describe('workspace create form', () => {
       document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
     expect(calls).toBe(0);
+  });
+
+  test('editing shows the reference diff and requires confirmation before overwriting an edited entry', async () => {
+    const updates: Array<{ id: string; input: unknown }> = [];
+    const editing = {
+      workspace: resolvedWorkspace,
+      refs: [{
+        alias: 'web',
+        path: '/repos/web',
+        description: 'web',
+        status: 'different' as const,
+        owned: true,
+        current: { path: '/user/web', description: 'Edited' },
+      }],
+      refsError: null,
+    };
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          editing={editing}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          updateWorkspace={async (id, input) => {
+            updates.push({ id, input });
+            return {
+              workspace: resolvedWorkspace,
+              refs: [],
+              refWrites: [],
+              refsError: null,
+              configTarget: { path: '/repos/api/.opencode/opencode.json', rootConfigPath: null },
+            };
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    expect(document.body.textContent).toContain('Reference changes');
+    expect(document.body.textContent).toContain('@web was edited outside the app. Overwrite it?');
+    const submit = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
+    expect(submit?.disabled).toBe(true);
+
+    const confirmation = [...document.querySelectorAll('[role="checkbox"]')]
+      .find((element) => element.getAttribute('aria-label')?.includes('Overwrite it?'));
+    await act(async () => {
+      setCheckbox(confirmation, true);
+    });
+
+    expect(submit?.disabled).toBe(false);
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].id).toBe('ws_1');
+    expect(updates[0].input).toMatchObject({
+      name: 'Shop Platform',
+      confirmRefs: ['web'],
+      keepRefs: [],
+      repos: [
+        { projectId: 'p_api', alias: 'api', primary: true },
+        { projectId: 'p_web', alias: 'web', primary: false },
+      ],
+    });
+  });
+
+  test('removing a repo asks about its owned reference and keeps it when unchecked', async () => {
+    const updates: Array<{ input: unknown }> = [];
+    const editing = {
+      workspace: resolvedWorkspace,
+      refs: [{
+        alias: 'web',
+        path: '/repos/web',
+        description: 'web',
+        status: 'ok' as const,
+        owned: true,
+        current: { path: '/repos/web', description: 'web' },
+      }],
+      refsError: null,
+    };
+
+    await act(async () => root.render(
+      <I18nProvider>
+        <Form
+          editing={editing}
+          titleId="workspace-title"
+          onClose={() => undefined}
+          onCreated={() => undefined}
+          onRefsChanged={() => undefined}
+          updateWorkspace={async (_id, input) => {
+            updates.push({ input });
+            return {
+              workspace: resolvedWorkspace,
+              refs: [],
+              refWrites: [],
+              refsError: null,
+              configTarget: { path: '/repos/api/.opencode/opencode.json', rootConfigPath: null },
+            };
+          }}
+        />
+      </I18nProvider>,
+    ));
+
+    const removeWeb = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.getAttribute('aria-label') === 'Remove /repos/web from the workspace');
+    expect(removeWeb !== undefined).toBe(true);
+    await act(async () => {
+      removeWeb!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const keepQuestion = [...document.querySelectorAll('[role="checkbox"]')]
+      .find((element) => element.getAttribute('aria-label')?.includes('Remove @web from the primary repository config'));
+    await act(async () => {
+      setCheckbox(keepQuestion, false);
+    });
+
+    const submit = document.querySelector<HTMLButtonElement>('form button[type="submit"]');
+    await act(async () => {
+      document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].input).toMatchObject({
+      keepRefs: ['web'],
+      confirmRefs: [],
+      repos: [{ projectId: 'p_api', alias: 'api', primary: true }],
+    });
+    expect(submit?.disabled).toBe(false);
   });
 });

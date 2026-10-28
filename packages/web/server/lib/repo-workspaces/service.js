@@ -45,12 +45,14 @@ const confirmRefsSchema = z.array(
   z.string({ error: 'Confirmed aliases must be text' }).trim().min(1, 'Confirmed aliases must not be empty'),
 ).optional();
 
-const createWorkspaceSchema = z.object({
+const workspacePayloadSchema = z.object({
   name: z.string({ error: 'Name is required' }).trim().min(1, 'Name is required'),
   repos: z.array(createRepoSchema, { error: 'At least one repository is required' }).min(1, 'At least one repository is required'),
   // Aliases the user explicitly allowed to overwrite an existing entry.
   confirmRefs: confirmRefsSchema,
-}).superRefine((payload, ctx) => {
+});
+
+const validateWorkspacePayload = (payload, ctx) => {
   if (payload.repos.length === 0) return;
   const aliases = new Set();
   let primaries = 0;
@@ -79,7 +81,15 @@ const createWorkspaceSchema = z.object({
       message: primaries === 0 ? 'Select the primary repository' : 'Exactly one repository must be primary',
     });
   }
-});
+};
+
+const createWorkspaceSchema = workspacePayloadSchema.superRefine(validateWorkspacePayload);
+
+// Edit adds the aliases whose owned reference this workspace keeps when their
+// repo leaves; everything else about the payload is the create shape.
+const updateWorkspaceSchema = workspacePayloadSchema.extend({
+  keepRefs: confirmRefsSchema,
+}).superRefine(validateWorkspacePayload);
 
 const activatePayloadSchema = z.object({
   id: z.union([z.string({ error: 'Workspace id is required' }).trim().min(1, 'Workspace id is required'), z.null()], {
@@ -126,6 +136,7 @@ const resolveRepos = async ({
   projects,
   fsPromises,
   validateDirectoryPath,
+  retainedProjects = new Map(),
 }) => {
   const fields = {};
   const seenProjectIds = new Set();
@@ -139,7 +150,24 @@ const resolveRepos = async ({
     if (repo.projectId) {
       project = nextProjects.find((candidate) => candidate.id === repo.projectId) || null;
       if (!project) {
-        fields[`${field}.projectId`] = 'Project not found';
+        // A project that left the catalog while it is already in this workspace
+        // stays in the edit payload untouched, and keeps reading as missing.
+        const retained = retainedProjects.get(repo.projectId) ?? null;
+        if (!retained) {
+          fields[`${field}.projectId`] = 'Project not found';
+          continue;
+        }
+        if (seenProjectIds.has(retained.projectId)) {
+          fields[`${field}.projectId`] = 'Repository is already in this workspace';
+          continue;
+        }
+        seenProjectIds.add(retained.projectId);
+        resolved.push({
+          projectId: retained.projectId,
+          alias: repo.alias,
+          description: retained.description ?? '',
+          branch: repo.branch ?? retained.branch ?? '',
+        });
         continue;
       }
     } else {
@@ -714,7 +742,11 @@ export const createWorkspaceService = (dependencies) => {
 
       if (removable.length > 0) {
         const nextReferences = { ...targetReferences };
-        for (const alias of removable) delete nextReferences[alias];
+        const removedEntries = {};
+        for (const alias of removable) {
+          removedEntries[alias] = targetReferences[alias];
+          delete nextReferences[alias];
+        }
         try {
           await writeConfig({ ...targetConfig, references: nextReferences }, targetPath);
         } catch {
@@ -724,10 +756,153 @@ export const createWorkspaceService = (dependencies) => {
             { conflict: { aliases: removable, path: targetPath } },
           );
         }
+        return { removed: removable, refWrites, removedEntries, path: targetPath };
       }
 
-      return { removed: removable, refWrites };
+      return { removed: [], refWrites, removedEntries: {}, path: targetPath };
     });
+  };
+
+  /**
+   * Edit in the contract order: validate and register folders, remove the
+   * owned references that leave, save the workspace, then write the new
+   * references best effort. A failed removal aborts before the save, so the
+   * workspace never points at a half-edited config.
+   */
+  const update = async (workspaceId, payload) => {
+    const {
+      name,
+      repos: entries,
+      confirmRefs = [],
+      keepRefs = [],
+    } = parseInput(updateWorkspaceSchema, payload);
+    const confirmed = new Set(confirmRefs);
+    const kept = new Set(keepRefs);
+
+    const settings = await readSettings();
+    const stored = storedWorkspaces(settings.workspaces);
+    const existing = stored.find((candidate) => candidate.id === workspaceId) || null;
+    if (!existing) {
+      throw new WorkspaceRequestError(404, 'Workspace not found');
+    }
+
+    const projects = sanitizeProjects(settings.projects) || [];
+    const projectIds = new Set(projects.map((project) => project.id));
+    const retainedProjects = new Map(
+      existing.repos
+        .filter((repo) => !projectIds.has(repo.projectId))
+        .map((repo) => [repo.projectId, repo]),
+    );
+    const primaryIndex = entries.findIndex((repo) => repo.primary === true);
+    const { repos, primaryProjectId, projects: nextProjects } = await resolveRepos({
+      repos: entries,
+      primaryIndex,
+      projects,
+      fsPromises,
+      validateDirectoryPath,
+      retainedProjects,
+    });
+
+    const workspace = { ...existing, name, primaryProjectId, repos };
+    const nextProjectsById = new Map(nextProjects.map((project) => [project.id, project]));
+    const nextReferences = expectedReferences(workspace, nextProjectsById);
+    const nextPrimary = primaryProjectOf(workspace, nextProjects);
+    // Read before any write: the root file stops being what
+    // `getProjectConfigPath` reports once `.opencode/` exists.
+    const configTarget = describeConfigTarget(nextPrimary.path, getProjectConfigPath);
+
+    const oldProjectsById = new Map(projects.map((project) => [project.id, project]));
+    const oldReferences = expectedReferences(existing, oldProjectsById);
+    const oldReferenceByAlias = new Map(oldReferences.map((reference) => [reference.alias, reference]));
+    const nextAliases = new Set(nextReferences.map((reference) => reference.alias));
+    const leavingAliases = oldReferences
+      .filter((reference) => (
+        reference.owned && !nextAliases.has(reference.alias) && !kept.has(reference.alias)
+      ))
+      .map((reference) => reference.alias);
+    const oldPrimary = oldProjectsById.get(existing.primaryProjectId) ?? null;
+
+    // Preflight the new primary and every new reference before removing
+    // anything. A conflict found after the removal would leave the old config
+    // edited with the workspace still unchanged.
+    const layers = readConfigLayers(nextPrimary.path);
+    const configError = configReadError(layers);
+    if (configError) throw configErrorResponse(configError);
+
+    const toWrite = [];
+    for (const reference of nextReferences) {
+      // A repo whose project is gone has no folder to validate or write; it
+      // keeps reading as `missing`.
+      if (!reference.project) continue;
+      await assertWritableReference(reference);
+      const state = classifyReference(reference, layers);
+      if (state.status === 'ok') continue;
+      // An owned entry that still is exactly what the old workspace wrote can
+      // change with the workspace itself; only a hand-edited entry needs a
+      // confirmation, because the user's value would be lost.
+      const previous = oldReferenceByAlias.get(reference.alias) ?? null;
+      const stillWorkspaceOwned = state.status === 'different'
+        && previous?.owned === true
+        && referenceMatches(state.current, previous);
+      if (state.status !== 'missing' && !confirmed.has(reference.alias) && !stillWorkspaceOwned) {
+        throw conflictResponse(reference.alias, state.current);
+      }
+      // The writer repeats this classification, so the auto-allowed case has
+      // to travel with the request as a confirmation.
+      if (stillWorkspaceOwned) confirmed.add(reference.alias);
+      toWrite.push(reference);
+    }
+
+    // Without the old primary there is no config to edit; its references are
+    // already unreachable and the new set simply stops owning them.
+    const removal = leavingAliases.length > 0 && oldPrimary
+      ? await removeCreatedRefs({ workspace: existing, aliases: leavingAliases, confirmRefs })
+      : null;
+
+    const retainedOwned = existing.createdRefs.filter((alias) => nextAliases.has(alias));
+    workspace.createdRefs = [...new Set([...retainedOwned, ...toWrite.map((reference) => reference.alias)])];
+
+    const changes = {
+      workspaces: stored.map((candidate) => (candidate.id === workspace.id ? workspace : candidate)),
+    };
+    if (nextProjects !== projects) {
+      changes.projects = nextProjects;
+    }
+
+    try {
+      await persistSettings(changes);
+    } catch (error) {
+      // The workspace did not change, so put back the owned entries already
+      // removed instead of leaving its old references deleted.
+      if (removal && Object.keys(removal.removedEntries).length > 0) {
+        await withRefsLock(async () => {
+          const config = readConfigFile(removal.path);
+          const current = referencesOf(config) ?? {};
+          await writeConfig(
+            { ...config, references: { ...current, ...removal.removedEntries } },
+            removal.path,
+          );
+        }).catch(() => undefined);
+      }
+      throw error;
+    }
+
+    const writeResults = toWrite.length > 0
+      ? await withRefsLock(() => writeReferences({ primaryPath: nextPrimary.path, references: toWrite, confirmRefs: confirmed }))
+      : [];
+    const writeByAlias = new Map(writeResults.map((result) => [result.alias, result]));
+    const refWrites = nextReferences.map((reference) => (
+      writeByAlias.get(reference.alias) ?? { alias: reference.alias, status: 'unchanged' }
+    ));
+
+    const { refs, error: refsError } = refsFor(workspace, nextProjects);
+    return {
+      workspace,
+      refs,
+      refWrites,
+      refsError,
+      configTarget,
+    };
   };
 
   const activate = async (payload) => {
@@ -757,5 +932,5 @@ export const createWorkspaceService = (dependencies) => {
     return { activeWorkspaceId: workspace.id };
   };
 
-  return { list, create, activate, retryRefs, removeCreatedRefs };
+  return { list, create, update, activate, retryRefs, removeCreatedRefs };
 };

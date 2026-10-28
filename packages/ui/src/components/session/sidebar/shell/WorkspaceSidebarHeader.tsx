@@ -19,12 +19,13 @@ type Props = {
   activating: boolean;
   onSelect: (id: string | null) => void;
   onCreate: () => void;
+  onEdit: () => void;
 };
 
 /**
  * The filter's name, its repo count and the menu that switches workspaces or
- * leaves the filter. "New workspace" opens the create dialog; managing
- * workspaces belongs to ticket 08.
+ * leaves the filter. "New workspace" opens the create dialog; "Edit workspace"
+ * opens the same dialog on the active one.
  */
 export const WorkspaceSidebarHeader: React.FC<Props> = ({
   workspaces,
@@ -32,6 +33,7 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
   activating,
   onSelect,
   onCreate,
+  onEdit,
 }) => {
   const { t } = useI18n();
   const check = <Icon name="check" className="h-4 w-4 flex-shrink-0 text-interactive-selection-foreground" />;
@@ -90,6 +92,15 @@ export const WorkspaceSidebarHeader: React.FC<Props> = ({
                 <Icon name="add" className="h-4 w-4" />
               </span>
               <span className="truncate">{t('sessions.sidebar.workspace.new')}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onEdit}
+              className="flex items-center gap-2"
+            >
+              <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
+                <Icon name="pencil" className="h-4 w-4" />
+              </span>
+              <span className="truncate">{t('sessions.sidebar.workspace.edit')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

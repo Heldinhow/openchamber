@@ -23,7 +23,8 @@ import { SidebarHeader } from './sidebar/shell/SidebarHeader';
 import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
 import { WorkspaceEmptyCard, WorkspaceSidebarError, WorkspaceSidebarHeader, WorkspaceSidebarSkeleton } from './sidebar/shell/WorkspaceSidebarHeader';
-import { CreateRepoWorkspaceDialog } from './sidebar/repo-workspaces/CreateRepoWorkspaceDialog';
+import { RepoWorkspaceDialog } from './sidebar/repo-workspaces/RepoWorkspaceDialog';
+import { updateRepoWorkspace } from '@/lib/repoWorkspaces/client';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
 import type { SessionProjectListProps } from './sidebar/projects/SessionProjectScroller';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -448,8 +449,9 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     }
   }, [selectWorkspace, t]);
 
-  const [workspaceDialogOpen, setWorkspaceDialogOpen] = React.useState(false);
-  const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialogOpen(true), []);
+  const [workspaceDialog, setWorkspaceDialog] = React.useState<'create' | 'edit' | null>(null);
+  const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialog('create'), []);
+  const openWorkspaceEditDialog = React.useCallback(() => setWorkspaceDialog('edit'), []);
   const reloadRepoWorkspaces = repoWorkspaces.reload;
   // Creation registers folders and activates the workspace on the server; the
   // settings document is the only way this window learns the new projects.
@@ -460,6 +462,33 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const handleWorkspaceRefsChanged = React.useCallback(() => {
     reloadRepoWorkspaces();
   }, [reloadRepoWorkspaces]);
+
+  // A missing repo row has no dialog: save the same workspace minus that repo
+  // through the edit route, keeping the reference it cannot verify.
+  const activeRepoWorkspace = repoWorkspaces.activeWorkspace;
+  const handleRemoveWorkspaceRepo = React.useCallback(async (alias: string) => {
+    if (!activeRepoWorkspace) return;
+    const remaining = activeRepoWorkspace.repos.filter((repo) => repo.alias !== alias);
+    if (remaining.length === 0) return;
+    const primaryProjectId = remaining.some((repo) => repo.projectId === activeRepoWorkspace.primaryProjectId)
+      ? activeRepoWorkspace.primaryProjectId
+      : (remaining.find((repo) => !repo.missing) ?? remaining[0]).projectId;
+    try {
+      await updateRepoWorkspace(activeRepoWorkspace.id, {
+        name: activeRepoWorkspace.name,
+        repos: remaining.map((repo) => ({
+          projectId: repo.projectId,
+          alias: repo.alias,
+          branch: repo.branch,
+          primary: repo.projectId === primaryProjectId,
+        })),
+        keepRefs: [alias],
+      });
+      handleWorkspaceRefsChanged();
+    } catch {
+      toast.error(t('sessions.sidebar.workspace.removeRepoFailed'));
+    }
+  }, [activeRepoWorkspace, handleWorkspaceRefsChanged, t]);
 
 
   const normalizedProjects = React.useMemo(() => {
@@ -715,6 +744,9 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         },
         openProjectEditDialog: setEditingProjectDialogId,
         removeProject,
+        removeWorkspaceRepo: activeRepoWorkspace && activeRepoWorkspace.repos.length > 1
+          ? handleRemoveWorkspaceRepo
+          : undefined,
         reorderProjects,
         startSessionWorktreeMenuLoad: handleSessionWorktreeMenuLoad,
         initialActiveSessionByProject,
@@ -777,6 +809,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
               activating={repoWorkspaces.activating}
               onSelect={handleSelectWorkspace}
               onCreate={openWorkspaceDialog}
+              onEdit={openWorkspaceEditDialog}
             />
           ) : null}
           {collection}
@@ -829,9 +862,18 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         }}
       />
 
-      <CreateRepoWorkspaceDialog
-        open={workspaceDialogOpen}
-        onOpenChange={setWorkspaceDialogOpen}
+      <RepoWorkspaceDialog
+        open={workspaceDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceDialog(null);
+        }}
+        editing={workspaceDialog === 'edit' && repoWorkspaces.activeWorkspace
+          ? {
+            workspace: repoWorkspaces.activeWorkspace,
+            refs: repoWorkspaces.refs,
+            refsError: repoWorkspaces.refsError,
+          }
+          : null}
         onCreated={handleWorkspaceCreated}
         onRefsChanged={handleWorkspaceRefsChanged}
       />

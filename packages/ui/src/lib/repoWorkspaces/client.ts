@@ -29,11 +29,6 @@ const repoWorkspaceSchema = z.object({
   createdRefs: z.array(z.string()).catch([]),
 });
 
-const repoWorkspacesDocumentSchema = z.object({
-  workspaces: z.array(repoWorkspaceSchema),
-  activeWorkspaceId: z.string().min(1).nullable().catch(null),
-});
-
 export type RepoWorkspaceResolved = z.infer<typeof repoWorkspaceSchema>;
 
 const referenceEntrySchema = z.object({
@@ -52,6 +47,20 @@ const repoWorkspaceRefSchema = z.object({
   current: referenceEntrySchema.nullable().catch(null),
 });
 
+export type RepoWorkspaceRef = z.infer<typeof repoWorkspaceRefSchema>;
+
+const refsErrorSchema = z.object({
+  path: z.string(),
+  message: z.string(),
+}).nullable().catch(null);
+
+const repoWorkspacesDocumentSchema = z.object({
+  workspaces: z.array(repoWorkspaceSchema),
+  activeWorkspaceId: z.string().min(1).nullable().catch(null),
+  refs: z.array(repoWorkspaceRefSchema).catch([]),
+  refsError: refsErrorSchema,
+});
+
 const refWriteSchema = z.object({
   alias: z.string(),
   status: z.enum(['written', 'unchanged', 'failed']).catch('failed'),
@@ -62,11 +71,6 @@ const configTargetSchema = z.object({
   path: z.string(),
   rootConfigPath: z.string().nullable().catch(null),
 });
-
-const refsErrorSchema = z.object({
-  path: z.string(),
-  message: z.string(),
-}).nullable().catch(null);
 
 const refsResultFields = {
   refs: z.array(repoWorkspaceRefSchema),
@@ -80,6 +84,8 @@ const createRepoWorkspaceResultSchema = z.object({
   ...refsResultFields,
 });
 
+const updateRepoWorkspaceResultSchema = createRepoWorkspaceResultSchema;
+
 const retryRepoWorkspaceRefsResultSchema = z.object(refsResultFields);
 
 const requestErrorSchema = z.object({
@@ -88,6 +94,7 @@ const requestErrorSchema = z.object({
   configError: z.object({ path: z.string(), message: z.string() }).optional(),
   conflict: z.object({
     alias: z.string().optional(),
+    aliases: z.array(z.string()).optional(),
     path: z.string().nullable().optional(),
   }).optional(),
 });
@@ -101,7 +108,7 @@ export class RepoWorkspaceRequestError extends Error {
   readonly status: number;
   readonly fields: Record<string, string>;
   readonly configError: { path: string; message: string } | null;
-  readonly conflict: { alias: string | null; path: string | null } | null;
+  readonly conflict: { alias: string | null; aliases: string[]; path: string | null } | null;
 
   constructor(status: number, payload: z.infer<typeof requestErrorSchema> | null) {
     super(payload?.error ?? `Workspace request failed with ${status}`);
@@ -110,7 +117,11 @@ export class RepoWorkspaceRequestError extends Error {
     this.fields = payload?.fields ?? {};
     this.configError = payload?.configError ?? null;
     this.conflict = payload?.conflict
-      ? { alias: payload.conflict.alias ?? null, path: payload.conflict.path ?? null }
+      ? {
+        alias: payload.conflict.alias ?? null,
+        aliases: payload.conflict.aliases ?? [],
+        path: payload.conflict.path ?? null,
+      }
       : null;
   }
 }
@@ -183,6 +194,37 @@ export const createRepoWorkspace = async (input: CreateRepoWorkspaceInput): Prom
   const parsed = createRepoWorkspaceResultSchema.safeParse(await readJson(response));
   if (!parsed.success) {
     throw new Error('Workspace creation response was invalid');
+  }
+  return parsed.data;
+};
+
+export type UpdateRepoWorkspaceInput = {
+  name: string;
+  repos: Array<{
+    alias: string;
+    branch: string;
+    primary: boolean;
+    projectId?: string;
+    path?: string;
+  }>;
+  confirmRefs?: string[];
+  keepRefs?: string[];
+};
+
+/** Applies the new repo set; a failed removal is a 409 and keeps the workspace. */
+export const updateRepoWorkspace = async (
+  id: string,
+  input: UpdateRepoWorkspaceInput,
+): Promise<CreateRepoWorkspaceResult> => {
+  const response = await runtimeFetch(`/api/workspaces/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await requestFailure(response);
+  const parsed = updateRepoWorkspaceResultSchema.safeParse(await readJson(response));
+  if (!parsed.success) {
+    throw new Error('Workspace update response was invalid');
   }
   return parsed.data;
 };

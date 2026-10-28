@@ -117,6 +117,7 @@ export type SessionProjectScrollerActions = {
   openWorktreesPage: (id: string) => void;
   openProjectEditDialog: (id: string) => void;
   removeProject: (id: string) => void;
+  removeWorkspaceRepo?: (alias: string) => void;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
   renderProjectStatusIndicator?: (projectId: string, groups: SessionGroup[]) => React.ReactNode;
   setSingleProjectId: (id: string) => void;
@@ -302,7 +303,15 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
       const project = row.section.project;
       const workspace = row.section.workspace;
       if (workspace?.missing) {
-        return <MissingWorkspaceRepoItem alias={workspace.alias} primary={workspace.primary} />;
+        return (
+          <MissingWorkspaceRepoItem
+            alias={workspace.alias}
+            primary={workspace.primary}
+            onRemove={actions.removeWorkspaceRepo
+              ? () => actions.removeWorkspaceRepo?.(workspace.alias)
+              : undefined}
+          />
+        );
       }
       const label = workspace?.alias ?? getProjectLabel(project, view.homeDirectory);
       const description = workspace
