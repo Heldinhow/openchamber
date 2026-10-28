@@ -79,6 +79,15 @@ the target layer.
   stores `editRules`: the exact `{ alias, resource, effect }` entries it wrote
   into the primary's `permissions`. Rules for an alias that left `repos` stay
   stored so they can still be removed; they are never filtered on read.
+- A repo's stored `description` is the project label when non-empty. Otherwise
+  create and edit derive it, in order, from `package.json` (`description`, then
+  `name`), the first heading or non-empty line of `README.md`/`README.txt`/
+  `README`, and finally the folder basename; the result is trimmed, collapsed
+  to single spaces and capped at 200 characters (cut at a word boundary, with an
+  ellipsis only when it was cut). Files are read at most 64 KB and any read or
+  parse failure falls through to the next source, never failing the request. A
+  repo whose project is gone keeps its stored description, and `GET` never
+  derives one.
 - Permissions are written to the same `<primary>/.opencode/opencode.json`
   through `writeConfig`. A secondary repo gets `allow` (editable) or `deny`
   (`readOnly`) for `<configured>/*` and, when `realpath` differs, for
@@ -472,6 +481,19 @@ Dropping the whole file would lose the local folders the user does want, so the
 draft carries each rejected entry with `error: 'unsupported'` and the dialog
 lists it. The name and accepted folders still land, and submit sends only what
 the user can save.
+
+### Why the alias description is derived instead of left empty
+
+A project registered from a folder usually has no label, so the reference that
+create writes would carry an empty description in the sidebar. The order is the
+repo's own metadata — label, `package.json`, README, folder name — so the value
+is meaningful before the user names anything. Derivation is best effort by
+design: a missing, unreadable or invalid file falls to the next source, because
+a save must not fail over metadata nothing else depends on. Reads are capped at
+64 KB so a generated or huge file cannot stall a create or edit, and the value
+is capped at 200 characters so a single long README paragraph cannot become the
+config description. Rejected alternative: keeping the label-only rule and
+letting the dialog ask for a description, which the ticket puts out of scope.
 
 ## Installed OpenCode check: absolute reference paths
 

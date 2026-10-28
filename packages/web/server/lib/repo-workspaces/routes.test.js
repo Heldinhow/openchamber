@@ -548,7 +548,13 @@ describe('workspace routes', () => {
       .send({ removeCreatedRefs: false })
       .expect(200);
 
-    expect(response.body).toEqual({ removed: true, refs: [], failedAlias: null, configError: null });
+    expect(response.body).toEqual({
+      removed: true,
+      refs: [],
+      failedAlias: null,
+      configError: null,
+      permissionRemoved: true,
+    });
     expect(dependencies.persistSettings).toHaveBeenCalledWith({
       workspaces: [],
       activeWorkspaceId: null,

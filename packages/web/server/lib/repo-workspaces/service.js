@@ -181,6 +181,81 @@ const parseInput = (schema, payload) => {
 /** Structural validation only; nothing is resolved or registered here. */
 const parseCreatePayload = (payload) => parseInput(createWorkspaceSchema, payload);
 
+const DESCRIPTION_README_FILES = ['README.md', 'README.txt', 'README'];
+const DESCRIPTION_READ_LIMIT = 64 * 1024;
+const DESCRIPTION_MAX_LENGTH = 200;
+
+const collapseWhitespace = (value) => value.replace(/\s+/g, ' ').trim();
+
+/** At most 200 characters, cut at a word boundary; the ellipsis only marks a cut. */
+const capDescription = (value) => {
+  if (value.length <= DESCRIPTION_MAX_LENGTH) return value;
+  const clipped = value.slice(0, DESCRIPTION_MAX_LENGTH - 1);
+  const boundary = clipped.lastIndexOf(' ');
+  const text = (boundary > 0 ? clipped.slice(0, boundary) : clipped).trimEnd();
+  return `${text}…`;
+};
+
+/** At most `limit` bytes; null when the file cannot be opened or read. */
+const readBoundedText = async (fsPromises, filePath, limit = DESCRIPTION_READ_LIMIT) => {
+  let handle = null;
+  try {
+    handle = await fsPromises.open(filePath, 'r');
+    const buffer = Buffer.alloc(limit);
+    const { bytesRead } = await handle.read(buffer, 0, limit, 0);
+    return buffer.toString('utf8', 0, bytesRead);
+  } catch {
+    return null;
+  } finally {
+    try {
+      await handle?.close();
+    } catch {
+      // A close failure cannot change a description that is already read.
+    }
+  }
+};
+
+/** package.json `description`, then `name`; any read or parse failure is empty. */
+const packageDescription = async (fsPromises, folderPath) => {
+  const content = await readBoundedText(fsPromises, path.join(folderPath, 'package.json'));
+  if (content === null) return '';
+  try {
+    const parsed = JSON.parse(content);
+    if (typeof parsed?.description === 'string' && parsed.description.trim()) return parsed.description;
+    if (typeof parsed?.name === 'string') return parsed.name;
+  } catch {
+    // Invalid or truncated JSON: the next source wins.
+  }
+  return '';
+};
+
+/** The first heading or non-empty line of the first README that has one. */
+const readmeDescription = async (fsPromises, folderPath) => {
+  for (const name of DESCRIPTION_README_FILES) {
+    const content = await readBoundedText(fsPromises, path.join(folderPath, name));
+    if (content === null) continue;
+    for (const raw of content.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const heading = /^#{1,6}\s+(.*)$/.exec(line);
+      const text = heading ? heading[1].trim() : line;
+      if (text) return text;
+    }
+  }
+  return '';
+};
+
+/** Label, package.json, README, folder name; never fails on a file problem. */
+const repoDescription = async (folderPath, label, fsPromises) => {
+  const fromLabel = collapseWhitespace(label ?? '');
+  if (fromLabel) return capDescription(fromLabel);
+  const fromPackage = collapseWhitespace(await packageDescription(fsPromises, folderPath));
+  if (fromPackage) return capDescription(fromPackage);
+  const fromReadme = collapseWhitespace(await readmeDescription(fsPromises, folderPath));
+  if (fromReadme) return capDescription(fromReadme);
+  return capDescription(collapseWhitespace(path.basename(folderPath)));
+};
+
 const resolveRepos = async ({
   repos,
   primaryIndex,
@@ -247,8 +322,7 @@ const resolveRepos = async ({
     resolved.push({
       projectId: project.id,
       alias: repo.alias,
-      // The reference description comes from the project label in v1.
-      description: project.label ?? '',
+      description: await repoDescription(project.path, project.label, fsPromises),
       branch: repo.branch ?? '',
       readOnly: repo.readOnly === true,
     });

@@ -52,6 +52,30 @@ const projects = [
   { id: 'web', path: '/repos/web', label: '' },
 ];
 
+/** A service filesystem whose only files are `{ [absolutePath]: content }`. */
+const fakeOpen = (files) => vi.fn(async (filePath) => {
+  const content = files[filePath];
+  if (content === undefined) {
+    const error = new Error(`ENOENT: no such file or directory, open '${filePath}'`);
+    error.code = 'ENOENT';
+    throw error;
+  }
+  return {
+    read: async (buffer, offset, length) => {
+      const bytes = Buffer.from(content, 'utf8').subarray(0, length);
+      bytes.copy(buffer, offset);
+      return { bytesRead: bytes.length };
+    },
+    close: async () => undefined,
+  };
+});
+
+const fakeFs = (files) => ({
+  mkdir: vi.fn(async () => undefined),
+  stat: vi.fn(async () => ({ isFile: () => false })),
+  open: fakeOpen(files),
+});
+
 const workspace = (overrides = {}) => ({
   id: 'ws_1',
   name: 'Shop Platform',
@@ -77,10 +101,7 @@ const createService = (overrides = {}) => {
     sanitizeProjects: (value) => (Array.isArray(value) ? value : undefined),
     sanitizeRepoWorkspaces: (value) => (Array.isArray(value) ? { workspaces: value, discarded: 0 } : undefined),
     validateDirectoryPath: vi.fn(async (directory) => ({ ok: true, directory })),
-    fsPromises: {
-      mkdir: vi.fn(async () => undefined),
-      stat: vi.fn(async () => ({ isFile: () => false })),
-    },
+    fsPromises: fakeFs({}),
     crypto: { randomUUID: () => 'fixed-uuid' },
     readConfigLayers: vi.fn(layers),
     readConfigFile: vi.fn((filePath) => (
@@ -223,7 +244,7 @@ describe('workspace service: create', () => {
         primaryProjectId: 'api',
         repos: [
           { projectId: 'api', alias: 'api', description: 'API', branch: '', readOnly: false },
-          { projectId: 'web', alias: 'web', description: '', branch: 'feat/tokens', readOnly: false },
+          { projectId: 'web', alias: 'web', description: 'web', branch: 'feat/tokens', readOnly: false },
         ],
         createdRefs: ['web'],
         editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'allow' }],
@@ -232,10 +253,10 @@ describe('workspace service: create', () => {
         {
           alias: 'web',
           path: '/repos/web',
-          description: '',
+          description: 'web',
           status: 'ok',
           owned: true,
-          current: { path: '/repos/web', description: '' },
+          current: { path: '/repos/web', description: 'web' },
         },
       ],
       refWrites: [{ alias: 'web', status: 'written' }],
@@ -250,7 +271,7 @@ describe('workspace service: create', () => {
       activeProjectId: 'api',
     });
     expect(dependencies.writeConfig).toHaveBeenCalledWith(
-      { references: { web: { path: '/repos/web', description: '' } } },
+      { references: { web: { path: '/repos/web', description: 'web' } } },
       '/repos/api/.opencode/opencode.json',
     );
   });
@@ -371,7 +392,7 @@ describe('workspace service: create', () => {
 
     expect(result.refWrites).toEqual([{ alias: 'web', status: 'written' }]);
     expect(result.refs).toEqual([
-      { alias: 'web', path: '/repos/web', description: '', status: 'unknown', owned: true, current: null },
+      { alias: 'web', path: '/repos/web', description: 'web', status: 'unknown', owned: true, current: null },
     ]);
     expect(result.refsError).toEqual({
       path: '/repos/api/.opencode/opencode.json',
@@ -614,8 +635,164 @@ const fixtureService = (settings, overrides = {}) => createService({
     mkdir: vi.fn(async () => undefined),
     stat: fs.promises.stat.bind(fs.promises),
     realpath: fs.promises.realpath.bind(fs.promises),
+    open: fs.promises.open.bind(fs.promises),
   },
   ...overrides,
+});
+
+describe('workspace service: reference descriptions', () => {
+  const createWithFiles = ({ label = '', files = {}, stored = [] } = {}) => {
+    const web = { ...projects[1], label };
+    const { service, dependencies } = createService({
+      readSettings: vi.fn(async () => ({
+        projects: [projects[0], web],
+        workspaces: stored,
+        activeWorkspaceId: stored.length > 0 ? 'ws_1' : null,
+      })),
+      fsPromises: fakeFs(files),
+    });
+    return { service, dependencies };
+  };
+
+  const descriptionOf = (result, alias = 'web') => result.workspace.repos
+    .find((repo) => repo.alias === alias).description;
+
+  it('keeps a non-empty project label and reads no file', async () => {
+    const { service, dependencies } = createWithFiles({
+      label: 'Web app',
+      files: { '/repos/web/package.json': JSON.stringify({ description: 'From package' }) },
+    });
+
+    const result = await service.create(validPayload);
+
+    expect(descriptionOf(result)).toBe('Web app');
+    expect(result.refs[0].description).toBe('Web app');
+    expect(dependencies.fsPromises.open).not.toHaveBeenCalled();
+  });
+
+  it('uses the package.json description, trimmed and collapsed', async () => {
+    const { service } = createWithFiles({
+      files: { '/repos/web/package.json': JSON.stringify({ description: '  Web \n storefront  ', name: 'web' }) },
+    });
+
+    const result = await service.create(validPayload);
+
+    expect(descriptionOf(result)).toBe('Web storefront');
+  });
+
+  it('falls back to the package.json name when the description is missing', async () => {
+    const { service } = createWithFiles({
+      files: { '/repos/web/package.json': JSON.stringify({ name: '@shop/web' }) },
+    });
+
+    const result = await service.create(validPayload);
+
+    expect(descriptionOf(result)).toBe('@shop/web');
+  });
+
+  it('falls back to the README heading when the package.json does not help', async () => {
+    const { service } = createWithFiles({
+      files: { '/repos/web/README.md': '\n\n# Web frontend\n\nBody text\n' },
+    });
+
+    const result = await service.create(validPayload);
+
+    expect(descriptionOf(result)).toBe('Web frontend');
+  });
+
+  it('uses the first non-empty README line when it is not a heading', async () => {
+    const { service } = createWithFiles({
+      files: { '/repos/web/README.txt': '\nThe web app\n\nMore text\n' },
+    });
+
+    const result = await service.create(validPayload);
+
+    expect(descriptionOf(result)).toBe('The web app');
+  });
+
+  it('caps a long README paragraph at 200 characters with an ellipsis', async () => {
+    const paragraph = `The web app ${'handles orders, payments and refunds '.repeat(20)}`.trim();
+    const { service } = createWithFiles({
+      files: { '/repos/web/README.md': `${paragraph}\n` },
+    });
+
+    const result = await service.create(validPayload);
+    const description = descriptionOf(result);
+
+    expect(paragraph.length).toBeGreaterThan(200);
+    expect(description.length).toBeLessThanOrEqual(200);
+    expect(description.endsWith('…')).toBe(true);
+    // Cut at the last whitespace inside the cap, never mid-word.
+    expect(paragraph[description.length - 1]).toBe(' ');
+    expect(description.slice(0, -1)).toBe(description.slice(0, -1).trimEnd());
+  });
+
+  it('falls through invalid package.json to the README', async () => {
+    const { service } = createWithFiles({
+      files: {
+        '/repos/web/package.json': '{\n  "description": ',
+        '/repos/web/README': 'Web docs\n',
+      },
+    });
+
+    const result = await service.create(validPayload);
+
+    expect(descriptionOf(result)).toBe('Web docs');
+  });
+
+  it('falls back to the folder name when no file can be read', async () => {
+    const { service } = createWithFiles();
+
+    const result = await service.create(validPayload);
+
+    expect(descriptionOf(result)).toBe('web');
+  });
+
+  it('does not derive a description on read', async () => {
+    const { service } = createWithFiles({
+      files: { '/repos/web/package.json': JSON.stringify({ description: 'From package' }) },
+      stored: [workspace()],
+    });
+
+    const result = await service.list();
+
+    expect(result.workspaces[0].repos[1].description).toBe('');
+    expect(result.workspaces[0].repos[1].readOnly).toBeUndefined();
+  });
+
+  it('recomputes a repo description that was empty on update', async () => {
+    const root = caseRoot('description-update');
+    const api = projectAt(root, 'api', 'API');
+    const web = projectAt(root, 'web', '');
+    fs.writeFileSync(path.join(web.path, 'package.json'), JSON.stringify({ description: 'Web storefront' }));
+    writeProjectConfig(api, '{}');
+    const stored = workspace({
+      primaryProjectId: 'api',
+      repos: [
+        { projectId: 'api', alias: 'api', description: 'API', branch: '' },
+        { projectId: 'web', alias: 'web', description: '', branch: '' },
+      ],
+    });
+    const { service } = fixtureService({
+      projects: [api, web],
+      workspaces: [stored],
+      activeWorkspaceId: 'ws_1',
+    });
+
+    const result = await service.update('ws_1', {
+      name: 'Shop Platform',
+      repos: [
+        { projectId: 'api', alias: 'api', primary: true },
+        { projectId: 'web', alias: 'web' },
+      ],
+    });
+
+    expect(result.workspace.repos[1].description).toBe('Web storefront');
+    expect(readConfigFile(path.join(api.path, '.opencode', 'opencode.json')).references.web).toEqual({
+      path: path.resolve(web.path),
+      description: 'Web storefront',
+    });
+  });
 });
 
 describe('workspace service: reference states', () => {
