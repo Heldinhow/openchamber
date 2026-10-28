@@ -1246,7 +1246,7 @@ describe('getStatus', () => {
     expect(status.diffStats.working['staged.txt']).toBeUndefined();
   });
 
-  it('keeps the app config backups out of the working-tree status', async () => {
+  it('keeps untracked app config backups out of the working-tree status', async () => {
     if (!canRunGit()) return;
 
     const repo = createTempDir();
@@ -1277,6 +1277,34 @@ describe('getStatus', () => {
       expect(status.files).toEqual([]);
       expect(status.isClean).toBe(true);
     }
+  });
+
+  it('keeps a tracked app config backup in the working-tree status', async () => {
+    if (!canRunGit()) return;
+
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    const backup = '.opencode/opencode.json.openchamber.backup';
+    fs.mkdirSync(path.join(repo, '.opencode'), { recursive: true });
+    fs.writeFileSync(path.join(repo, backup), '{}\n');
+    runGit(repo, ['add', backup]);
+    runGit(repo, ['commit', '-m', 'Track backup']);
+    fs.appendFileSync(path.join(repo, backup), '{}\n');
+
+    let status = await getStatus(repo);
+    expect(status.files).toEqual([
+      expect.objectContaining({ path: backup, working_dir: 'M' }),
+    ]);
+    expect(status.isClean).toBe(false);
+
+    runGit(repo, ['add', backup]);
+    status = await getStatus(repo);
+    expect(status.files).toEqual([
+      expect.objectContaining({ path: backup, index: 'M' }),
+    ]);
+    expect(status.isClean).toBe(false);
   });
 
   it('keys diff stats for non-ASCII paths by the same path status reports', async () => {
