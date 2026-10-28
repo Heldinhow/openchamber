@@ -37,6 +37,7 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
   onRetry,
 }) => {
   const { t } = useI18n();
+  const retryRef = refs.find((ref) => ref.status === 'missing' && ref.owned) ?? null;
 
   return (
     <div className="app-region-no-drag flex min-w-0 max-w-full items-center gap-2 overflow-hidden ps-2 text-start">
@@ -65,7 +66,6 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
             const title = ref.status === 'unknown' && refsError
               ? `${refsError.path}: ${refsError.message}`
               : [label, path].filter(Boolean).join(' · ');
-            const retryable = ref.status === 'missing' && ref.owned;
             return (
               <span
                 key={ref.alias}
@@ -75,21 +75,21 @@ export const RepoWorkspaceSessionMeta: React.FC<RepoWorkspaceSessionMetaProps> =
                 <span className="font-mono">@{ref.alias}</span>
                 <span>{label}</span>
                 {path ? <span className="sr-only"> {path}</span> : null}
-                {retryable ? (
-                  <button
-                    type="button"
-                    className="shrink-0 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-                    aria-label={t('sessions.sidebar.workspace.retryAlias', { alias: ref.alias })}
-                    disabled={retryingAliases.has(ref.alias)}
-                    onClick={() => onRetry(ref.alias)}
-                  >
-                    {t('sessions.sidebar.workspace.retry')}
-                  </button>
-                ) : null}
               </span>
             );
           })}
         </div>
+      ) : null}
+      {retryRef ? (
+        <button
+          type="button"
+          className="shrink-0 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+          aria-label={t('sessions.sidebar.workspace.retryAlias', { alias: retryRef.alias })}
+          disabled={retryingAliases.has(retryRef.alias)}
+          onClick={() => onRetry(retryRef.alias)}
+        >
+          {t('sessions.sidebar.workspace.retry')}
+        </button>
       ) : null}
     </div>
   );

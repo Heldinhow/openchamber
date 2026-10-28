@@ -1,3 +1,4 @@
+import type { I18nKey } from '@/lib/i18n';
 import type { RepoWorkspaceRef, RepoWorkspaceResolved } from './client';
 
 type WorkspaceReviewFile = {
@@ -74,6 +75,28 @@ type Args = {
 const fileStatus = (file: WorkspaceReviewStatus['files'][number]): string => (
   `${file.index}${file.working_dir}`.replace(/\s+/g, '')
 );
+
+/**
+ * The accessible label for a porcelain status. Same precedence as
+ * `views/git/changeStatus`: a conflict wins, then the index column, then the
+ * working tree; `??` is untracked and `C` is a copy.
+ */
+export const changeStatusKey = (status: string): I18nKey => {
+  const index = status.charAt(0);
+  const working = status.charAt(1);
+  if (index === 'U' || working === 'U' || (index === 'A' && working === 'A') || (index === 'D' && working === 'D')) {
+    return 'diffView.change.conflicted';
+  }
+  const symbol = index && index !== '?' ? index : working || index;
+  switch (symbol) {
+    case '?': return 'diffView.change.untracked';
+    case 'A': return 'diffView.change.new';
+    case 'D': return 'diffView.change.deleted';
+    case 'R': return 'diffView.change.renamed';
+    case 'C': return 'diffView.change.copied';
+    default: return 'diffView.change.modified';
+  }
+};
 
 const repoGit = (
   repo: RepoWorkspaceResolved['repos'][number],

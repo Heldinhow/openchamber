@@ -5,6 +5,7 @@ import { Icon } from '@/components/icon/Icon';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import type { RepoWorkspaceRef, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import {
+  changeStatusKey,
   projectWorkspaceReview,
   type WorkspaceReviewGitReadout,
   type WorkspaceReviewRepo,
@@ -121,15 +122,6 @@ const changeLabel = (t: ReturnType<typeof useI18n>['t'], count: number): string 
     ? t('sessions.sidebar.workspace.changeCountSingle', { count })
     : t('sessions.sidebar.workspace.changeCountPlural', { count })
 );
-
-const changeStatusKey = (status: string): I18nKey => {
-  if (status.includes('?')) return 'diffView.change.untracked';
-  if (status.includes('A')) return 'diffView.change.new';
-  if (status.includes('D')) return 'diffView.change.deleted';
-  if (status.includes('R')) return 'diffView.change.renamed';
-  if (status.includes('U')) return 'diffView.change.conflicted';
-  return 'diffView.change.modified';
-};
 
 const repoCountLabel = (t: ReturnType<typeof useI18n>['t'], count: number): string => (
   count === 1

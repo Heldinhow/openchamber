@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RepoWorkspaceRef, RepoWorkspaceResolved } from './client';
 import {
+  changeStatusKey,
   projectWorkspaceReview,
   type WorkspaceReviewGitReadout,
 } from './workspaceReview';
@@ -195,5 +196,25 @@ describe('projectWorkspaceReview', () => {
     });
 
     expect(review.repos.map((repo) => repo.reference?.status ?? null)).toEqual([null, 'outside', 'overridden']);
+  });
+});
+
+describe('changeStatusKey', () => {
+  test('conflicts win over the column codes, including AA and DD', () => {
+    expect(changeStatusKey('UU')).toBe('diffView.change.conflicted');
+    expect(changeStatusKey('AU')).toBe('diffView.change.conflicted');
+    expect(changeStatusKey('UA')).toBe('diffView.change.conflicted');
+    expect(changeStatusKey('AA')).toBe('diffView.change.conflicted');
+    expect(changeStatusKey('DD')).toBe('diffView.change.conflicted');
+  });
+
+  test('the index column decides, then the working tree', () => {
+    expect(changeStatusKey('??')).toBe('diffView.change.untracked');
+    expect(changeStatusKey('AM')).toBe('diffView.change.new');
+    expect(changeStatusKey('MM')).toBe('diffView.change.modified');
+    expect(changeStatusKey('C')).toBe('diffView.change.copied');
+    expect(changeStatusKey('M')).toBe('diffView.change.modified');
+    expect(changeStatusKey('R')).toBe('diffView.change.renamed');
+    expect(changeStatusKey('D')).toBe('diffView.change.deleted');
   });
 });
