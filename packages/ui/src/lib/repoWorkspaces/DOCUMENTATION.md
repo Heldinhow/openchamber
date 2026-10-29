@@ -18,7 +18,9 @@ directory from, and `draftTargetGroups.ts` builds the picker's two groups:
 workspace names and project names both match, and a matched project also
 surfaces every workspace that contains it. A workspace draft keeps its
 `workspaceId` and neutral directory, so it still names and routes the workspace
-before the list loads.
+before the list loads. `workspaceDraft.ts` asks the route directly when the
+catalog copy is missing or stale; a workspace the route no longer holds throws
+instead of yielding a directory.
 
 The server owns both writes and the project catalog. The client never writes a
 workspace document, never composes the neutral directory, and never stores one

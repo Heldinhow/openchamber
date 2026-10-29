@@ -38,6 +38,7 @@ import { draftSpaceTarget, isSpaceCreationRequest, spaceOfCreationRequest } from
 import { isSpaceDirectory } from '@/lib/spaces/space-route';
 import { spacesOfProject, useSpacesStore } from '@/lib/spaces/spaces-store';
 import { useRepoWorkspaceCatalog } from '@/lib/repoWorkspaces/catalog';
+import { useRepoWorkspaces } from '@/hooks/useRepoWorkspaces';
 import { useUIStore } from '@/stores/useUIStore';
 
 /** How long a cached branch list is served before it is refreshed. */
@@ -88,6 +89,10 @@ export function useDraftTarget(enabled: boolean) {
     const configuredProjects: readonly DraftTargetProject[] = useProjectsStore((state) => state.projects);
     const { t } = useI18n();
     const workspaceCatalog = useRepoWorkspaceCatalog();
+    // The sidebar usually publishes the list first. Surfaces without one, such
+    // as Mini Chat, load it here so the picker still offers workspaces.
+    const isMobileLayout = useUIStore((state) => state.isMobile);
+    useRepoWorkspaces({ enabled: enabled && !isMobileLayout && workspaceCatalog.status === 'loading' });
     const workspaces = React.useMemo<DraftTargetWorkspace[]>(
         () => workspaceCatalog.workspaces.map((workspace) => ({
             id: workspace.id,
