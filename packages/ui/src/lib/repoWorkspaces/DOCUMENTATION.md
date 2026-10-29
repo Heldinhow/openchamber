@@ -70,11 +70,13 @@ window can change the list and the server echoes that save.
 
 ### Why the composer reads a published catalog instead of its own request
 
-The sidebar already owns the only `/api/workspaces` read. A second request per
+The sidebar already owns the `/api/workspaces` read. A second request per
 composer would duplicate the listener and could show two different lists while
 one reloads. The catalog is the same resolved payload, keyed to the runtime that
 answered, so the composer's picker and the draft store agree with the sidebar
-and neither treats a failed read as an empty list.
+and neither treats a failed read as an empty list. A surface with no sidebar,
+such as Mini Chat, loads the route itself, and only while no catalog has been
+published yet.
 
 ### Why mobile and VS Code disable instead of adapting
 
