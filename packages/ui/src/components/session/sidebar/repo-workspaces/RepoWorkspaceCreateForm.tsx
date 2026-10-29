@@ -181,14 +181,17 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
         <div className="flex flex-col gap-2" aria-describedby={attempted && rows.length === 0 ? rowsErrorId : undefined}>
           {rows.map((row) => {
             const serverMessage = serverErrors[row.key] ?? null;
-            const rowError = serverMessage ? null : rowErrors[row.key] ?? null;
-            const missing = row.missing || Boolean(serverMessage);
+            // A duplicate is not a missing folder; keep the localized duplicate
+            // message and the row styled as valid.
+            const duplicateFromServer = Boolean(serverMessage && /already/i.test(serverMessage));
+            const rowError = rowErrors[row.key] ?? (serverMessage && !duplicateFromServer ? 'missing' : null);
+            const missing = row.missing || Boolean(serverMessage && !duplicateFromServer);
             const label = row.path || t('sessions.sidebar.workspace.missingProject');
-            const errorText = serverMessage ?? (rowError === 'duplicate'
+            const errorText = rowError === 'duplicate' || duplicateFromServer
               ? t('sessions.sidebar.workspace.folderDuplicate')
               : rowError
                 ? t(row.path ? 'sessions.sidebar.workspace.folderMissing' : 'sessions.sidebar.workspace.missingProject')
-                : null);
+                : null;
             return (
               <div key={row.key} className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">

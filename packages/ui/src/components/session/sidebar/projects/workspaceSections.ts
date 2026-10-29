@@ -8,6 +8,8 @@ export type WorkspaceSidebarIdentity = {
   id: string;
   name: string;
   directory: string;
+  /** A neutral config that exists but cannot be read; shown on the row. */
+  configError?: { path: string; message: string } | null;
   /** The projects the workspace contains, for search by a familiar project. */
   projects?: readonly {
     projectId: string;

@@ -81,6 +81,25 @@ export const WorkspaceSectionRow: React.FC<RowProps> = ({
           <span className="min-w-0 flex-1 truncate typography-ui-section font-semibold text-foreground" dir="auto" title={workspace.name}>
             {workspace.name}
           </span>
+          {workspace.configError ? (
+            <span
+              className="shrink-0 text-status-warning"
+              title={`${workspace.configError.path}: ${workspace.configError.message}`}
+              aria-label={`${workspace.configError.path}: ${workspace.configError.message}`}
+            >
+              <Icon name="alert" className="h-3.5 w-3.5" />
+            </span>
+          ) : null}
+          {workspace.configError ? (
+            <span
+              className="shrink-0 text-status-warning"
+              title={`${workspace.configError.path}: ${workspace.configError.message}`}
+              aria-label={`${workspace.configError.path}: ${workspace.configError.message}`}
+              role="img"
+            >
+              <Icon name="alert" className="h-3.5 w-3.5" />
+            </span>
+          ) : null}
         </button>
 
         <div className="absolute inset-e-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">

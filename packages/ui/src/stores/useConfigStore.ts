@@ -30,6 +30,8 @@ import { runtimeFetch } from "@/lib/runtime-fetch";
 import { EMPTY_VOICE_API_KEYS, fetchVoiceApiKeys, migrateLegacyVoiceApiKeys, updateVoiceApiKeys, type VoiceApiKeyKind, type VoiceApiKeyState } from "@/lib/voiceKeysApi";
 import { markStartupTrace, measureStartupTrace } from "@/lib/startupTrace";
 import { normalizePath } from "@/lib/pathNormalization";
+import { fetchRepoWorkspaces } from "@/lib/repoWorkspaces/client";
+import { findRepoWorkspaceByDirectory, findRepoWorkspaceIn } from "@/lib/repoWorkspaces/catalog";
 import { getSyncConfig, subscribeToSyncConfigChanges } from "@/sync/sync-refs";
 import { getRuntimeKey, subscribeRuntimeEndpointChanged } from "@/lib/runtime-switch";
 import { readCachedCatalog, writeCachedCatalogWhenSettled, type CachedCatalog } from "./configCatalogCache";
@@ -4187,7 +4189,22 @@ export const useConfigStore = create<ConfigStore>()(
                                 useSessionUIStore.getState().availableWorktreesByProject,
                                 initialDirectory ?? null,
                             );
-                            const resolvedInitialDirectory = (resolvedProject || resolveProjectDirectory(initialDirectory))
+                            // A workspace session runs in a neutral directory that is
+                            // not a registered project. The workspace route is the
+                            // authoritative owner; without this check startup would
+                            // normalize the session to the active project's config.
+                            let initialWorkspace = null;
+                            if (initialDirectory && !resolvedProject && !resolveProjectDirectory(initialDirectory)) {
+                                try {
+                                    initialWorkspace = findRepoWorkspaceIn((await fetchRepoWorkspaces()).workspaces, initialDirectory);
+                                } catch {
+                                    // The route is absent or failed; the catalog may
+                                    // still name the workspace.
+                                    initialWorkspace = findRepoWorkspaceByDirectory(initialDirectory);
+                                }
+                                if (!isConfigRuntimeContextCurrent(runtimeContext)) return;
+                            }
+                            const resolvedInitialDirectory = (initialWorkspace || resolvedProject || resolveProjectDirectory(initialDirectory))
                                 ? resolveConfigDirectory(initialDirectory)
                                 : null;
                             const configDirectory = resolvedInitialDirectory ?? getFallbackProjectDirectory();
