@@ -68,11 +68,19 @@ export const findRepoWorkspace = (id: string | null | undefined): RepoWorkspaceR
   return getRepoWorkspaceCatalog().workspaces.find((workspace) => workspace.id === id) ?? null;
 };
 
-export const findRepoWorkspaceByDirectory = (directory: string | null | undefined): RepoWorkspaceResolved | null => {
+/** The workspace a directory belongs to, resolved against an explicit list. */
+export const findRepoWorkspaceIn = (
+  workspaces: readonly RepoWorkspaceResolved[],
+  directory: string | null | undefined,
+): RepoWorkspaceResolved | null => {
   const normalized = normalizePath(directory);
   if (!normalized) return null;
-  return getRepoWorkspaceCatalog().workspaces.find((workspace) => normalizePath(workspace.directory) === normalized) ?? null;
+  return workspaces.find((workspace) => normalizePath(workspace.directory) === normalized) ?? null;
 };
+
+export const findRepoWorkspaceByDirectory = (directory: string | null | undefined): RepoWorkspaceResolved | null => (
+  findRepoWorkspaceIn(getRepoWorkspaceCatalog().workspaces, directory)
+);
 
 /** Every neutral directory the catalog knows; a draft must not root a project here. */
 export const repoWorkspaceDirectories = (): Set<string> => new Set(

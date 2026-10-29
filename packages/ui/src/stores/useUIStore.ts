@@ -261,14 +261,14 @@ const normalizeContextTargetDirectory = (value: string | null | undefined): stri
   return normalizeContextPanelDirectoryKey(normalizedPath) || null;
 };
 
-// A terminal may run in another directory than the panel it lives in, and a
-// chat tab may show a session from another project (or Chat) next to the
-// main chat. A Tracker item reads through the project it belongs to, and so
-// do the Changes and walkthrough of a pull request opened from one, without
-// the app moving to that project. Every other mode works in the panel's own
-// directory.
+// A terminal may run in another directory than the panel it lives in, a chat
+// tab may show a session from another project (or Chat) next to the main chat,
+// and a Git tab may show one of a workspace's member projects. A Tracker item
+// reads through the project it belongs to, and so do the Changes and
+// walkthrough of a pull request opened from one, without the app moving to that
+// project. Every other mode works in the panel's own directory.
 const contextPanelModeKeepsTargetDirectory = (mode: ContextPanelMode): boolean => {
-  return mode === 'terminal' || mode === 'chat' || mode === 'pr' || mode === 'diff' || mode === 'walkthrough';
+  return mode === 'terminal' || mode === 'chat' || mode === 'pr' || mode === 'diff' || mode === 'walkthrough' || mode === 'git';
 };
 
 /**
@@ -1822,9 +1822,9 @@ export const useUIStore = create<UIStore>()(
             // `>=` so equal timestamps (same-millisecond opens) resolve to the
             // later tab in insertion order.
             const mostRecent = tabsOfMode.reduce((best, tab) => (tab.touchedAt >= best.touchedAt ? tab : best));
-            // The rail's Changes and walkthrough are this project's: a pull
-            // request of another project opened from the Tracker gives way.
-            if ((mode === 'diff' || mode === 'walkthrough') && mostRecent.targetDirectory) {
+            // The rail's Changes, walkthrough and Git are this project's: a
+            // pull request or member project of another one gives way.
+            if ((mode === 'diff' || mode === 'walkthrough' || mode === 'git') && mostRecent.targetDirectory) {
               state.openContextPanelTab(normalizedDirectory, {
                 mode,
                 targetPath: mostRecent.targetPath,

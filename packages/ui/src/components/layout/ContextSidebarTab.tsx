@@ -25,6 +25,9 @@ import { ContextPanelHeaderToolbar } from './contextPanelHeaderSlot';
 import { useInContextPanelHeader } from './contextPanelHeaderSlotContext';
 import { toolContentShellChars } from '@/lib/opencode/toolContentShells';
 import { composeContextBreakdown, type ContextBuckets } from './contextBreakdown';
+import { useRepoWorkspaceCatalog, findRepoWorkspaceIn } from '@/lib/repoWorkspaces/catalog';
+import { WorkspaceProjectsPanel } from './WorkspaceProjectsSection';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 
 type SessionMessage = { info: Message; parts: Part[] };
 
@@ -264,6 +267,17 @@ const resolveProviderAndModel = (
 export const ContextPanelContent: React.FC = () => {
   const { t } = useI18n();
   const inPanelHeader = useInContextPanelHeader();
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const workspaceCatalog = useRepoWorkspaceCatalog();
+  const currentWorkspace = React.useMemo(
+    () => findRepoWorkspaceIn(workspaceCatalog.workspaces, effectiveDirectory),
+    [effectiveDirectory, workspaceCatalog.workspaces],
+  );
+  const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
+  const openWorkspaceGit = React.useCallback((path: string) => {
+    if (!effectiveDirectory) return;
+    openContextPanelTab(effectiveDirectory, { mode: 'git', targetDirectory: path });
+  }, [effectiveDirectory, openContextPanelTab]);
   const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
   const [expandedRawMessages, setExpandedRawMessages] = React.useState<Record<string, boolean>>({});
   const [copiedRawMessageId, setCopiedRawMessageId] = React.useState<string | null>(null);
@@ -427,6 +441,14 @@ export const ContextPanelContent: React.FC = () => {
         </ContextPanelHeaderToolbar>
       ) : null}
       <div className="mx-auto w-full max-w-[52rem] px-5 py-6">
+
+        {currentWorkspace ? (
+          <WorkspaceProjectsPanel
+            workspace={currentWorkspace}
+            sessionDirectory={effectiveDirectory}
+            onOpenGit={openWorkspaceGit}
+          />
+        ) : null}
 
         {/* ── Session header ── */}
         <div className="mb-6">

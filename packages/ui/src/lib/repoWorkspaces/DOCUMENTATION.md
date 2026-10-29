@@ -22,6 +22,13 @@ before the list loads. `workspaceDraft.ts` asks the route directly when the
 catalog copy is missing or stale; a workspace the route no longer holds throws
 instead of yielding a directory.
 
+`workspaceProjects.ts` is the right context panel's read side. It projects the
+workspace's projects in stored order (a missing project keeps its row) and
+turns the shared git store's state for each project into `unknown`, `failed`,
+`no-git` or a ready branch/change readout. The panel reads the shared store and
+refreshes a project from the git refresh hints, once per project, instead of
+fetching from the server on each render.
+
 The server owns both writes and the project catalog. The client never writes a
 workspace document, never composes the neutral directory, and never stores one
 locally.
@@ -49,6 +56,13 @@ locally.
 - The catalog is a runtime-scoped copy of the route's last resolved list. It is
   never written to storage, and a runtime switch makes the old copy ineligible
   until the destination answers.
+- The right panel's project rows are the resolved route's projects in stored
+  order. A missing project keeps its row; it is never dropped or rendered as a
+  clean repository. An unknown probe, a failed read and a project that is not a
+  repository are distinct states, and a failed refresh does not erase a status
+  that already arrived.
+- Opening a project's Git view only carries the project path to the existing Git
+  surface. The row never checks out, stages, commits or writes anything.
 - A workspace draft is a target of its own (`target: "workspace"` plus
   `workspaceId`), never a project whose path happens to be the neutral
   directory. Its directory comes from the catalog; the persisted id, name and
@@ -83,3 +97,12 @@ published yet.
 Those runtimes do not register `/api/workspaces`. Asking anyway would show a
 load failure on every sidebar mount, so the feature is hidden and the sidebar
 behaves as before.
+
+### Why a git hint on the neutral directory refreshes every project
+
+A workspace session runs in the neutral directory, so OpenCode's tool hints and
+`sessionEvents` carry that directory, not the member project an agent edited.
+Matching only the project path would leave every row stale while a workspace
+session works. A hint for the session directory therefore refreshes each
+project through the shared git store; a hint that names one project refreshes
+only that project, and no hint starts a poll.

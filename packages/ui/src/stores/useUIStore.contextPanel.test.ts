@@ -374,11 +374,11 @@ describe('useUIStore context panel tabs', () => {
     // A chat tab opened without a directory carries none, and a mode that
     // always works in the panel's own directory never does.
     useUIStore.getState().openContextPanelTab('/repo', { mode: 'chat', dedupeKey: 'session:ses_2' });
-    useUIStore.getState().openContextPanelTab('/repo', { mode: 'git', targetDirectory: '/other-project' });
+    useUIStore.getState().openContextPanelTab('/repo', { mode: 'context', targetDirectory: '/other-project' });
 
     const tabs = getContextPanelTabs('/repo');
     expect(tabs.find((tab) => tab.dedupeKey === 'session:ses_2')?.targetDirectory).toBe(null);
-    expect(tabs.find((tab) => tab.mode === 'git')?.targetDirectory).toBe(null);
+    expect(tabs.find((tab) => tab.mode === 'context')?.targetDirectory).toBe(null);
   });
 
   test('persisted chat tabs keep a normalized session directory through rehydration', async () => {
@@ -422,7 +422,7 @@ describe('useUIStore context panel tabs', () => {
       const tabs = getContextPanelTabs('/repo');
       expect(tabs.find((tab) => tab.dedupeKey === 'session:ses_1')?.targetDirectory).toBe('/other-project');
       expect(tabs.find((tab) => tab.dedupeKey === 'session:ses_2')?.targetDirectory).toBe(null);
-      expect(tabs.find((tab) => tab.mode === 'git')?.targetDirectory).toBe(null);
+      expect(tabs.find((tab) => tab.mode === 'git')?.targetDirectory).toBe('/other-project');
     } finally {
       useUIStore.persist.setOptions(originalPersistOptions);
     }
@@ -511,14 +511,14 @@ describe('useUIStore context panel tabs', () => {
     expect(terminalTab?.targetDirectory).toBe('/repo/nested');
   });
 
-  test('ignores targetDirectory on modes that work in the panel directory, sanitized tabs too', () => {
+  test('keeps a workspace project target on the Git tab and sanitized tabs alike', () => {
     useUIStore.getState().openContextPanelTab('/repo-worktree', {
       mode: 'git',
       targetDirectory: '/repo',
     });
 
     const gitTab = getContextPanelTabs('/repo-worktree').find((tab) => tab.mode === 'git');
-    expect(gitTab?.targetDirectory).toBe(null);
+    expect(gitTab?.targetDirectory).toBe('/repo');
 
     // SAFETY: the object mirrors the persisted context-panel shape exactly;
     // setState bypasses the persist middleware's typing, not its migration.
@@ -551,7 +551,16 @@ describe('useUIStore context panel tabs', () => {
     useUIStore.getState().openContextPanelTab('/repo-worktree', { mode: 'terminal' });
 
     const sanitizedGitTab = getContextPanelTabs('/repo-worktree').find((tab) => tab.mode === 'git');
-    expect(sanitizedGitTab?.targetDirectory).toBe(null);
+    expect(sanitizedGitTab?.targetDirectory).toBe('/stale');
+  });
+
+  test('a Git tab opened for another project keeps one tab and takes the new target', () => {
+    useUIStore.getState().openContextPanelTab('/workspace', { mode: 'git', targetDirectory: '/projects/api' });
+    useUIStore.getState().openContextPanelTab('/workspace', { mode: 'git', targetDirectory: '/projects/web' });
+
+    const gitTabs = getContextPanelTabs('/workspace').filter((tab) => tab.mode === 'git');
+    expect(gitTabs).toHaveLength(1);
+    expect(gitTabs[0]?.targetDirectory).toBe('/projects/web');
   });
 });
 
@@ -676,6 +685,19 @@ describe('useUIStore openContextSurface', () => {
     useUIStore.getState().openContextSurface(directory, 'file');
 
     expect(useUIStore.getState().contextEditorTreeVisible).toBe(false);
+  });
+
+  test('opening the Git surface clears a member project target so the rail shows its own directory', () => {
+    useUIStore.getState().openContextPanelTab(directory, {
+      mode: 'git',
+      targetDirectory: '/projects/api',
+    });
+    useUIStore.getState().openContextPanelTab(directory, { mode: 'context' });
+
+    useUIStore.getState().openContextSurface(directory, 'git');
+
+    const gitTab = getContextPanelTabs(directory).find((tab) => tab.mode === 'git');
+    expect(gitTab?.targetDirectory).toBe(null);
   });
 
   test('opening the terminal surface clears a stale target on the singleton tab', () => {

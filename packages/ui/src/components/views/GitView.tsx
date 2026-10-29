@@ -232,16 +232,20 @@ const isUnstagedStatusFile = (file: GitStatus['files'][number]): boolean => {
 
 type GitViewProps = {
   isActive: boolean;
+  /** A workspace member project this tab was opened for; null for the panel's own directory. */
+  targetDirectory?: string | null;
 };
 
-export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
+export const GitView: React.FC<GitViewProps> = ({ isActive, targetDirectory = null }) => {
   const { t } = useI18n();
   const { git, sourceControl, runtime } = useRuntimeAPIs();
-  // The panel's tabs belong to the open view's folder; the repository shown is the same folder,
-  // except in a draft waiting for a new space: the space once it runs, none while it is made.
+  // The panel's tabs belong to the open view's folder; the repository shown is
+  // that folder, or the member project this tab was opened for (a workspace
+  // session), or in a draft waiting for a new space the space once it runs.
   const panelDirectory = useEffectiveDirectory();
   const draftSpace = useDraftSpaceTarget();
-  const currentDirectory = panelContentDirectory(draftSpace, panelDirectory) ?? undefined;
+  const target = normalizePath(targetDirectory);
+  const currentDirectory = target ?? panelContentDirectory(draftSpace, panelDirectory) ?? undefined;
   const contributorDestination = useContributorDestinationChooser();
   const [worktreeBootstrapSnapshot, setWorktreeBootstrapSnapshot] = React.useState<{
     directory: string;
@@ -351,7 +355,6 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     selectNestedRepo: state.selectNestedRepo,
   })));
   const isMobile = useUIStore((state) => state.isMobile);
-  const openContextDiff = useUIStore((state) => state.openContextDiff);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const [remotes, setRemotes] = React.useState<GitRemote[]>([]);
   const binding = useRepositoryBinding(gitDirectory, sourceControl, isActive);
@@ -1864,14 +1867,21 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
   // Context-panel tabs are keyed by the project root, not by the repository
   // being diffed: the diff surface resolves the selected nested repository on
   // its own, so opening the tab under `gitDirectory` would park it under a key
-  // the panel never displays.
+  // the panel never displays. A Git tab opened for a workspace member project
+  // names that project, so the diff reads the same tree the Git view shows.
   const handleViewChangeDiff = React.useCallback((path: string, staged: boolean) => {
     if (panelDirectory && !isMobile) {
-      openContextDiff(panelDirectory, path, staged);
+      openContextPanelTab(panelDirectory, {
+        mode: 'diff',
+        targetPath: path,
+        stagedDiff: staged,
+        diffScope: staged ? 'staged' : 'working',
+        targetDirectory: currentDirectory ?? null,
+      });
       return;
     }
     navigateToDiff(path, staged);
-  }, [panelDirectory, isMobile, navigateToDiff, openContextDiff]);
+  }, [currentDirectory, isMobile, navigateToDiff, openContextPanelTab, panelDirectory]);
 
   const openStashes = React.useCallback(() => setIsStashesDialogOpen(true), []);
 
