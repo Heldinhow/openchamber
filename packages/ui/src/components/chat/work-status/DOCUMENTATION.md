@@ -423,7 +423,9 @@ saved order, so it comes back where the user put it.
 The default order is by durability:
 
 1. **Session** (goal, context, cost), **Project** (attention, the workspace's
-   repo list, branch, changes, PR, checks), **Usage**, and **Turn stats**
+   member projects, branch, changes, PR, checks; a workspace session lists each
+   project with the single-project rows, and from two projects on a chevron folds
+   the list to one line per project, persisted as `workspace-projects`), **Usage**, and **Turn stats**
    (session telemetry:
    throughput, duration, TTFT, cache hit rate) — true for as long as the session
    is open. Usage sits here rather than lower down because a spent quota stops the

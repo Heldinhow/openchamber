@@ -244,6 +244,20 @@ describe('buildSessionSidebarRowModel', () => {
     expect(model.rows.some((row) => row.kind === 'session' && row.node.session.id === 'workspace-working')).toBe(true);
   });
 
+  test('a workspace section keeps a session that In work lists too', () => {
+    const input = args([]);
+    input.workspaceSections = [workspace('ws_one', [node('workspace-working')])];
+    input.workEntries = sessionWorks([timelineItem('workspace-working', { projectId: null, groupDirectory: '/data/workspaces/ws_one' })]);
+    input.movedSessionIds = new Set(['workspace-working']);
+    input.zoneSessionIds = new Set(['workspace-working']);
+
+    const rows = buildSessionSidebarRowModel(input).rows.flatMap((row) => (
+      row.kind === 'session' && row.node.session.id === 'workspace-working' ? [row.renderContext] : []
+    ));
+
+    expect(rows).toEqual(['mixed-compact', 'project']);
+  });
+
   test('In work lists a workspace session and a project session together, in order', () => {
     const input = args([project([group([node('project-working')])])]);
     input.workEntries = sessionWorks([

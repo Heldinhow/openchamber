@@ -1077,9 +1077,11 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
     // The workspace itself is a search result even when every session of it
     // is listed in In work or Pinned, which keeps the header count honest.
     if (search) searchMatchCount += workspaceSection.metadataMatch ? 1 : 0;
-    // Search drops a section whose sessions all left for In work or Pinned.
+    // A workspace lists all its sessions, In work or not, like a project's
+    // list. Search lists each match once, in its zone, and drops a section
+    // whose sessions all left for In work or Pinned.
     const nodes = workspaceSection.nodes
-      .filter((node) => !isMovedToZone(node.session.id))
+      .filter((node) => !search || !isMovedToZone(node.session.id))
       .sort((left, right) => compareNodes(left, right, pinned, args.sessionOrderIndex));
     if (search && nodes.length === 0) continue;
     const workspaceCollapsed = !search && args.collapsedProjects.has(containerKey);

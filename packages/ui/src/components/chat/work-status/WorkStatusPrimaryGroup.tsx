@@ -43,6 +43,9 @@ import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useOpenTrackerItem } from '@/components/sourceBoard/openTrackerItem';
 import { useLeaveWorkStatus } from './leaveWorkStatus';
 import { prChecksTooltip } from './prChecks';
+import { useRepoWorkspaceCatalog, findRepoWorkspaceIn } from '@/lib/repoWorkspaces/catalog';
+import { WorkspaceProjectList } from './WorkspaceProjectRows';
+import { Icon } from '@/components/icon/Icon';
 
 type Props = {
   sessionId: string | null;
@@ -91,6 +94,13 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   const draftSpace = useDraftSpaceTarget();
   const repositoryDirectory = sessionId ? directory : panelContentDirectory(draftSpace, directory);
   const { gitDirectory } = useNestedGitDirectory(repositoryDirectory, { enabled: showRepository });
+  // A workspace's neutral directory is no repository: the section lists the
+  // member projects, each with its own git readout, in place of the readouts.
+  const workspaceCatalog = useRepoWorkspaceCatalog();
+  const workspace = React.useMemo(
+    () => findRepoWorkspaceIn(workspaceCatalog.workspaces, repositoryDirectory),
+    [repositoryDirectory, workspaceCatalog.workspaces],
+  );
 
   const gitStatus = useGitStore(
     React.useCallback(
@@ -234,6 +244,14 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
     if (directory) openContextOverview(directory);
   }, [directory, openContextOverview]);
 
+  // From two projects on, the workspace's list folds to one line each.
+  const workspaceProjectCount = workspace?.projects.length ?? 0;
+  const workspaceExpanded = useUIStore((state) => state.workStatusExpandedSections['workspace-projects'] ?? true);
+  const setWorkStatusSectionExpanded = useUIStore((state) => state.setWorkStatusSectionExpanded);
+  const openWorkspaceGit = React.useCallback((path: string) => {
+    if (directory && !mobile) openContextPanelTab(directory, { mode: 'git', targetDirectory: path });
+  }, [directory, mobile, openContextPanelTab]);
+
   const openChanges = React.useCallback(() => {
     if (!directory) return;
     if (mobile) mobile.openChanges();
@@ -294,7 +312,7 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
   // restate the number directly above it.
   const showCostBreakdown = cost !== null && subagentCount > 0 && subagentCost > 0;
   const hasSession = showSession && (contextUsage !== null || cost !== null || Boolean(goalRow));
-  const hasRepository = showRepository && Boolean(branch || changed || prSummary || attentionLabel || projectActionsContext);
+  const hasRepository = showRepository && Boolean(workspace || branch || changed || prSummary || attentionLabel || projectActionsContext);
 
   useReportWorkStatusPresence('session-repository', hasSession || hasRepository);
 
@@ -345,12 +363,26 @@ export const WorkStatusPrimaryGroup: React.FC<Props> = ({ sessionId, directory, 
 
       repository: hasRepository ? (
         <WorkStatusSection
-          title={t('chat.workStatus.section.project')}
-          subject={projectLabel}
-          summary={projectActionsContext?.directory
-            ? <OpenInAppButton directory={projectActionsContext.directory} />
-            : null}
+          title={workspace ? workspace.name : t('chat.workStatus.section.project')}
+          icon={workspace ? 'stack' : undefined}
+          subject={workspace ? undefined : projectLabel}
+          summary={workspace
+            ? workspaceProjectCount >= 2 ? (
+              <button
+                type="button"
+                aria-expanded={workspaceExpanded}
+                aria-label={t(workspaceExpanded ? 'sessions.sidebar.group.collapseAria' : 'sessions.sidebar.group.expandAria', { label: workspace.name })}
+                onClick={() => setWorkStatusSectionExpanded('workspace-projects', !workspaceExpanded)}
+                className="inline-flex items-center rounded-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Icon name={workspaceExpanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3.5" />
+              </button>
+            ) : null
+            : projectActionsContext?.directory ? <OpenInAppButton directory={projectActionsContext.directory} /> : null}
         >
+          {workspace ? (
+            <WorkspaceProjectList workspace={workspace} sessionDirectory={repositoryDirectory} expanded={workspaceExpanded || workspaceProjectCount < 2} onOpenGit={openWorkspaceGit} />
+          ) : null}
           {attentionLabel ? <WorkStatusCallout>{attentionLabel}</WorkStatusCallout> : null}
 
           {/* Branch first: the changes below are the changes *on it*, and the

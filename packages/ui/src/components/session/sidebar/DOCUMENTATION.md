@@ -602,9 +602,10 @@ top-level session it nests under (`buildSessionRootIndex`, over the
 collection's root sessions and `childrenMap`), with no project, as
 `lib/sidebarSessionRows.ts` describes for the tray. A workspace session is one
 of these: its neutral directory belongs to no project, so it is ordered with
-the project works by the same lifecycle order and leaves its workspace section
-while In work lists it, unless "Also show in work under projects" keeps it
-there. While the zone is shown it
+the project works by the same lifecycle order and stays in its workspace
+section while In work lists it too: a workspace is where its sessions are
+found, and "Also show in work under projects" does not apply to it. A search
+lists each match once, in its zone. While the zone is shown it
 is the only place such a session appears: the list by time does not add these,
 so Done takes one out of the sidebar. A work In work lists leaves its project
 or folder (`movedSessionIds`, `movedGroupKeys`) unless "Also show in work
