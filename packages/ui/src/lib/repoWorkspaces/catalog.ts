@@ -30,7 +30,7 @@ let catalog: RepoWorkspaceCatalogState = initial('loading');
 let foreignCatalog: RepoWorkspaceCatalogState | null = null;
 const listeners = new Set<() => void>();
 
-export const getRepoWorkspaceCatalog = (): RepoWorkspaceCatalogState => {
+const getRepoWorkspaceCatalog = (): RepoWorkspaceCatalogState => {
   if (catalog.runtimeKey === getRuntimeKey()) return catalog;
   if (!foreignCatalog || foreignCatalog.runtimeKey !== getRuntimeKey()) {
     foreignCatalog = initial('loading');
