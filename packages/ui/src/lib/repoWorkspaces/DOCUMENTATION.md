@@ -12,6 +12,14 @@ id, name, neutral `directory`, resolved projects (including a missing one) and
 `configError`. It reloads when the merged settings document reports a different
 `workspaces` list, so a create or edit in another window lands here.
 
+`catalog.ts` publishes that resolved list to the composer and to the draft
+store. It is the one place a workspace draft resolves its name and neutral
+directory from, and `draftTargetGroups.ts` builds the picker's two groups:
+workspace names and project names both match, and a matched project also
+surfaces every workspace that contains it. A workspace draft keeps its
+`workspaceId` and neutral directory, so it still names and routes the workspace
+before the list loads.
+
 The server owns both writes and the project catalog. The client never writes a
 workspace document, never composes the neutral directory, and never stores one
 locally.
@@ -36,6 +44,17 @@ locally.
   on the next read.
 - Create and edit inputs carry a name and folder rows (`path` or `projectId`).
   The client does not send aliases, a primary, branches or permissions.
+- The catalog is a runtime-scoped copy of the route's last resolved list. It is
+  never written to storage, and a runtime switch makes the old copy ineligible
+  until the destination answers.
+- A workspace draft is a target of its own (`target: "workspace"` plus
+  `workspaceId`), never a project whose path happens to be the neutral
+  directory. Its directory comes from the catalog; the persisted id, name and
+  directory only keep the draft nameable before the list loads.
+- A workspace the catalog authoritatively no longer holds, and a neutral
+  directory the filesystem reports missing, fail the first send as a workspace
+  failure. They never fall back to a member project, the active project or the
+  previous project.
 
 ## Decisions
 
@@ -46,6 +65,14 @@ marked `missing`, and the neutral `directory` and `configError` come from the
 file the service owns. Reading the settings list here would render a missing
 project as a normal one. The merged document is still read, because another
 window can change the list and the server echoes that save.
+
+### Why the composer reads a published catalog instead of its own request
+
+The sidebar already owns the only `/api/workspaces` read. A second request per
+composer would duplicate the listener and could show two different lists while
+one reloads. The catalog is the same resolved payload, keyed to the runtime that
+answered, so the composer's picker and the draft store agree with the sidebar
+and neither treats a failed read as an empty list.
 
 ### Why mobile and VS Code disable instead of adapting
 

@@ -6,6 +6,7 @@ import {
   RepoWorkspacesUnavailableError,
   type RepoWorkspaceResolved,
 } from '@/lib/repoWorkspaces/client';
+import { publishRepoWorkspaceCatalog } from '@/lib/repoWorkspaces/catalog';
 
 type RepoWorkspacesStatus = 'loading' | 'ready' | 'error' | 'unavailable';
 
@@ -74,6 +75,10 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
   const reload = React.useCallback(() => {
     void load();
   }, [load]);
+
+  React.useEffect(() => {
+    publishRepoWorkspaceCatalog({ ...state, runtimeKey: getRuntimeKey() });
+  }, [state]);
 
   React.useEffect(() => {
     if (!enabled) return;

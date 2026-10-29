@@ -7,14 +7,16 @@ import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 
 type Props = {
   workspaces: readonly RepoWorkspaceResolved[];
+  onNewSession: (workspace: RepoWorkspaceResolved) => void;
   onEdit: (workspace: RepoWorkspaceResolved) => void;
 };
 
 /**
  * One row per workspace until the full section (with its sessions) lands.
- * Edit opens the same name-and-folders form as create.
+ * Plus starts a session owned by the workspace; Edit opens the same
+ * name-and-folders form as create.
  */
-const WorkspaceSidebarList: React.FC<Props> = ({ workspaces, onEdit }) => {
+const WorkspaceSidebarList: React.FC<Props> = ({ workspaces, onNewSession, onEdit }) => {
   const { t } = useI18n();
   return (
     <div className="select-none flex-shrink-0 px-2.5 py-1">
@@ -30,6 +32,15 @@ const WorkspaceSidebarList: React.FC<Props> = ({ workspaces, onEdit }) => {
           <span className="min-w-0 flex-1 truncate typography-ui-section text-foreground" dir="auto" title={workspace.name}>
             {workspace.name}
           </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100"
+            aria-label={t('sessions.sidebar.workspace.newSessionFor', { name: workspace.name })}
+            onClick={() => onNewSession(workspace)}
+          >
+            <Icon name="add" className="h-3.5 w-3.5" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -87,6 +98,7 @@ type WorkspaceSidebarSlotProps = {
   workspaces: readonly RepoWorkspaceResolved[];
   discarded: number;
   onRetry: () => void;
+  onNewSession: (workspace: RepoWorkspaceResolved) => void;
   onEdit: (workspace: RepoWorkspaceResolved) => void;
 };
 
@@ -99,11 +111,12 @@ export const WorkspaceSidebarSlot: React.FC<WorkspaceSidebarSlotProps> = ({
   workspaces,
   discarded,
   onRetry,
+  onNewSession,
   onEdit,
 }) => (
   <>
     {status === 'loading' && workspaces.length === 0 ? <WorkspaceSidebarSkeleton /> : null}
-    {workspaces.length > 0 ? <WorkspaceSidebarList workspaces={workspaces} onEdit={onEdit} /> : null}
+    {workspaces.length > 0 ? <WorkspaceSidebarList workspaces={workspaces} onNewSession={onNewSession} onEdit={onEdit} /> : null}
     {status === 'error' ? <WorkspaceSidebarError onRetry={onRetry} /> : null}
     {discarded > 0 ? <WorkspaceDiscardedNotice count={discarded} /> : null}
   </>

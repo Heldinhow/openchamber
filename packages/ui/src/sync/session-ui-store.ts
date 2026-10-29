@@ -14,6 +14,7 @@
 
 import type { ContextPartMetadata } from "@/lib/messages/contextParts"
 import { create } from "zustand"
+import { z } from "zod"
 import { isSameModelRef, toModelRef, type Metadata, type ModelRef, type Part, type Session, type TextPart } from "@/lib/opencode/model"
 import type { AttachedFile, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
 import { permissionModeForNewSession, type PermissionMode } from "@/stores/utils/permissionAutoAccept"
@@ -49,6 +50,8 @@ import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
 import { getWorktreeSetupWaitEnabled } from "@/lib/openchamberConfig"
 import { resolveCreatedWorktreeStartDirectory, resolveStartDirectory, resolveWorktreeStartDirectory } from "@/lib/worktrees/worktreeStartDirectory"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
+import { resolveWorkspaceDraftDirectory, WorkspaceDraftTargetError } from "@/lib/repoWorkspaces/workspaceDraft"
+import { findRepoWorkspace, findRepoWorkspaceByDirectory, getRepoWorkspaceCatalog, repoWorkspaceDirectories } from "@/lib/repoWorkspaces/catalog"
 import {
   getSyncSessions,
   getAllSyncSessions,
@@ -449,12 +452,15 @@ function notifyMessageSent(sessionId: string): void {
 // Types
 // ---------------------------------------------------------------------------
 
-type NewSessionDraftTarget = "chat" | "project"
+type NewSessionDraftTarget = "chat" | "project" | "workspace"
 
 export type NewSessionDraftState = {
   draftId: number
   open: boolean
   selectedProjectId?: string | null
+  /** A draft owned by a workspace: `directoryOverride` is its neutral directory. */
+  workspaceId?: string | null
+  workspaceName?: string | null
   directoryOverride: string | null
   /** Chosen with the composer's shield button; absent means the new session takes the default from Settings. */
   permissionMode?: PermissionMode
@@ -510,6 +516,8 @@ export type SessionUIState = {
   openNewSessionDraft: (options?: Partial<NewSessionDraftState> & { automatic?: boolean }) => void
   prepareChatDraftDirectory: () => Promise<string | null>
   closeNewSessionDraft: () => void
+  /** Picks a workspace in the open draft; its neutral directory becomes the target. */
+  selectWorkspaceDraftTarget: (workspace: { id: string; name: string; directory: string }) => void
   setNewSessionDraftTarget: (target: { projectId?: string | null; selectedProjectId?: string | null; directoryOverride?: string | null }, options?: { force?: boolean }) => void
   setDraftPreserveDirectoryOverride: (value: boolean) => void
   setDraftPermissionMode: (mode: PermissionMode) => void
@@ -602,21 +610,36 @@ const DRAFT_TARGET_STORAGE_KEY = "oc.chatInput.lastDraftTarget"
 // worked on, so a plain "new session" reopens there instead of always landing
 // on Chat. Records written before this field existed carry no kind — they stay
 // `null` and leave the Chat default in place rather than guessing one.
+// A workspace target keeps its id and neutral directory; together they survive
+// a restart even when the workspace list has not loaded yet.
 type PersistedDraftTarget = {
   projectId: string | null
+  workspaceId?: string | null
+  workspaceName?: string | null
   directory: string | null
   target: NewSessionDraftTarget | null
 }
+
+const persistedDraftTargetSchema = z.object({
+  projectId: z.string().nullable().optional(),
+  workspaceId: z.string().nullable().optional(),
+  workspaceName: z.string().nullable().optional(),
+  directory: z.string().nullable().optional(),
+  target: z.enum(["chat", "project", "workspace"]).nullable().optional(),
+})
 
 const readPersistedDraftTarget = (): PersistedDraftTarget | null => {
   try {
     const raw = safeStorage.getItem(DRAFT_TARGET_STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { projectId?: unknown; directory?: unknown; target?: unknown }
+    const parsed = persistedDraftTargetSchema.safeParse(JSON.parse(raw))
+    if (!parsed.success) return null
     return {
-      projectId: typeof parsed?.projectId === "string" ? parsed.projectId : null,
-      directory: normalizePath(typeof parsed?.directory === "string" ? parsed.directory : null),
-      target: parsed?.target === "chat" || parsed?.target === "project" ? parsed.target : null,
+      projectId: parsed.data.projectId ?? null,
+      workspaceId: parsed.data.workspaceId ?? null,
+      workspaceName: parsed.data.workspaceName ?? null,
+      directory: normalizePath(parsed.data.directory ?? null),
+      target: parsed.data.target ?? null,
     }
   } catch {
     return null
@@ -627,6 +650,31 @@ const persistDraftTarget = (target: PersistedDraftTarget): void => {
   try {
     safeStorage.setItem(DRAFT_TARGET_STORAGE_KEY, JSON.stringify(target))
   } catch { /* ignored */ }
+}
+
+/** Persists the side a draft already holds; workspace fields stay only for that target. */
+const persistDraftFor = (draft: NewSessionDraftState, directory?: string | null): void => {
+  const target: PersistedDraftTarget = {
+    projectId: draft.target === "project" ? draft.selectedProjectId ?? null : null,
+    directory: normalizePath(directory !== undefined ? directory : draft.directoryOverride),
+    target: draft.target,
+  }
+  if (draft.target === "workspace") {
+    target.workspaceId = draft.workspaceId ?? null
+    target.workspaceName = draft.workspaceName ?? null
+  }
+  persistDraftTarget(target)
+}
+
+/**
+ * A workspace draft whose workspace or neutral directory is gone. It must fail
+ * where it stands: falling back would create the session in a member project.
+ */
+export class DraftWorkspaceUnavailableError extends Error {
+  constructor() {
+    super("The workspace is no longer available")
+    this.name = "DraftWorkspaceUnavailableError"
+  }
 }
 
 const resolveDraftProjectForDirectory = resolveProjectForSessionDirectory
@@ -961,6 +1009,7 @@ const resolveActiveProjectDirectory = (draft: NewSessionDraftState): string | nu
 const isRecoverableDraftDirectory = (draft: NewSessionDraftState, directory: string | null): directory is string =>
   Boolean(directory)
   && draft.open
+  && draft.target === "project"
   && draft.preserveDirectoryOverride !== true
   && !isSpaceDirectory(directory)
   && !draft.pendingWorktreeRequestId
@@ -1062,7 +1111,7 @@ const recoverStaleDraftDirectory = async (openedDraft: NewSessionDraftState): Pr
   }
   useSessionUIStore.setState({ newSessionDraft: nextDraft })
   writeRuntimeSessionMemory(runtimeMemoryKey(), { draft: nextDraft })
-  persistDraftTarget({ projectId: nextDraft.selectedProjectId ?? null, directory: recovered, target: nextDraft.target })
+  persistDraftFor(nextDraft, recovered)
   void activateConfigForDirectory(recovered)
 }
 
@@ -1158,6 +1207,36 @@ const draftSessionMetadata = (draft: NewSessionDraftState): Metadata | undefined
  */
 const resolveDraftTargetDirectory = async (draft: NewSessionDraftState): Promise<string | null> => {
   const store = useSessionUIStore.getState()
+
+  // A workspace draft runs in the workspace's neutral directory. The catalog
+  // answers once the sidebar has read the route; before that (or when it is
+  // stale) the route is asked directly. Either way the workspace must exist:
+  // falling back would send the session to a member project.
+  if (draft.target === "workspace") {
+    const catalogState = getRepoWorkspaceCatalog()
+    const liveWorkspace = findRepoWorkspace(draft.workspaceId ?? null)
+    if (!liveWorkspace && catalogState.status === "ready") {
+      throw new DraftWorkspaceUnavailableError()
+    }
+    let routedDirectory: string | null = null
+    if (!liveWorkspace) {
+      try {
+        routedDirectory = normalizePath(await resolveWorkspaceDraftDirectory(draft.workspaceId))
+      } catch (error) {
+        if (error instanceof WorkspaceDraftTargetError) throw new DraftWorkspaceUnavailableError()
+        throw error
+      }
+    }
+    const directory = normalizePath(liveWorkspace?.directory ?? null)
+      ?? routedDirectory
+      ?? normalizePath(draft.directoryOverride ?? null)
+    if (!directory) throw new DraftWorkspaceUnavailableError()
+    if (await opencodeClient.getDirectoryAvailability(directory) === "missing") {
+      throw new DraftWorkspaceUnavailableError()
+    }
+    return directory
+  }
+
   let directory = draft.bootstrapPendingDirectory ?? draft.directoryOverride ?? null
 
   if (draft.pendingWorktreeRequestId) {
@@ -1240,11 +1319,7 @@ const finishDraftSession = (
       })
   }
 
-  persistDraftTarget({
-    projectId: draft.selectedProjectId ?? null,
-    directory: createdDirectory,
-    target: draft.target,
-  })
+  persistDraftFor(draft, createdDirectory)
 
   void activateConfigForDirectory(createdDirectory).catch((error) => {
     console.warn("Failed to activate directory after creating session:", error)
@@ -1638,6 +1713,19 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const activeProject = projectsState.getActiveProject()
     const currentDirectory = normalizePath(useDirectoryStore.getState().currentDirectory ?? null)
     const persistedTarget = readPersistedDraftTarget()
+    const persistedWorkspace = persistedTarget?.target === "workspace" && persistedTarget.workspaceId
+      ? {
+          id: persistedTarget.workspaceId,
+          name: persistedTarget.workspaceName ?? persistedTarget.workspaceId,
+          directory: normalizePath(persistedTarget.directory),
+        }
+      : null
+    const currentWorkspace = findRepoWorkspaceByDirectory(currentDirectory)
+    // A neutral directory looks like any other unregistered path to the project
+    // rules below; it is a workspace location, not an external folder.
+    const workspaceDirectories = repoWorkspaceDirectories()
+    if (persistedWorkspace?.directory) workspaceDirectories.add(persistedWorkspace.directory)
+    const isWorkspaceDirectory = (directory: string): boolean => workspaceDirectories.has(directory)
 
     // Callers that forward "the current session's directory" forward it for
     // chat sessions too, and a chat session's scratch directory names no
@@ -1664,11 +1752,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // is not external; the recorded project still reopens from it.
     const isImplicitExternalChatFallback = currentDirectory !== null
       && !isScratchDirectory(currentDirectory)
+      && !isWorkspaceDirectory(currentDirectory)
       && currentDirProject === null
       && options?.automatic !== true
       && options?.target === undefined
       && options?.directoryOverride === undefined
       && options?.selectedProjectId === undefined
+      && options?.workspaceId === undefined
     const persistedProject = persistedProjectById ?? persistedProjectByDir
 
     // Nothing explicit was asked for: reopen on the side the user last worked
@@ -1684,6 +1774,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       && persistedProject !== null
       && !isImplicitExternalChatFallback
 
+    // The workspace side keeps its own record: its id and neutral directory
+    // survive a restart even before the workspace list is read again.
+    const restoresWorkspaceTarget = !isVSCodeRuntime()
+      && !options?.target
+      && options?.directoryOverride === undefined
+      && options?.selectedProjectId === undefined
+      && options?.workspaceId === undefined
+      && persistedWorkspace !== null
+
     let target = isVSCodeRuntime() ? "project" : options?.target
     if (!target) {
       const hasExplicitProjectTarget = (options?.directoryOverride !== undefined && !explicitDirectoryIsChat)
@@ -1693,10 +1792,31 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         ? "chat"
         : hasExplicitProjectTarget || restoresProjectTarget
           ? "project"
-          : "chat"
+          : restoresWorkspaceTarget
+            ? "workspace"
+            : "chat"
     }
     const explicitProject = target === "project" && options?.selectedProjectId
       ? projects.find((p) => p.id === options.selectedProjectId) ?? null
+      : null
+
+    // The resolved workspace a workspace draft names. The live catalog wins
+    // over the persisted copy so a rename or a moved neutral directory lands
+    // immediately; when it is missing, the persisted id/directory stay so the
+    // draft can report the failure instead of falling back.
+    const liveWorkspace = options?.workspaceId ? findRepoWorkspace(options.workspaceId) : null
+    const explicitWorkspace: { id: string; name: string; directory: string | null } | null = target === "workspace"
+      ? liveWorkspace
+        ? { id: liveWorkspace.id, name: liveWorkspace.name, directory: normalizePath(liveWorkspace.directory) }
+        : options?.workspaceId
+          ? {
+              id: options.workspaceId,
+              name: options.workspaceName ?? options.workspaceId,
+              directory: normalizePath(options.directoryOverride ?? null),
+            }
+          : currentWorkspace
+            ? { id: currentWorkspace.id, name: currentWorkspace.name, directory: normalizePath(currentWorkspace.directory) }
+            : persistedWorkspace
       : null
 
     const inferredProjectFromDir = resolveDraftProjectForDirectory(projects, availableWorktreesByProject, explicitDirectory)
@@ -1706,29 +1826,36 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       return projects[0] ?? null
     })()
 
-    const selectedProject = target === "chat" ? null : (() => {
+    const selectedProject = target !== "project" ? null : (() => {
       if (explicitProject) return explicitProject
       if (explicitDirectory !== null) return inferredProjectFromDir
       // A chat session leaves a managed scratch directory behind as the current
       // one; it owns no project, so it must not decide this draft's project —
-      // the recorded target below knows which project the user last chose.
-      if (currentDirectory && !isScratchDirectory(currentDirectory)) return currentDirProject
+      // the recorded target below knows which project the user last chose. A
+      // workspace's neutral directory is the same: it names no member project.
+      if (currentDirectory && !isScratchDirectory(currentDirectory) && !isWorkspaceDirectory(currentDirectory)) {
+        return currentDirProject
+      }
       return persistedProject ?? fallbackProject
     })()
 
     // A space that cannot take a new session (its making failed, its container
     // is gone, its machine is out of reach) is no place to reopen a draft in:
-    // the draft goes to the project root instead.
-    const keepsDraft = (dir: string): boolean => !isScratchDirectory(dir) && !isSpaceDirectoryClosedToNewSessions(dir)
-    const directory = target === "chat" ? null : (() => {
-      if (explicitDirectory !== null) return explicitDirectory
-      if (explicitProject) return normalizePath(explicitProject.path ?? null)
-      // A chat session's directory is a managed scratch folder, never a
-      // project: letting it through would open a project draft rooted in it.
-      if (currentDirectory && keepsDraft(currentDirectory)) return currentDirectory
-      if (persistedTarget?.directory && keepsDraft(persistedTarget.directory)) return persistedTarget.directory
-      return normalizePath(selectedProject?.path ?? null)
-    })()
+    // the draft goes to the project root instead. A workspace's neutral
+    // directory belongs to the workspace side, never to a project draft.
+    const keepsDraft = (dir: string): boolean =>
+      !isScratchDirectory(dir) && !isWorkspaceDirectory(dir) && !isSpaceDirectoryClosedToNewSessions(dir)
+    const directory = target === "workspace"
+      ? explicitWorkspace?.directory ?? null
+      : target === "chat" ? null : (() => {
+        if (explicitDirectory !== null) return explicitDirectory
+        if (explicitProject) return normalizePath(explicitProject.path ?? null)
+        // A chat session's directory is a managed scratch folder, never a
+        // project: letting it through would open a project draft rooted in it.
+        if (currentDirectory && keepsDraft(currentDirectory)) return currentDirectory
+        if (persistedTarget?.directory && keepsDraft(persistedTarget.directory)) return persistedTarget.directory
+        return normalizePath(selectedProject?.path ?? null)
+      })()
 
     if (target === "chat") {
       warmChatsRootDirectory()
@@ -1737,7 +1864,16 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // An unregistered live path falls back to managed Chat for this draft, but
     // it is not a user choice that should discard the recorded project target.
     if (!(target === "chat" && isImplicitExternalChatFallback)) {
-      persistDraftTarget({ projectId: selectedProject?.id ?? null, directory, target })
+      const persistedTargetRecord: PersistedDraftTarget = {
+        projectId: target === "project" ? selectedProject?.id ?? null : null,
+        directory,
+        target,
+      }
+      if (target === "workspace") {
+        persistedTargetRecord.workspaceId = explicitWorkspace?.id ?? null
+        persistedTargetRecord.workspaceName = explicitWorkspace?.name ?? null
+      }
+      persistDraftTarget(persistedTargetRecord)
     }
 
     const nextDraft: NewSessionDraftState = {
@@ -1747,6 +1883,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       target,
       preparedChatDirectory: null,
       selectedProjectId: selectedProject?.id ?? null,
+      workspaceId: target === "workspace" ? explicitWorkspace?.id ?? null : null,
+      workspaceName: target === "workspace" ? explicitWorkspace?.name ?? null : null,
       directoryOverride: directory,
       pendingWorktreeRequestId: options?.pendingWorktreeRequestId ?? null,
       bootstrapPendingDirectory: normalizePath(options?.bootstrapPendingDirectory ?? null),
@@ -1829,6 +1967,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (
       !currentDraft.open
       && currentDraft.selectedProjectId == null
+      && currentDraft.workspaceId == null
       && currentDraft.directoryOverride == null
       && currentDraft.pendingWorktreeRequestId == null
       && currentDraft.bootstrapPendingDirectory == null
@@ -1848,6 +1987,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       target: "chat",
       preparedChatDirectory: null,
       selectedProjectId: null,
+      workspaceId: null,
+      workspaceName: null,
       directoryOverride: null,
       pendingWorktreeRequestId: null,
       bootstrapPendingDirectory: null,
@@ -1862,6 +2003,35 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       newSessionDraft: nextDraft,
     })
     writeRuntimeSessionMemory(runtimeMemoryKey(), { draft: nextDraft })
+  },
+
+  selectWorkspaceDraftTarget: (workspace) => {
+    const previousDraft = get().newSessionDraft
+    if (!previousDraft.open) return
+    // A directory still being made owns the draft until it settles.
+    if (previousDraft.pendingWorktreeRequestId || previousDraft.bootstrapPendingDirectory) return
+    if (previousDraft.preparedChatDirectory) {
+      void deleteChatDirectory(previousDraft.preparedChatDirectory).catch(() => undefined)
+    }
+    const directory = normalizePath(workspace.directory)
+    const nextDraft: NewSessionDraftState = {
+      ...previousDraft,
+      target: "workspace",
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      selectedProjectId: null,
+      directoryOverride: directory,
+      preparedChatDirectory: null,
+      pendingWorktreeRequestId: null,
+      bootstrapPendingDirectory: null,
+      preserveDirectoryOverride: false,
+    }
+    set({ newSessionDraft: nextDraft })
+    applyDraftTargetSelectionDefaults(nextDraft, get().availableWorktreesByProject, undefined, previousDraft)
+    persistDraftFor(nextDraft)
+    if (directory && directory !== useDirectoryStore.getState().currentDirectory) {
+      useDirectoryStore.getState().setDirectory(directory)
+    }
   },
 
   setNewSessionDraftTarget: (target) => {
@@ -1879,6 +2049,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           target: target.projectId === CHAT_DRAFT_PROJECT_ID ? "chat" : "project",
           preparedChatDirectory: target.projectId === CHAT_DRAFT_PROJECT_ID ? s.newSessionDraft.preparedChatDirectory : null,
           selectedProjectId: target.projectId ?? target.selectedProjectId ?? s.newSessionDraft.selectedProjectId,
+          workspaceId: null,
+          workspaceName: null,
           directoryOverride: target.projectId === CHAT_DRAFT_PROJECT_ID ? null : target.directoryOverride ?? s.newSessionDraft.directoryOverride,
         },
       }
@@ -1889,11 +2061,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const nextDraft = get().newSessionDraft
     // Persist the chosen draft target so reopening the composer restores the
     // last side the user worked on.
-    persistDraftTarget({
-      projectId: nextDraft.target === "chat" ? null : nextDraft.selectedProjectId ?? null,
-      directory: normalizePath(nextDraft.directoryOverride ?? null),
-      target: nextDraft.target,
-    })
+    persistDraftFor(nextDraft)
 
     if (nextDirectory && nextDirectory !== useDirectoryStore.getState().currentDirectory) {
       useDirectoryStore.getState().setDirectory(nextDirectory)

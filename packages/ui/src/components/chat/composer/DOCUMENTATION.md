@@ -694,12 +694,16 @@ and the send path reading the same grammar.
   two seconds. The branch list's 30-second window has no timer of its own, so
   without these triggers a branch changed outside the app stayed on screen
   until the project changed.
-- `ui/DraftTargetSelectors.tsx` owns the controlled project/worktree picker
-  state and registers its application shortcuts locally. The desktop project
-  picker is a searchable popup: it ranks the current projects with
-  `rankByQuery` over display label and path, keeps the query and the active
-  result as transient local state that resets on every close, and commits
-  through the existing project-change flow only on explicit activation.
+- `ui/DraftTargetSelectors.tsx` owns the controlled project/workspace/worktree
+  picker state and registers its application shortcuts locally. The desktop
+  target picker is a searchable popup with a Workspaces group and a Projects
+  group: it ranks projects with `rankByQuery` over display label and path,
+  ranks workspaces by name, and surfaces every workspace that contains a
+  matched project, so searching a project name finds the workspace too. A
+  workspace row commits through `selectWorkspaceDraftTarget` and names the
+  workspace; a project row keeps the existing project-change flow. The query
+  and the active result are transient local state that reset on every close,
+  and nothing commits until explicit activation.
   Filtering changes the result area beyond the anchored input without moving
   the search field. When less than 240px is left under the trigger and more
   is above it, as in Mini Chat where the picker sits near the window's bottom,

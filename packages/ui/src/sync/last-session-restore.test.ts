@@ -47,6 +47,17 @@ describe('restoreLastActiveSession', () => {
         expect(selected).toEqual([{ id: 'ses_open', directory: '/repo' }]);
     });
 
+    test('reopens a workspace session on its neutral directory', async () => {
+        const neutralDirectory = '/data/workspaces/ws_product';
+        useGlobalSessionsStore.setState({
+            activeSessions: [{ ...session('ses_open'), directory: neutralDirectory }],
+        });
+        persistLastActiveSession(getRuntimeKey(), { sessionId: 'ses_open', directory: neutralDirectory });
+
+        expect(await restoreLastActiveSession({ refresh: false })).toBe('restored');
+        expect(selected).toEqual([{ id: 'ses_open', directory: neutralDirectory }]);
+    });
+
     test('leaves the launch alone without a pointer', async () => {
         expect(await restoreLastActiveSession({ refresh: false })).toBe('none');
         expect(selected).toEqual([]);

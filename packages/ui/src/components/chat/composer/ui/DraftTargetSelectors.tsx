@@ -22,6 +22,7 @@ import { dropdownMenuPopupClass } from '@/components/ui/dropdown-menu.styles';
 import { commandSearchAtBottomClass, usePopupSideOnOpen } from '@/components/ui/popup-side';
 import {
     Command,
+    CommandGroup,
     CommandInput,
     CommandItem,
     CommandList,
@@ -40,6 +41,7 @@ import {
 } from '@/components/ui/select';
 import { useI18n } from '@/lib/i18n';
 import { matchesRankQuery, rankByQuery } from '@/lib/search/fuzzySearch';
+import { groupDraftTargetResults } from '@/lib/repoWorkspaces/draftTargetGroups';
 import { PROJECT_ICON_MAP, resolveProjectColor, ProjectIconImage } from '@/lib/projectMeta';
 import { createWorktreeDraft } from '@/lib/worktreeSessionCreator';
 import { shortcutRegistry } from '@/lib/shortcuts';
@@ -47,7 +49,7 @@ import { useKeybind } from '@/hooks/useKeybind';
 import type { Theme } from '@/types/theme';
 import { isSpaceDirectory } from '@/lib/spaces/space-route';
 import { normalizePath } from '../attachments/filePaths';
-import { getProjectDisplayLabel, type DraftTargetProject } from '../state/useDraftTarget';
+import { getProjectDisplayLabel, type DraftTargetProject, type DraftTargetWorkspace } from '../state/useDraftTarget';
 import { useProjectsInSidebarOrder } from '@/components/session/sidebar/list/useProjectsInSidebarOrder';
 import { DraftsHerePicker, MobileDraftsHerePicker } from './DraftsHerePicker';
 
@@ -59,7 +61,9 @@ interface BranchOption {
 
 export interface DraftTargetProps {
     projects: readonly DraftTargetProject[];
-    selectedProject: DraftTargetProject;
+    workspaces: readonly DraftTargetWorkspace[];
+    selectedProject: DraftTargetProject | null;
+    selectedWorkspace: DraftTargetWorkspace | null;
     selectedDirectory: string | null;
     selectedBranchLabel: string | null;
     selectedBranchIsKnown: boolean;
@@ -72,6 +76,7 @@ export interface DraftTargetProps {
     branchItems: readonly BranchOption[];
     showBranchSelector: boolean;
     onProjectChange: (projectId: string) => void;
+    onWorkspaceChange: (workspaceId: string) => void;
     onDirectoryChange: (directory: string) => void;
     /** Re-reads the branch and worktree data behind the picker, throttled by the owner. */
     onRefreshTarget?: () => void;
@@ -146,12 +151,35 @@ export function ProjectLabel({ project, theme }: { project: DraftTargetProject; 
     );
 }
 
+/** A workspace's identity in the picker and the trigger: never a project's. */
+function WorkspaceLabel({ workspace }: { workspace: DraftTargetWorkspace }) {
+    const { t } = useI18n();
+    return (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+            <Icon name="stack" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{workspace.name}</span>
+            {workspace.missing ? (
+                <Icon
+                    name="alert"
+                    className="h-3.5 w-3.5 shrink-0 text-[var(--status-warning)]"
+                    aria-label={t('sessions.sidebar.workspace.missing')}
+                />
+            ) : null}
+        </span>
+    );
+}
+
+const workspaceOptionValue = (id: string): string => `workspace:${id}`;
+const projectOptionValue = (id: string): string => `project:${id}`;
+
 /** Desktop: inline project and branch selects. */
 function DraftTargetSelectorsView(props: DraftTargetProps) {
     const { t } = useI18n();
     const {
         projects,
+        workspaces,
         selectedProject,
+        selectedWorkspace,
         selectedDirectory,
         selectedBranchLabel,
         selectedBranchIsKnown,
@@ -162,6 +190,7 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
         branchItems,
         showBranchSelector,
         onProjectChange,
+        onWorkspaceChange,
         onDirectoryChange,
         onRefreshTarget,
         onCreateSpace,
@@ -213,13 +242,17 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
         setOpenPicker(null);
     };
 
+    const selectedOptionId = selectedWorkspace
+        ? workspaceOptionValue(selectedWorkspace.id)
+        : selectedProject
+            ? projectOptionValue(selectedProject.id)
+            : null;
+
     useKeybind('open_draft_project_picker', () => {
         projectTriggerRef.current?.focus();
         setProjectFocusReturn(false);
         setProjectQuery('');
-        setProjectActiveId(
-            projects.some((project) => project.id === selectedProject.id) ? selectedProject.id : null,
-        );
+        setProjectActiveId(selectedOptionId);
         setOpenPicker('project');
     });
     useKeybind('open_draft_worktree_picker', () => {
@@ -230,11 +263,24 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
     });
 
     const orderedProjects = useProjectsInSidebarOrder(projects, openPicker === 'project');
-    const filteredProjects = React.useMemo(
-        () => openPicker === 'project'
-            ? rankByQuery(orderedProjects, projectQuery, (project) => [getProjectDisplayLabel(project), project.path])
-            : orderedProjects,
-        [openPicker, orderedProjects, projectQuery],
+    const targetGroups = React.useMemo(
+        () => groupDraftTargetResults(
+            workspaces,
+            orderedProjects,
+            projectQuery,
+            (project) => [getProjectDisplayLabel(project), project.path],
+            (workspace) => workspace.projectIds,
+        ),
+        [orderedProjects, projectQuery, workspaces],
+    );
+    const filteredProjects = targetGroups.projects;
+    const filteredWorkspaces = targetGroups.workspaces;
+    const resultIds = React.useMemo(
+        () => [
+            ...filteredWorkspaces.map((workspace) => workspaceOptionValue(workspace.id)),
+            ...filteredProjects.map((project) => projectOptionValue(project.id)),
+        ],
+        [filteredProjects, filteredWorkspaces],
     );
 
     // Transient search must never survive to the next opening, including
@@ -245,16 +291,22 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
             setProjectActiveId(null);
         }
     }, [openPicker]);
-    // After a query or project-list change, retain the active ID only
-    // while it stays visible; otherwise fall to the first result (or none
-    // when the list is empty) so Enter cannot commit a hidden row.
+    // After a query or result-list change, retain the active row only while it
+    // stays visible; otherwise fall to the first result (or none when the list
+    // is empty) so Enter cannot commit a hidden row.
     React.useEffect(() => {
         if (openPicker !== 'project') return;
         setProjectActiveId((current) => {
-            if (current && filteredProjects.some((project) => project.id === current)) return current;
-            return filteredProjects[0]?.id ?? null;
+            if (current && resultIds.includes(current)) return current;
+            return resultIds[0] ?? null;
         });
-    }, [filteredProjects, openPicker]);
+    }, [openPicker, resultIds]);
+
+    const selectTarget = (select: () => void) => {
+        select();
+        setProjectFocusReturn(true);
+        setOpenPicker(null);
+    };
 
     const handleProjectChange = (projectId: string) => {
         onProjectChange(projectId);
@@ -265,6 +317,11 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
     const handleProjectSelect = (projectId: string) => {
         if (!filteredProjects.some((project) => project.id === projectId)) return;
         handleProjectChange(projectId);
+    };
+
+    const handleWorkspaceSelect = (workspaceId: string) => {
+        if (!filteredWorkspaces.some((workspace) => workspace.id === workspaceId)) return;
+        selectTarget(() => onWorkspaceChange(workspaceId));
     };
 
     const handleDirectoryChange = (directory: string) => {
@@ -286,11 +343,7 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
                         // The clamp below keeps it when still visible and
                         // falls to the first result otherwise.
                         setProjectQuery('');
-                        setProjectActiveId(
-                            projects.some((project) => project.id === selectedProject.id)
-                                ? selectedProject.id
-                                : null,
-                        );
+                        setProjectActiveId(selectedOptionId);
                         setOpenPicker('project');
                         return;
                     }
@@ -326,9 +379,13 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
                     }
                 >
                     <span className="flex min-w-0 items-center gap-1.5">
-                        {selectedProject.kind === 'chat'
-                            ? <span className="truncate typography-ui-label">{t('chat.chatInput.chooseProject')}</span>
-                            : <ProjectLabel project={selectedProject} theme={theme} />}
+                        {selectedWorkspace ? (
+                            <WorkspaceLabel workspace={selectedWorkspace} />
+                        ) : !selectedProject || selectedProject.kind === 'chat' ? (
+                            <span className="truncate typography-ui-label">{t('chat.chatInput.chooseProject')}</span>
+                        ) : (
+                            <ProjectLabel project={selectedProject} theme={theme} />
+                        )}
                         <Icon name="arrow-down-s" className="size-4 shrink-0 opacity-50" />
                     </span>
                 </Popover.Trigger>
@@ -355,7 +412,7 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
                     >
                         <Popover.Popup
                             role="dialog"
-                            aria-label={t('chat.chatInput.draftPicker.projectTitle')}
+                            aria-label={t('chat.chatInput.draftPicker.targetTitle')}
                             className={cn(dropdownMenuPopupClass, 'flex w-72 max-w-[calc(100vw-2rem)] flex-col p-0')}
                             initialFocus={false}
                             finalFocus={false}
@@ -376,8 +433,8 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
                             >
                                 <CommandInput
                                     ref={projectSearchRef}
-                                    aria-label={t('chat.chatInput.draftPicker.searchProjects')}
-                                    placeholder={t('chat.chatInput.draftPicker.searchProjects')}
+                                    aria-label={t('chat.chatInput.draftPicker.searchTargets')}
+                                    placeholder={t('chat.chatInput.draftPicker.searchTargets')}
                                     value={projectQuery}
                                     onValueChange={setProjectQuery}
                                     onKeyDown={(event) => {
@@ -399,28 +456,54 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
                                         });
                                     }}
                                 />
-                                <CommandList label={t('chat.chatInput.draftPicker.projectTitle')}>
-                                    {filteredProjects.length === 0 ? (
+                                <CommandList label={t('chat.chatInput.draftPicker.targetTitle')}>
+                                    {filteredWorkspaces.length === 0 && filteredProjects.length === 0 ? (
                                         <div role="status" className="px-3 py-6 text-center typography-ui-label text-muted-foreground">
-                                            {t('chat.chatInput.draftPicker.noProjectsFound')}
+                                            {t('chat.chatInput.draftPicker.noTargetsFound')}
                                         </div>
                                     ) : (
-                                        filteredProjects.map((project) => (
-                                            <CommandItem
-                                                key={project.id}
-                                                value={project.id}
-                                                onSelect={handleProjectSelect}
-                                                aria-current={project.id === selectedProject.id ? true : undefined}
-                                                className="max-w-full"
-                                            >
-                                                <span className="min-w-0 flex-1 truncate">
-                                                    <ProjectLabel project={project} theme={theme} />
-                                                </span>
-                                                {project.id === selectedProject.id ? (
-                                                    <Icon name="check" className="size-4 shrink-0 text-muted-foreground" />
-                                                ) : null}
-                                            </CommandItem>
-                                        ))
+                                        <>
+                                            {filteredWorkspaces.length > 0 ? (
+                                                <CommandGroup heading={t('chat.chatInput.draftPicker.workspacesGroup')}>
+                                                    {filteredWorkspaces.map((workspace) => (
+                                                        <CommandItem
+                                                            key={workspace.id}
+                                                            value={workspaceOptionValue(workspace.id)}
+                                                            onSelect={() => handleWorkspaceSelect(workspace.id)}
+                                                            aria-current={workspace.id === selectedWorkspace?.id ? true : undefined}
+                                                            className="max-w-full"
+                                                        >
+                                                            <span className="min-w-0 flex-1 truncate">
+                                                                <WorkspaceLabel workspace={workspace} />
+                                                            </span>
+                                                            {workspace.id === selectedWorkspace?.id ? (
+                                                                <Icon name="check" className="size-4 shrink-0 text-muted-foreground" />
+                                                            ) : null}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            ) : null}
+                                            {filteredProjects.length > 0 ? (
+                                                <CommandGroup heading={t('chat.chatInput.draftPicker.projectsGroup')}>
+                                                    {filteredProjects.map((project) => (
+                                                        <CommandItem
+                                                            key={project.id}
+                                                            value={projectOptionValue(project.id)}
+                                                            onSelect={() => handleProjectSelect(project.id)}
+                                                            aria-current={project.id === selectedProject?.id ? true : undefined}
+                                                            className="max-w-full"
+                                                        >
+                                                            <span className="min-w-0 flex-1 truncate">
+                                                                <ProjectLabel project={project} theme={theme} />
+                                                            </span>
+                                                            {project.id === selectedProject?.id ? (
+                                                                <Icon name="check" className="size-4 shrink-0 text-muted-foreground" />
+                                                            ) : null}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            ) : null}
+                                        </>
                                     )}
                                 </CommandList>
                             </Command>
@@ -431,7 +514,7 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
 
             {showBranchSelector ? (
                 <Select
-                    value={selectedDirectory ?? branchItems[0]?.value ?? normalizePath(selectedProject.path) ?? ''}
+                    value={selectedDirectory ?? branchItems[0]?.value ?? normalizePath(selectedProject?.path ?? null) ?? ''}
                     open={openPicker === 'worktree'}
                     onOpenChange={(open, details) => {
                         keyboardCloseRef.current = !open && details.event.type === 'keydown';
@@ -535,11 +618,11 @@ function DraftTargetSelectorsView(props: DraftTargetProps) {
 
 /** Mobile: buttons that open the bottom sheets below. */
 export function MobileDraftTargetTriggers(
-    props: Pick<DraftTargetProps, 'selectedProject' | 'selectedBranchLabel' | 'showBranchSelector' | 'theme'>
+    props: Pick<DraftTargetProps, 'selectedProject' | 'selectedWorkspace' | 'selectedBranchLabel' | 'showBranchSelector' | 'theme'>
         & { onOpenPicker: (picker: 'project' | 'branch') => void },
 ) {
     const { t } = useI18n();
-    const { selectedProject, selectedBranchLabel, showBranchSelector, theme, onOpenPicker } = props;
+    const { selectedProject, selectedWorkspace, selectedBranchLabel, showBranchSelector, theme, onOpenPicker } = props;
 
     return (
         <div className="mb-1.5 flex min-w-0 items-center gap-x-2 px-0.5">
@@ -548,9 +631,13 @@ export function MobileDraftTargetTriggers(
                 className="inline-flex h-7 min-w-0 max-w-[42vw] flex-shrink cursor-pointer items-center gap-1 rounded-lg px-1.5 typography-micro font-medium text-foreground/80 hover:bg-[var(--interactive-hover)]"
                 onClick={() => onOpenPicker('project')}
             >
-                {selectedProject.kind === 'chat'
-                    ? <span className="truncate typography-ui-label">{t('chat.chatInput.chooseProject')}</span>
-                    : <ProjectLabel project={selectedProject} theme={theme} />}
+                {selectedWorkspace ? (
+                    <WorkspaceLabel workspace={selectedWorkspace} />
+                ) : !selectedProject || selectedProject.kind === 'chat' ? (
+                    <span className="truncate typography-ui-label">{t('chat.chatInput.chooseProject')}</span>
+                ) : (
+                    <ProjectLabel project={selectedProject} theme={theme} />
+                )}
                 <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
             </button>
             {showBranchSelector ? (
@@ -679,7 +766,7 @@ export function MobileDraftTargetSheets(
                 open={openPicker === 'project'}
                 onClose={() => onOpenPickerChange(null)}
                 projects={orderedProjects}
-                selectedProjectId={selectedProject.id}
+                selectedProjectId={selectedProject?.id ?? ''}
                 onSelectProject={onProjectChange}
                 theme={theme}
                 title={t('chat.chatInput.draftPicker.projectTitle')}
@@ -702,7 +789,7 @@ export function MobileDraftTargetSheets(
                             const matches = (label: string) => matchesRankQuery([label], branchQuery);
                             const selectedValue = selectedDirectory
                                 ?? branchItems[0]?.value
-                                ?? normalizePath(selectedProject.path)
+                                ?? normalizePath(selectedProject?.path ?? null)
                                 ?? '';
                             const renderRow = (value: string, label: React.ReactNode, key?: string) => (
                                 <button

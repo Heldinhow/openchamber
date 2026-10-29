@@ -32,7 +32,9 @@ const renderBranchSheet = async (onCreateCustomWorktree?: () => void) => {
         <I18nProvider>
             <MobileDraftTargetSheets
                 projects={[project]}
+                workspaces={[]}
                 selectedProject={project}
+                selectedWorkspace={null}
                 selectedDirectory="/repo"
                 selectedBranchLabel="main"
                 selectedBranchIsKnown
@@ -43,6 +45,7 @@ const renderBranchSheet = async (onCreateCustomWorktree?: () => void) => {
                 branchItems={[{ value: '/repo', label: 'main' }]}
                 showBranchSelector
                 onProjectChange={() => {}}
+                onWorkspaceChange={() => {}}
                 onDirectoryChange={() => {}}
                 onCreateCustomWorktree={onCreateCustomWorktree}
                 theme={themes[0]}

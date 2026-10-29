@@ -4,7 +4,7 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useSessionWorktreeStore } from './session-worktree-store';
-import { expandSlashCommandGoalObjective, resolveSendSelection, routeMessage, useSessionUIStore } from './session-ui-store';
+import { expandSlashCommandGoalObjective, resolveSendSelection, routeMessage, useSessionUIStore, DraftWorkspaceUnavailableError, materializeOpenDraftSession } from './session-ui-store';
 import { ChildStoreManager } from './child-store';
 import { setSyncRefs } from './sync-refs';
 import { setActionRefs, setOptimisticRefs } from './session-actions';
@@ -20,6 +20,7 @@ import { CHAT_DRAFT_PROJECT_ID } from '@/lib/chatDirectories';
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { createContextPart } from '@/lib/messages/contextParts';
+import { publishRepoWorkspaceCatalog } from '@/lib/repoWorkspaces/catalog';
 
 /**
  * Unit tests for session worktree routing through the authoritative store.
@@ -1192,6 +1193,232 @@ describe('createSession draft lifecycle', () => {
     expect(session).toBeNull();
     expect(useDirectoryStore.getState().currentDirectory).toBe('/private/deleted-worktree');
     expect(getDeferredSafeStorage().getItem('lastDirectory')).toBe('/private/deleted-worktree');
+  });
+});
+
+describe('workspace draft target', () => {
+  const projectA = { id: 'proj-a', path: '/projects/alpha', label: 'Alpha' };
+  const projectB = { id: 'proj-b', path: '/projects/beta', label: 'Beta' };
+  const workspace = {
+    id: 'ws_product',
+    name: 'Product',
+    directory: '/data/workspaces/ws_product',
+    projects: [
+      { projectId: projectA.id, missing: false, project: { id: projectA.id, path: projectA.path, label: projectA.label } },
+    ],
+    configError: null,
+  };
+  const DRAFT_TARGET_KEY = 'oc.chatInput.lastDraftTarget';
+
+  const publishCatalog = (workspaces) => publishRepoWorkspaceCatalog({
+    status: 'ready',
+    workspaces,
+    discarded: 0,
+    runtimeKey: getRuntimeKey(),
+  });
+
+  const openWorkspaceDraft = () => useSessionUIStore.getState().openNewSessionDraft({
+    target: 'workspace',
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
+    directoryOverride: workspace.directory,
+  });
+
+  let originalCreateSession;
+  let originalGetDirectoryAvailability;
+
+  beforeEach(() => {
+    getDeferredSafeStorage().removeItem(DRAFT_TARGET_KEY);
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentSessionDirectory: null,
+      newSessionDraft: { open: false, directoryOverride: null, parentID: null },
+      availableWorktreesByProject: new Map(),
+    });
+    useProjectsStore.setState({
+      projects: [projectA, projectB],
+      activeProjectId: projectA.id,
+    });
+    useDirectoryStore.getState().setDirectory(projectB.path, { showOverlay: false });
+    publishCatalog([workspace]);
+    originalCreateSession = opencodeClient.createSession;
+    originalGetDirectoryAvailability = opencodeClient.getDirectoryAvailability;
+  });
+
+  afterEach(() => {
+    opencodeClient.createSession = originalCreateSession;
+    opencodeClient.getDirectoryAvailability = originalGetDirectoryAvailability;
+    publishRepoWorkspaceCatalog({
+      status: 'loading',
+      workspaces: [],
+      discarded: 0,
+      runtimeKey: getRuntimeKey(),
+    });
+    getDeferredSafeStorage().removeItem(DRAFT_TARGET_KEY);
+  });
+
+  test('the workspace plus opens a draft owned by the workspace, not a project', () => {
+    openWorkspaceDraft();
+
+    const draft = useSessionUIStore.getState().newSessionDraft;
+    expect(draft).toMatchObject({
+      target: 'workspace',
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      selectedProjectId: null,
+      directoryOverride: workspace.directory,
+    });
+    expect(JSON.parse(getDeferredSafeStorage().getItem(DRAFT_TARGET_KEY))).toEqual({
+      projectId: null,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      directory: workspace.directory,
+      target: 'workspace',
+    });
+  });
+
+  test('picking a workspace in the open picker keeps the active project and targets the neutral directory', () => {
+    useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectB.id });
+
+    useSessionUIStore.getState().selectWorkspaceDraftTarget({
+      id: workspace.id,
+      name: workspace.name,
+      directory: workspace.directory,
+    });
+
+    const draft = useSessionUIStore.getState().newSessionDraft;
+    expect(draft).toMatchObject({
+      target: 'workspace',
+      workspaceId: workspace.id,
+      selectedProjectId: null,
+      directoryOverride: workspace.directory,
+    });
+    expect(useProjectsStore.getState().getActiveProject()?.id).toBe(projectA.id);
+    expect(useDirectoryStore.getState().currentDirectory).toBe(workspace.directory);
+  });
+
+  test('picking a project stays a normal project draft even when the workspace contains it', () => {
+    openWorkspaceDraft();
+
+    useSessionUIStore.getState().setNewSessionDraftTarget({ projectId: projectB.id, directoryOverride: projectB.path });
+
+    const draft = useSessionUIStore.getState().newSessionDraft;
+    expect(draft).toMatchObject({
+      target: 'project',
+      selectedProjectId: projectB.id,
+      workspaceId: null,
+      workspaceName: null,
+      directoryOverride: projectB.path,
+    });
+  });
+
+  test('reopening restores the recorded workspace id and neutral directory', () => {
+    openWorkspaceDraft();
+    useSessionUIStore.getState().closeNewSessionDraft();
+    useDirectoryStore.setState({ currentDirectory: '' });
+
+    useSessionUIStore.getState().openNewSessionDraft();
+
+    expect(useSessionUIStore.getState().newSessionDraft).toMatchObject({
+      target: 'workspace',
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      directoryOverride: workspace.directory,
+    });
+  });
+
+  test('a recorded project target from a workspace session reopens on that project', () => {
+    getDeferredSafeStorage().setItem(
+      DRAFT_TARGET_KEY,
+      JSON.stringify({ projectId: projectB.id, directory: projectB.path, target: 'project' }),
+    );
+    useDirectoryStore.getState().setDirectory(workspace.directory, { showOverlay: false });
+
+    useSessionUIStore.getState().openNewSessionDraft();
+
+    expect(useSessionUIStore.getState().newSessionDraft).toMatchObject({
+      target: 'project',
+      selectedProjectId: projectB.id,
+      workspaceId: null,
+      directoryOverride: projectB.path,
+    });
+  });
+
+  test('the first session is created in the neutral directory, never the active project', async () => {
+    const createCalls = [];
+    openWorkspaceDraft();
+    opencodeClient.getDirectoryAvailability = async () => 'available';
+    opencodeClient.createSession = async (_params, directory) => {
+      createCalls.push(directory);
+      return { id: 'session-workspace', directory, time: { created: 1, updated: 1 } };
+    };
+
+    const created = await materializeOpenDraftSession({ providerID: 'provider', modelID: 'model' });
+
+    expect(created?.directory).toBe(workspace.directory);
+    expect(createCalls).toEqual([workspace.directory]);
+    expect(useSessionUIStore.getState().newSessionDraft.open).toBe(false);
+  });
+
+  test('a normal project session in a project the workspace contains keeps the project directory', async () => {
+    const createCalls = [];
+    opencodeClient.getDirectoryAvailability = async () => 'available';
+    opencodeClient.createSession = async (_params, directory) => {
+      createCalls.push(directory);
+      return { id: 'session-project', directory, time: { created: 1, updated: 1 } };
+    };
+    useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectA.id });
+
+    await useSessionUIStore.getState().createSession('Draft title', projectA.path);
+
+    expect(createCalls).toEqual([projectA.path]);
+  });
+
+  test('a workspace the catalog no longer holds fails before any session is created', async () => {
+    const createCalls = [];
+    publishCatalog([]);
+    useSessionUIStore.getState().openNewSessionDraft({
+      target: 'workspace',
+      workspaceId: 'ws_gone',
+      workspaceName: 'Gone',
+      directoryOverride: '/data/workspaces/ws_gone',
+    });
+    opencodeClient.getDirectoryAvailability = async () => 'available';
+    opencodeClient.createSession = async (_params, directory) => {
+      createCalls.push(directory);
+      return { id: 'session-gone', directory, time: { created: 1, updated: 1 } };
+    };
+
+    await expect(materializeOpenDraftSession({ providerID: 'provider', modelID: 'model' }))
+      .rejects.toBeInstanceOf(DraftWorkspaceUnavailableError);
+
+    expect(createCalls).toEqual([]);
+    expect(useSessionUIStore.getState().newSessionDraft).toMatchObject({
+      open: true,
+      target: 'workspace',
+      workspaceId: 'ws_gone',
+      directoryOverride: '/data/workspaces/ws_gone',
+    });
+  });
+
+  test('a missing neutral directory fails visibly instead of falling back to a member project', async () => {
+    const createCalls = [];
+    openWorkspaceDraft();
+    opencodeClient.getDirectoryAvailability = async () => 'missing';
+    opencodeClient.createSession = async (_params, directory) => {
+      createCalls.push(directory);
+      return { id: 'session-missing', directory, time: { created: 1, updated: 1 } };
+    };
+
+    await expect(materializeOpenDraftSession({ providerID: 'provider', modelID: 'model' }))
+      .rejects.toBeInstanceOf(DraftWorkspaceUnavailableError);
+
+    expect(createCalls).toEqual([]);
+    expect(useSessionUIStore.getState().newSessionDraft).toMatchObject({
+      open: true,
+      target: 'workspace',
+      directoryOverride: workspace.directory,
+    });
   });
 });
 

@@ -10,7 +10,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { isServerOwnedMessageQueue, createMessageQueueTarget, getMessageQueueKey, useMessageQueueStore, type QueuedContextPart, type QueuedMessage, type QueuedMessageGoal } from '@/stores/messageQueueStore';
 import { selectAutoReviewRunning, useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useSessionGoalArmStore } from '@/stores/useSessionGoalArmStore';
-import { DraftSendError, useSessionUIStore, type NewSessionDraftState } from '@/sync/session-ui-store';
+import { DraftSendError, DraftWorkspaceUnavailableError, useSessionUIStore, type NewSessionDraftState } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { prepareUserMessageResume } from '@/sync/user-message-resume';
 import { prepareLocalAttachments, useDraftAttachedFiles, useInputStore, type SyntheticContextPart } from '@/sync/input-store';
@@ -2462,6 +2462,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 normalized.includes('gateway timeout') ||
                 normalized === 'failed to send message';
 
+            if (
+                error instanceof DraftWorkspaceUnavailableError
+                || (failedDraftSend?.cause instanceof DraftWorkspaceUnavailableError)
+            ) {
+                if (allAttachments.length > 0) {
+                    useInputStore.getState().restoreAttachedFiles(allAttachments, restoreTarget);
+                }
+                toast.error(t('chat.chatInput.toast.workspaceUnavailable'));
+                return;
+            }
+
             if (normalized.includes('payload too large') || normalized.includes('413') || normalized.includes('entity too large')) {
                 toast.error(t('chat.chatInput.toast.attachmentsTooLarge'));
                 if (allAttachments.length > 0) {
@@ -4071,8 +4082,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     // Which project and directory a new session will target.
     const {
         projects: draftProjects,
+        workspaces: draftWorkspaces,
         selectedDraftProject,
-        draftProjectLabel,
+        selectedDraftWorkspace,
+        draftTargetLabel,
         selectedDraftDirectory,
         selectedDraftBranchLabel,
         selectedDraftBranchIsKnown,
@@ -4083,6 +4096,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         draftBranchItems,
         shouldShowDraftBranchSelector,
         handleDraftProjectChange,
+        handleDraftWorkspaceChange,
         handleDraftDirectoryChange,
         refreshDraftTarget,
     } = useDraftTarget(showDraftTargetSelectors);
@@ -4599,10 +4613,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 <div className={cn('chat-input-column mb-7 text-center', draftPresentationClassName)}>
                     <h1 className="text-balance text-2xl font-normal tracking-tight text-foreground md:text-3xl">
                         {renderDraftTitle(
-                            draftProjectLabel
-                                ? t('chat.emptyState.draftTitleWithProject', { project: draftProjectLabel })
+                            draftTargetLabel
+                                ? t('chat.emptyState.draftTitleWithProject', { project: draftTargetLabel })
                                 : t('chat.emptyState.draftTitle'),
-                            draftProjectLabel,
+                            draftTargetLabel,
                         )}
                     </h1>
                 </div>
@@ -4612,11 +4626,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     furniture (chips, banners, draft selectors) stays in state
                     and returns unchanged when the comment exits. */}
                 {!mobileCommentActive ? (<>
-                {!isMobile && (showDraftTargetSelectors || draftPresentationExiting) && selectedDraftProject ? (
+                {!isMobile && (showDraftTargetSelectors || draftPresentationExiting) && (selectedDraftProject || selectedDraftWorkspace) ? (
                     <div className={draftPresentationClassName}>
                         <DraftTargetSelectors
                             projects={draftProjects}
+                            workspaces={draftWorkspaces}
                             selectedProject={selectedDraftProject}
+                            selectedWorkspace={selectedDraftWorkspace}
                             selectedDirectory={selectedDraftDirectory}
                             selectedBranchLabel={selectedDraftBranchLabel}
                             selectedBranchIsKnown={selectedDraftBranchIsKnown}
@@ -4627,6 +4643,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                             branchItems={draftBranchItems}
                             showBranchSelector={shouldShowDraftBranchSelector}
                             onProjectChange={handleDraftProjectChange}
+                            onWorkspaceChange={handleDraftWorkspaceChange}
                             onDirectoryChange={handleDraftDirectoryChange}
                             onRefreshTarget={refreshDraftTarget}
                             onCreateSpace={handleCreateSpace}
@@ -4635,9 +4652,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                         />
                     </div>
                 ) : null}
-                {isMobile && showDraftTargetSelectors && selectedDraftProject ? (
+                {isMobile && showDraftTargetSelectors && (selectedDraftProject || selectedDraftWorkspace) ? (
                     <MobileDraftTargetTriggers
                         selectedProject={selectedDraftProject}
+                        selectedWorkspace={selectedDraftWorkspace}
                         selectedBranchLabel={selectedDraftBranchLabel}
                         showBranchSelector={shouldShowDraftBranchSelector}
                         theme={currentTheme}
@@ -5106,10 +5124,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
 
         {/* Mobile draft target pickers: bottom sheets replacing the inline
             project/branch Selects (which desktop keeps). */}
-        {isMobile && showDraftTargetSelectors && selectedDraftProject ? (
+        {isMobile && showDraftTargetSelectors && (selectedDraftProject || selectedDraftWorkspace) ? (
             <MobileDraftTargetSheets
                 projects={draftProjects}
+                workspaces={draftWorkspaces}
                 selectedProject={selectedDraftProject}
+                selectedWorkspace={selectedDraftWorkspace}
                 selectedDirectory={selectedDraftDirectory}
                 selectedBranchLabel={selectedDraftBranchLabel}
                 selectedBranchIsKnown={selectedDraftBranchIsKnown}
@@ -5120,6 +5140,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 branchItems={draftBranchItems}
                 showBranchSelector={shouldShowDraftBranchSelector}
                 onProjectChange={handleDraftProjectChange}
+                onWorkspaceChange={handleDraftWorkspaceChange}
                 onDirectoryChange={handleDraftDirectoryChange}
                 onCreateSpace={handleCreateSpace}
                 onCreateCustomWorktree={handleCreateCustomWorktree}

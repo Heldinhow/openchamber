@@ -1036,9 +1036,11 @@ VS Code intentionally has no managed Chats mode. It neither reads nor writes the
 
 ### Remembering the last draft target
 
-`session-ui-store.ts` persists the side of the composer's target selector the user last worked on under `oc.chatInput.lastDraftTarget`, so a plain new session reopens there instead of always landing on Chat. The record holds a project id, a directory, and `target`, which is `"chat"`, `"project"`, or `null`.
+`session-ui-store.ts` persists the side of the composer's target selector the user last worked on under `oc.chatInput.lastDraftTarget`, so a plain new session reopens there instead of always landing on Chat. The record holds a project id, a workspace id and name when the target is a workspace, a directory, and `target`, which is `"chat"`, `"project"`, `"workspace"`, or `null`.
 
-`null` is what a record written before `target` existed reads as, and it leaves the Chat default in place rather than guessing a side from the directory. A recorded project that no longer exists falls back to Chat the same way. Only a picker choice writes `"chat"` or `"project"`.
+`null` is what a record written before `target` existed reads as, and it leaves the Chat default in place rather than guessing a side from the directory. A recorded project that no longer exists falls back to Chat the same way. Only a picker choice writes `"chat"`, `"project"` or `"workspace"`.
+
+A workspace draft is owned by the workspace, not by a project: it carries the workspace id and its neutral directory, and `selectedProjectId` stays null. A plain new session reopens it on the recorded workspace even before the workspace list is read again; the list's live name and directory replace the persisted copy when it arrives. A workspace the catalog no longer holds, or a neutral directory that is gone, fails the first send instead of falling back to a member project or the previous project. A neutral directory is never an implicit external path that opens Chat, and a project draft opened from one goes to the recorded project's directory.
 
 A session's own directory is not a target choice. "New session in the current directory" forwards the current session's directory even when that session is a managed chat, and a chat scratch directory names no project, so those overrides resolve to a chat draft. Treating one as an explicit project target is how a plus pressed inside a chat opened a project draft.
 

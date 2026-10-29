@@ -138,11 +138,12 @@ command palette lists projects only for a query, so it does not use it.
 A workspace (`lib/repoWorkspaces`) is a named group of projects whose sessions
 run in a neutral directory. Until the full workspace section lands, the sidebar
 above the project list renders one `shell/WorkspaceSidebarHeader.tsx` row per
-workspace with its name and an Edit control revealed on hover and keyboard
-focus. The New workspace control sits next to New project in
-`shell/SidebarHeader.tsx`. Workspace rows and plain project sections are
-independent: a project that belongs to a workspace keeps its normal section and
-sessions, and nothing is filtered out.
+workspace with its name, a plus that starts a session owned by the workspace,
+and an Edit control; both are revealed on hover and keyboard focus. The New
+workspace control sits next to New project in `shell/SidebarHeader.tsx`.
+Workspace rows and plain project sections are independent: a project that
+belongs to a workspace keeps its normal section and sessions, and nothing is
+filtered out.
 
 A stored workspace the parser discarded is shown as a discreet count under the
 rows; nothing is written back. Only the workspace slot waits: the first read

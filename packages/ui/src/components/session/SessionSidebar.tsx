@@ -448,6 +448,14 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const openWorkspaceEditDialog = React.useCallback((workspace: RepoWorkspaceResolved) => {
     setWorkspaceDialog({ mode: 'edit', workspaceId: workspace.id });
   }, []);
+  const openWorkspaceSessionDraft = React.useCallback((workspace: RepoWorkspaceResolved) => {
+    openNewSessionDraftFromTree({
+      target: 'workspace',
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      directoryOverride: workspace.directory,
+    });
+  }, [openNewSessionDraftFromTree]);
   const reloadRepoWorkspaces = repoWorkspaces.reload;
   // Creation may register folders and edits may follow a settings change from
   // another window; the settings document is the only way this window learns
@@ -761,6 +769,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         workspaces={repoWorkspaces.workspaces}
         discarded={repoWorkspaces.discarded}
         onRetry={repoWorkspaces.reload}
+        onNewSession={openWorkspaceSessionDraft}
         onEdit={openWorkspaceEditDialog}
       />
       {collection}

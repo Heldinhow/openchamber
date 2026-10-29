@@ -37,6 +37,7 @@ import { getGitStatus } from '@/lib/gitApi';
 import { draftSpaceTarget, isSpaceCreationRequest, spaceOfCreationRequest } from '@/lib/spaces/space-creation-requests';
 import { isSpaceDirectory } from '@/lib/spaces/space-route';
 import { spacesOfProject, useSpacesStore } from '@/lib/spaces/spaces-store';
+import { useRepoWorkspaceCatalog } from '@/lib/repoWorkspaces/catalog';
 import { useUIStore } from '@/stores/useUIStore';
 
 /** How long a cached branch list is served before it is refreshed. */
@@ -53,6 +54,16 @@ export interface DraftTargetProject {
     iconImage?: { mime: string; updatedAt: number; source: 'custom' | 'auto' } | null;
     iconBackground?: string | null;
     kind?: 'chat' | 'project';
+}
+
+/** A workspace the draft can own: its neutral directory is where its session runs. */
+export interface DraftTargetWorkspace {
+    id: string;
+    name: string;
+    directory: string;
+    projectIds: readonly string[];
+    /** The catalog no longer lists it; the draft keeps the last known name and directory. */
+    missing: boolean;
 }
 
 /**
@@ -76,6 +87,17 @@ export function getProjectDisplayLabel(project: { label?: string; path: string }
 export function useDraftTarget(enabled: boolean) {
     const configuredProjects: readonly DraftTargetProject[] = useProjectsStore((state) => state.projects);
     const { t } = useI18n();
+    const workspaceCatalog = useRepoWorkspaceCatalog();
+    const workspaces = React.useMemo<DraftTargetWorkspace[]>(
+        () => workspaceCatalog.workspaces.map((workspace) => ({
+            id: workspace.id,
+            name: workspace.name,
+            directory: normalizePath(workspace.directory) ?? workspace.directory,
+            projectIds: workspace.projects.map((project) => project.projectId),
+            missing: false,
+        })),
+        [workspaceCatalog.workspaces],
+    );
     const spacesJourney = useSpacesStore((state) => state.journey);
     const chatProject = React.useMemo<DraftTargetProject>(() => ({
         id: CHAT_DRAFT_PROJECT_ID,
@@ -88,11 +110,13 @@ export function useDraftTarget(enabled: boolean) {
     const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
     const setNewSessionDraftTarget = useSessionUIStore((s) => s.setNewSessionDraftTarget);
+    const selectWorkspaceDraftTarget = useSessionUIStore((s) => s.selectWorkspaceDraftTarget);
     const availableWorktreesByProject = useSessionUIStore((s) => s.availableWorktreesByProject);
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const { git: runtimeGit } = useRuntimeAPIs();
 
     const selectedDraftProject = React.useMemo(() => {
+        if (newSessionDraft?.target === 'workspace') return null;
         if (newSessionDraft?.target === 'chat') return chatProject;
         const explicit = newSessionDraft?.selectedProjectId
             ? projects.find((project) => project.id === newSessionDraft.selectedProjectId) ?? null
@@ -111,13 +135,35 @@ export function useDraftTarget(enabled: boolean) {
         return configuredProjects[0] ?? chatProject;
     }, [activeProjectId, chatProject, configuredProjects, newSessionDraft?.selectedProjectId, newSessionDraft?.target, projects]);
 
+    // A workspace draft names its workspace, never a project: the neutral
+    // directory is the target and no configured project stands in for it. When
+    // the catalog no longer has it, the draft keeps what it persisted so the
+    // failure is visible instead of silently landing on a member project.
+    const selectedDraftWorkspace = React.useMemo<DraftTargetWorkspace | null>(() => {
+        if (newSessionDraft?.target !== 'workspace') return null;
+        const id = newSessionDraft.workspaceId ?? null;
+        const live = id ? workspaces.find((workspace) => workspace.id === id) : null;
+        if (live) return live;
+        const directory = normalizePath(newSessionDraft.directoryOverride ?? null);
+        if (!id && !directory) return null;
+        return {
+            id: id ?? '',
+            name: newSessionDraft.workspaceName?.trim() || id || t('sessions.sidebar.workspace.missing'),
+            directory: directory ?? '',
+            projectIds: [],
+            missing: workspaceCatalog.status === 'ready',
+        };
+    }, [newSessionDraft?.directoryOverride, newSessionDraft?.target, newSessionDraft?.workspaceId, newSessionDraft?.workspaceName, t, workspaceCatalog.status, workspaces]);
+
     const selectedDraftProjectPath = React.useMemo(
         () => selectedDraftProject?.kind === 'chat' ? null : normalizePath(selectedDraftProject?.path ?? null),
         [selectedDraftProject?.kind, selectedDraftProject?.path],
     );
-    const draftProjectLabel = selectedDraftProject && selectedDraftProject.kind !== 'chat'
-        ? getProjectDisplayLabel(selectedDraftProject)
-        : null;
+    const draftTargetLabel = selectedDraftWorkspace
+        ? selectedDraftWorkspace.name
+        : selectedDraftProject && selectedDraftProject.kind !== 'chat'
+            ? getProjectDisplayLabel(selectedDraftProject)
+            : null;
 
     const selectedDraftProjectBranches = useGitBranches(selectedDraftProjectPath);
     const selectedDraftProjectBranchesFetchedAt = useGitStore(
@@ -325,9 +371,10 @@ export function useDraftTarget(enabled: boolean) {
     const selectedDraftDirectory = React.useMemo(
         () => draftSpaceDirectory
             ?? normalizePath(newSessionDraft?.bootstrapPendingDirectory ?? null)
+            ?? selectedDraftWorkspace?.directory
             ?? normalizePath(newSessionDraft?.directoryOverride ?? null)
             ?? selectedDraftProjectPath,
-        [draftSpaceDirectory, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.directoryOverride, selectedDraftProjectPath],
+        [draftSpaceDirectory, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.directoryOverride, selectedDraftProjectPath, selectedDraftWorkspace?.directory],
     );
 
     // The draft's own pending flags clear once the directory exists, which is
@@ -342,7 +389,8 @@ export function useDraftTarget(enabled: boolean) {
         if (
             !enabled
             || !selectedDraftDirectory
-            || selectedDraftProject?.kind === 'chat'
+            || !selectedDraftProject
+            || selectedDraftProject.kind === 'chat'
             || newSessionDraft?.pendingWorktreeRequestId
             || newSessionDraft?.bootstrapPendingDirectory
             || selectedDraftDirectoryBootstrapPending
@@ -376,7 +424,7 @@ export function useDraftTarget(enabled: boolean) {
         return () => {
             cancelled = true;
         };
-    }, [enabled, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, selectedDraftDirectory, selectedDraftDirectoryBootstrapPending, selectedDraftProject?.kind]);
+    }, [enabled, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, selectedDraftDirectory, selectedDraftDirectoryBootstrapPending, selectedDraftProject]);
 
     const shouldKeepMissingSelectedDraftDirectory = React.useMemo(() => {
         const pendingDirectory = normalizePath(newSessionDraft?.bootstrapPendingDirectory ?? null);
@@ -452,6 +500,9 @@ export function useDraftTarget(enabled: boolean) {
     }, [newSessionDraft?.open, newSessionDraft?.preserveDirectoryOverride, selectedDraftBranchIsKnown, selectedDraftDirectory]);
 
     const shouldShowDraftBranchSelector = React.useMemo(() => {
+        if (!selectedDraftProject) {
+            return false;
+        }
         if (selectedDraftProjectIsGitRepo !== true) {
             return false;
         }
@@ -462,7 +513,20 @@ export function useDraftTarget(enabled: boolean) {
             return true;
         }
         return worktreeBranchOptions.length > 0;
-    }, [isDiscoveringDraftBranches, projectRootBranchOption, selectedDraftProjectIsGitRepo, worktreeBranchOptions.length]);
+    }, [isDiscoveringDraftBranches, projectRootBranchOption, selectedDraftProject, selectedDraftProjectIsGitRepo, worktreeBranchOptions.length]);
+
+    const handleDraftWorkspaceChange = React.useCallback((workspaceId: string) => {
+        const draft = useSessionUIStore.getState().newSessionDraft;
+        if (draft?.pendingWorktreeRequestId || draft?.bootstrapPendingDirectory) {
+            return;
+        }
+        const workspace = workspaces.find((entry) => entry.id === workspaceId);
+        if (!workspace) {
+            return;
+        }
+        releaseDraftDirectoryPin();
+        selectWorkspaceDraftTarget({ id: workspace.id, name: workspace.name, directory: workspace.directory });
+    }, [selectWorkspaceDraftTarget, workspaces]);
 
     const handleDraftProjectChange = React.useCallback((projectId: string) => {
         const draft = useSessionUIStore.getState().newSessionDraft;
@@ -515,9 +579,11 @@ export function useDraftTarget(enabled: boolean) {
     }, [selectedDraftDirectory, selectedDraftProject, setNewSessionDraftTarget]);
     return {
         projects,
+        workspaces,
         selectedDraftProject,
+        selectedDraftWorkspace,
         selectedDraftProjectPath,
-        draftProjectLabel,
+        draftTargetLabel,
         selectedDraftDirectory,
         selectedDraftBranchLabel,
         selectedDraftBranchIsKnown,
@@ -528,6 +594,7 @@ export function useDraftTarget(enabled: boolean) {
         draftBranchItems,
         shouldShowDraftBranchSelector,
         handleDraftProjectChange,
+        handleDraftWorkspaceChange,
         handleDraftDirectoryChange,
         refreshDraftTarget,
     };

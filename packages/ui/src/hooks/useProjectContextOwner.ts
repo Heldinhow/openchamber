@@ -17,7 +17,7 @@ interface ProjectContextOwnerInput {
   directory: string | null;
   activeProjectId: string | null;
   chatDraftOpen: boolean;
-  chatDraftTarget: 'chat' | 'project';
+  chatDraftTarget: 'chat' | 'project' | 'workspace';
   /** The server-named chats root; null until known. */
   chatsRoot: string | null;
 }
