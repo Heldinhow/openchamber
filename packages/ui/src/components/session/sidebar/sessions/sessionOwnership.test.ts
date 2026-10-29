@@ -116,7 +116,7 @@ describe('createSessionOwnershipIndex', () => {
     expect(ownership.bySessionId.get('workspace-session')).toMatchObject({
       kind: 'workspace',
       workspaceId: 'ws_product',
-      projectId: 'ws_product',
+      projectId: null,
     });
     expect(ownership.sessionsByWorkspace.get('ws_product')?.map((session) => session.id)).toEqual(['workspace-session']);
     expect(ownership.sessionsByProject.get('app')?.map((session) => session.id)).toEqual(['project-session']);

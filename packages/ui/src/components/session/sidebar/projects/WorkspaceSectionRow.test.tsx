@@ -90,6 +90,12 @@ test('the plus starts a workspace session and the menu holds only Edit', async (
     expect(plus.className).toContain('group-has-[:focus-visible]/workspace:opacity-100');
     expect(menu.className).toContain('group-hover/workspace:opacity-100');
     expect(menu.className).toContain('group-has-[:focus-visible]/workspace:opacity-100');
+    // Both sit in the tab order, so keyboard focus reveals them the same way
+    // hover does.
+    await act(async () => plus.focus());
+    expect(document.activeElement).toBe(plus);
+    await act(async () => menu.focus());
+    expect(document.activeElement).toBe(menu);
 
     await act(async () => plus.click());
     expect(row.calls.newSession).toEqual(['ws_product']);
