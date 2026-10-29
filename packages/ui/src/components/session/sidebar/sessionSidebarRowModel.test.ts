@@ -208,6 +208,80 @@ describe('buildSessionSidebarRowModel', () => {
     expect(model.rows.map((row) => row.kind)).toContain('workspace-header');
   });
 
+  test('a workspace name match counts once while showing all its sessions', () => {
+    const input = args([]);
+    input.mode = 'search';
+    input.normalizedQuery = 'ws_one';
+    input.workspaceSections = [{
+      workspace: { id: 'ws_one', name: 'WS_ONE', directory: '/data/workspaces/ws_one' },
+      nodes: [node('unrelated-a'), node('unrelated-b')],
+      metadataMatch: true,
+    }];
+
+    const model = buildSessionSidebarRowModel(input);
+
+    expect(model.searchMatchCount).toBe(1);
+    expect(model.rows.map((row) => row.kind)).toEqual(['workspace-header', 'session', 'session']);
+  });
+
+  test('a workspace match whose sessions are all in In work still counts once', () => {
+    const input = args([]);
+    input.mode = 'search';
+    input.normalizedQuery = 'ws_one';
+    input.workspaceSections = [{
+      workspace: { id: 'ws_one', name: 'WS_ONE', directory: '/data/workspaces/ws_one' },
+      nodes: [node('workspace-working')],
+      metadataMatch: true,
+    }];
+    input.workEntries = sessionWorks([timelineItem('workspace-working', { projectId: null, groupDirectory: '/data/workspaces/ws_one' })]);
+    input.movedSessionIds = new Set(['workspace-working']);
+    input.zoneSessionIds = new Set(['workspace-working']);
+
+    const model = buildSessionSidebarRowModel(input);
+
+    expect(model.searchMatchCount).toBe(1);
+    expect(model.rows.some((row) => row.kind === 'workspace-header')).toBe(false);
+    expect(model.rows.some((row) => row.kind === 'session' && row.node.session.id === 'workspace-working')).toBe(true);
+  });
+
+  test('In work lists a workspace session and a project session together, in order', () => {
+    const input = args([project([group([node('project-working')])])]);
+    input.workEntries = sessionWorks([
+      timelineItem('workspace-working', { projectId: null, groupDirectory: '/data/workspaces/ws_one' }),
+      timelineItem('project-working'),
+    ]);
+    input.zoneSessionIds = new Set(['workspace-working', 'project-working']);
+
+    const zoneRows = buildSessionSidebarRowModel(input).rows.flatMap((row) => (
+      row.kind === 'session' && row.renderContext === 'mixed-compact' ? [row.node.session.id] : []
+    ));
+
+    expect(zoneRows).toEqual(['workspace-working', 'project-working']);
+  });
+
+  test('a workspace search leaves unrelated In work entries in their zone', () => {
+    const input = args([]);
+    input.mode = 'search';
+    input.normalizedQuery = 'ws_one';
+    input.workspaceSections = [{
+      workspace: { id: 'ws_one', name: 'WS_ONE', directory: '/data/workspaces/ws_one' },
+      nodes: [node('workspace-match')],
+      metadataMatch: true,
+    }];
+    input.workEntries = sessionWorks([
+      timelineItem('workspace-working', { projectId: null, groupDirectory: '/data/workspaces/ws_one' }),
+      timelineItem('project-working'),
+    ]);
+    input.zoneSessionIds = new Set(['workspace-working', 'project-working']);
+
+    const rows = buildSessionSidebarRowModel(input).rows;
+
+    expect(rows[0]).toMatchObject({ kind: 'activity-header', activityKey: 'work' });
+    expect(rows.flatMap((row) => (row.kind === 'session' && row.renderContext === 'mixed-compact' ? [row.node.session.id] : [])))
+      .toEqual(['workspace-working', 'project-working']);
+    expect(rows.map((row) => row.kind)).toContain('workspace-header');
+  });
+
   test('detailed zone rows give the Tree view the two-line row', () => {
     const input = args([project([group([node('working')])])]);
     input.workEntries = sessionWorks([timelineItem('working')]);

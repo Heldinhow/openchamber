@@ -98,6 +98,55 @@ describe('sidebar works', () => {
     });
   });
 
+  describe('workspace sessions in work', () => {
+    const inWork = { metadata: { openchamber: { work: { state: 'open' } } } } as Partial<Session>;
+    const workspaceDirectory = '/data/workspaces/ws_product';
+    const notChat = () => false;
+    const refs = (ordered: readonly Session[], index: ReturnType<typeof buildSidebarWorkIndex>, rootOf: ReadonlyMap<string, string>) => (
+      orderInWorkWorks(ordered, index, rootOf, notChat).map((ref) => ({ key: ref.key, projectId: ref.projectId }))
+    );
+
+    test('a workspace session is listed with the project works in lifecycle order', () => {
+      const index = buildSidebarWorkIndex([section]);
+      const normal = session('root', inWork);
+      const workspace = session('workspace-work', { ...inWork, directory: workspaceDirectory });
+      const rootOf = buildSessionRootIndex([workspace, normal], new Map());
+
+      expect(refs([workspace, normal], index, rootOf)).toEqual([
+        { key: 'session:workspace-work', projectId: null },
+        { key: 'session:root', projectId: 'p' },
+      ]);
+    });
+
+    test('an untracked, done or archived workspace session stays out of In work', () => {
+      const index = buildSidebarWorkIndex([section]);
+      const untracked = session('workspace-idle', { directory: workspaceDirectory });
+      const done = session('workspace-done', {
+        directory: workspaceDirectory,
+        metadata: { openchamber: { work: { state: 'done', doneAt: 5 } } },
+      });
+      const archived = session('workspace-archived', { ...inWork, directory: workspaceDirectory, time: { created: 1, updated: 1, archived: 2 } });
+      const rootOf = buildSessionRootIndex([untracked, done, archived], new Map());
+
+      expect(refs([untracked, done, archived], index, rootOf)).toEqual([]);
+    });
+
+    test('a refreshed workspace session joins In work without losing its place in the list', () => {
+      const index = buildSidebarWorkIndex([section]);
+      const normal = session('root', inWork);
+      const untracked = session('workspace-work', { directory: workspaceDirectory });
+      const first = refs([untracked, normal], index, buildSessionRootIndex([untracked, normal], new Map()));
+      const refreshed = session('workspace-work', { ...inWork, directory: workspaceDirectory });
+      const second = refs([refreshed, normal], index, buildSessionRootIndex([refreshed, normal], new Map()));
+
+      expect(first).toEqual([{ key: 'session:root', projectId: 'p' }]);
+      expect(second).toEqual([
+        { key: 'session:workspace-work', projectId: null },
+        { key: 'session:root', projectId: 'p' },
+      ]);
+    });
+  });
+
   test('a worktree keeps the place its archived newest session gave it', () => {
     const index = buildSidebarWorkIndex([section]);
     // Listed newest first: lonely (30), w1 (20), root (10). The worktree's

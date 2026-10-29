@@ -112,6 +112,16 @@ describe('session work runtime: a message was sent', () => {
     expect(records.get('ses_1')).toMatchObject({ openchamber: { work: { state: 'open', openedBy: 'auto' } } });
   });
 
+  it('opens a session that runs in a workspace neutral directory', async () => {
+    stubOpenCode({ session: { directory: '/home/me/.config/openchamber/workspaces/ws_product' } });
+    const { runtime, records } = makeRuntime();
+
+    runtime.processPayload(sent());
+    await settle(() => records.get('ses_1').openchamber);
+
+    expect(records.get('ses_1')).toMatchObject({ openchamber: { work: { state: 'open', openedBy: 'auto' } } });
+  });
+
   it('reopens a session closed before the message was sent, and keeps one closed after it', async () => {
     stubOpenCode();
     // `sent()` is created at 50.

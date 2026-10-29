@@ -268,7 +268,7 @@ type ProjectSessionSelectionEffectProps = Omit<
 > & {
   initialActiveSessionByProject: Map<string, string>;
   persistActiveSessionByProject: (value: Map<string, string>) => void;
-  sessionOwnerBySessionId?: ReadonlyMap<string, { projectId: string }>;
+  sessionOwnerBySessionId?: ReadonlyMap<string, { projectId: string | null }>;
 };
 
 export const ProjectSessionSelectionEffect: React.FC<ProjectSessionSelectionEffectProps> = ({

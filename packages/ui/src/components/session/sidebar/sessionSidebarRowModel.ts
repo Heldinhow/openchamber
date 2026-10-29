@@ -1074,6 +1074,9 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
 
   for (const workspaceSection of args.singleProjectMode ? [] : args.workspaceSections ?? []) {
     const containerKey = workspaceSectionKey(workspaceSection.workspace.id);
+    // The workspace itself is a search result even when every session of it
+    // is listed in In work or Pinned, which keeps the header count honest.
+    if (search) searchMatchCount += workspaceSection.metadataMatch ? 1 : 0;
     // Search drops a section whose sessions all left for In work or Pinned.
     const nodes = workspaceSection.nodes
       .filter((node) => !isMovedToZone(node.session.id))

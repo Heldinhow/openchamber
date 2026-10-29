@@ -23,8 +23,8 @@ describe('matchZoneSessionsForSidebarQuery', () => {
     }],
     ['ses_other', { session: other, children: [], worktree: null }],
   ]);
-  const match = (query: string, scope: 'tree' | 'session') => {
-    const result = matchZoneSessionsForSidebarQuery([parent, other], (zoneSession) => trees.get(zoneSession.id) ?? { session: zoneSession, children: [], worktree: null }, query, scope);
+  const match = (query: string, scope: 'tree' | 'session', includeSessionIds?: ReadonlySet<string>) => {
+    const result = matchZoneSessionsForSidebarQuery([parent, other], (zoneSession) => trees.get(zoneSession.id) ?? { session: zoneSession, children: [], worktree: null }, query, scope, includeSessionIds);
     return { ids: result.sessions.map((zoneSession) => zoneSession.id), counts: Object.fromEntries(result.matchCountById) };
   };
 
@@ -42,6 +42,11 @@ describe('matchZoneSessionsForSidebarQuery', () => {
   test('lists every session with no counts when there is no query', () => {
     expect(match('', 'session')).toEqual({ ids: ['ses_parent', 'ses_other'], counts: {} });
     expect(match('', 'tree')).toEqual({ ids: ['ses_parent', 'ses_other'], counts: {} });
+  });
+
+  test('a matched workspace keeps its zone session without counting it as a title match', () => {
+    expect(match('workspace name', 'tree', new Set(['ses_parent'])))
+      .toEqual({ ids: ['ses_parent'], counts: {} });
   });
 });
 

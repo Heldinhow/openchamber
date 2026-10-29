@@ -158,8 +158,12 @@ The row's plus starts a workspace draft (`target: 'workspace'`); its menu holds
 only Edit, which opens the same name-and-folders form as create. Both controls
 are revealed on hover and keyboard focus, and the menu closes on Escape or an
 outside click. Collapsing a workspace reuses the project collapse state and
-Collapse all/Expand all cover its key; a search lists only sections whose
-sessions match and forces them open.
+Collapse all/Expand all cover its key. A search matches a workspace by its name
+or by a member project's name or path, and then lists all its sessions; a query
+that only matches session titles lists the workspace sections whose sessions
+match. Workspace search never filters other sections: In work keeps its global
+membership and order, and a project match does not hide the workspaces that
+contain that project.
 
 A stored workspace the parser discarded is shown as a discreet count beside the
 list; nothing is written back. The first read shows a loading line there. A
@@ -596,7 +600,11 @@ spans projects: a session in work whose directory no added project holds (an
 agent moved it into another repository, say) is listed under the work of the
 top-level session it nests under (`buildSessionRootIndex`, over the
 collection's root sessions and `childrenMap`), with no project, as
-`lib/sidebarSessionRows.ts` describes for the tray. While the zone is shown it
+`lib/sidebarSessionRows.ts` describes for the tray. A workspace session is one
+of these: its neutral directory belongs to no project, so it is ordered with
+the project works by the same lifecycle order and leaves its workspace section
+while In work lists it, unless "Also show in work under projects" keeps it
+there. While the zone is shown it
 is the only place such a session appears: the list by time does not add these,
 so Done takes one out of the sidebar. A work In work lists leaves its project
 or folder (`movedSessionIds`, `movedGroupKeys`) unless "Also show in work

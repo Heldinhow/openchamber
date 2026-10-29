@@ -44,17 +44,21 @@ export const countSessionTreeQueryMatches = (node: SessionNode, query: string): 
  * The Pinned or In work sessions a search lists, with the matches each one
  * counts. `'tree'` looks through the whole session tree, since one-line zone
  * rows open to the match and search lists these sessions nowhere else.
- * `'session'` matches the session itself only.
+ * `'session'` matches the session itself only. `includeSessionIds` keeps a
+ * session a matched workspace brought into the search even when its own title
+ * does not match: the workspace is the result, the session is its work.
  */
 export const matchZoneSessionsForSidebarQuery = (
   zone: readonly Session[],
   getTree: (session: Session) => SessionNode,
   query: string,
   scope: 'tree' | 'session',
+  includeSessionIds?: ReadonlySet<string>,
 ) => {
   const matchCountById = new Map<string, number>();
   if (!query) return { sessions: [...zone], matchCountById };
   const sessions = zone.filter((session) => {
+    if (includeSessionIds?.has(session.id)) return true;
     const matches = scope === 'tree'
       ? countSessionTreeQueryMatches(getTree(session), query)
       : Number(matchesSidebarSessionQuery(session, query));

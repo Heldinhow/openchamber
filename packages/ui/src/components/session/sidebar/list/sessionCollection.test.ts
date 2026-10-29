@@ -153,6 +153,25 @@ describe('projectSidebarCollection', () => {
     expect(partitionSidebarSessions([managed, project], false).chatSessions.map((entry) => entry.id)).toEqual(['managed']);
   });
 
+  test('keeps a workspace neutral-directory session in the project snapshot', () => {
+    const workspace = session('workspace', '/data/workspaces/ws_product');
+    const project = session('project', '/workspace/a');
+    const input = {
+      globalActiveSessions: [workspace, project],
+      liveSessions: [],
+      knownDirectories: new Set(['/workspace/a']),
+      isVSCode: false,
+    };
+
+    expect(projectSidebarCollection(input).map((entry) => entry.id)).toEqual(['workspace', 'project']);
+    const ordered = buildSidebarSessionProjection({
+      ...input,
+      pinnedSessionIds: new Set(),
+      sessionOrderRanks: new Map(),
+    }).orderedSessions.map((entry) => entry.id);
+    expect(new Set(ordered)).toEqual(new Set(['workspace', 'project']));
+  });
+
   test('keeps managed Chats out of the VS Code sidebar', () => {
     const managed = session('managed', '/home/.config/openchamber/chats/2026-08-24/session-managed');
 

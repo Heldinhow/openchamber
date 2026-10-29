@@ -35,7 +35,7 @@ import type { WorktreeMetadata } from '@/types/worktree';
 import { buildActiveSessionNode, useSessionProjectCollection } from './sessionCollection';
 import { useChildStoreManager } from '@/sync/sync-context';
 import { useGlobalSyncStore } from '@/sync/global-sync-store';
-import { createSessionOwnershipIndex, type DirectoryOwner } from '../sessions/sessionOwnership';
+import { createSessionOwnershipIndex } from '../sessions/sessionOwnership';
 import { useSessionSidebarSections } from '../projects/useSessionSidebarSections';
 import { SessionPrefetchProvider } from './useSessionPrefetch';
 import { isPathWithinProject, normalizePath } from '../utils';
@@ -364,20 +364,22 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
   const workspaceSections = React.useMemo(() => buildWorkspaceSidebarSections({
     workspaces: workspace.workspaces,
     sessionsByWorkspace: ownership.sessionsByWorkspace,
+    nestedSessionIds: collection.nestedSessionIds,
     buildNode: (session) => buildActiveSessionNode(collection.childrenMap, session),
     query: view.hasSessionSearchQuery ? view.normalizedSessionSearchQuery : '',
-  }), [collection.childrenMap, ownership.sessionsByWorkspace, view.hasSessionSearchQuery, view.normalizedSessionSearchQuery, workspace.workspaces]);
-  // A workspace owner is not a project: project selection must not treat a
-  // workspace session as one that moved out of its project.
-  const projectSessionOwnerBySessionId = React.useMemo(() => {
-    let filtered: Map<string, DirectoryOwner> | null = null;
-    for (const [sessionId, owner] of ownership.bySessionId) {
-      if (owner.kind !== 'workspace') continue;
-      filtered ??= new Map(ownership.bySessionId);
-      filtered.delete(sessionId);
+  }), [collection.childrenMap, collection.nestedSessionIds, ownership.sessionsByWorkspace, view.hasSessionSearchQuery, view.normalizedSessionSearchQuery, workspace.workspaces]);
+  // A matched workspace brings every session of its group into the search.
+  // In work keeps its global membership: the zone lists those sessions rather
+  // than the workspace section, and unrelated zone entries stay untouched.
+  const workspaceMatchedSessionIds = React.useMemo((): ReadonlySet<string> => {
+    if (!view.hasSessionSearchQuery) return EMPTY_IDS;
+    const ids = new Set<string>();
+    for (const section of workspaceSections) {
+      if (!section.metadataMatch) continue;
+      for (const session of ownership.sessionsByWorkspace.get(section.workspace.id) ?? []) ids.add(session.id);
     }
-    return filtered ?? ownership.bySessionId;
-  }, [ownership.bySessionId]);
+    return ids.size > 0 ? ids : EMPTY_IDS;
+  }, [ownership.sessionsByWorkspace, view.hasSessionSearchQuery, workspaceSections]);
 
   const onSearchMatchCountChange = view.onSearchMatchCountChange;
   // Unmounting means nothing is listed any more, so the header must not keep
@@ -609,6 +611,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       (session) => trees.get(session.id) ?? buildActiveSessionNode(collection.childrenMap, session),
       query,
       'tree',
+      workspaceMatchedSessionIds,
     );
     const items = deriveTimelineActivityItems({
       sessions: matched.sessions,
@@ -623,7 +626,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       ...item,
       searchMatchCount: matched.matchCountById.get(item.node.session.id),
     }));
-  }, [collection.childrenMap, ownership.bySessionId, spaceLabelById, topology.availableWorktreesByProject, topology.gitBranches, topology.projectRootBranches, topology.projects, view.hasSessionSearchQuery, view.homeDirectory, view.normalizedSessionSearchQuery]);
+  }, [collection.childrenMap, ownership.bySessionId, spaceLabelById, topology.availableWorktreesByProject, topology.gitBranches, topology.projectRootBranches, topology.projects, view.hasSessionSearchQuery, view.homeDirectory, view.normalizedSessionSearchQuery, workspaceMatchedSessionIds]);
   // Works as the row model lists them: a session work's row from the zone
   // items (search may have left it out), a worktree work as its group.
   const toWorkEntries = React.useCallback((refs: readonly SidebarWorkRef[]): readonly SessionSidebarWorkEntry[] => {
@@ -1201,7 +1204,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       mobileVariant={view.mobileVariant}
       openNewSessionDraft={actions.openNewSessionDraft}
       setSessionSwitcherOpen={actions.setSessionSwitcherOpen}
-      sessionOwnerBySessionId={projectSessionOwnerBySessionId}
+      sessionOwnerBySessionId={ownership.bySessionId}
       handleSessionSelect={selectSessionForProject}
     />
     <SessionPrefetchProvider
