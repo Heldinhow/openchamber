@@ -204,6 +204,13 @@ export const createWorkspaceService = (dependencies) => {
         }
         const validated = await validateDirectoryPath(project.path);
         if (!validated.ok) {
+          // An existing member on an offline drive must not block an
+          // unrelated rename. It stays in the workspace as missing and is
+          // omitted from the neutral config until it is available again.
+          if (keepMissingProjectIds.has(project.id)) {
+            resolved.push({ index, projectId: project.id, path: null, label: projectLabel(project) });
+            continue;
+          }
           fields[`folders[${index}].projectId`] = validated.error || 'Folder is not available';
           continue;
         }

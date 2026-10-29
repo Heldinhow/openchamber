@@ -370,6 +370,24 @@ describe('workspace service: list and update', () => {
     expect(state.settings.workspaces[0].projectIds).toEqual([created.workspace.projects[0].projectId, missingId]);
   });
 
+  it('lets an edit keep an existing project whose folder is offline', async () => {
+    const api = makeFolder('api');
+    const web = makeFolder('web');
+    const { service } = createService();
+    const created = await service.create({ name: 'Shop', folders: [{ path: api }, { path: web }] });
+    fs.rmSync(web, { recursive: true, force: true });
+
+    const edited = await service.update(created.workspace.id, {
+      name: 'Shop renamed',
+      folders: created.workspace.projects.map((entry) => ({ projectId: entry.projectId })),
+    });
+
+    expect(edited.workspace.name).toBe('Shop renamed');
+    expect(edited.workspace.projects.map((entry) => entry.project?.path)).toEqual([api, web]);
+    const config = readWorkspaceConfig(created.workspace.id);
+    expect(Object.values(config.references).map((entry) => entry.path)).toEqual([api]);
+  });
+
   it('answers 404 for an unknown workspace', async () => {
     const { service, dependencies } = createService();
     await expect(service.update('ws_missing', { name: 'Shop', folders: [{ path: projectsRoot }] }))
