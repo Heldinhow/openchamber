@@ -25,7 +25,8 @@ export type SessionOwnershipRecord = Session & {
 type AuthoritativeOpenCodeProject = Pick<OpenCodeProject, 'id' | 'worktree'>;
 
 export type DirectoryOwner = {
-  projectId: string;
+  /** The project that owns the scope; null for a workspace-owned neutral directory. */
+  projectId: string | null;
   projectRoot: string;
   scopeDirectory: string;
   kind: 'project' | 'worktree' | 'space' | 'workspace';
@@ -45,15 +46,19 @@ export type SessionOwnershipIndex = {
   directoryResolutions: number;
 };
 
+const ownerIdentity = (owner: DirectoryOwner): string => owner.workspaceId ?? owner.projectId ?? '';
+
 const shouldReplaceOwner = (existing: DirectoryOwner | undefined, candidate: DirectoryOwner): boolean => {
   if (!existing) return true;
+  if (candidate.kind === 'workspace') return true;
+  if (existing.kind === 'workspace') return false;
   if (candidate.kind !== existing.kind) {
     return candidate.kind === 'project';
   }
   if (candidate.projectRoot.length !== existing.projectRoot.length) {
     return candidate.projectRoot.length > existing.projectRoot.length;
   }
-  return candidate.projectId.localeCompare(existing.projectId) < 0;
+  return ownerIdentity(candidate).localeCompare(ownerIdentity(existing)) < 0;
 };
 
 const setOwner = (owners: Map<string, DirectoryOwner>, directory: string, candidate: DirectoryOwner): void => {
@@ -199,7 +204,7 @@ export const createSessionOwnershipIndex = (
     const directory = resolveSessionDirectory(session);
     const workspace = directory ? workspaceByDirectory.get(directory) : undefined;
     return workspace ? {
-      projectId: workspace.id,
+      projectId: null,
       projectRoot: workspace.directory,
       scopeDirectory: workspace.directory,
       kind: 'workspace',
@@ -259,11 +264,13 @@ export const createSessionOwnershipIndex = (
         else workspaceTarget.set(workspaceId, [session]);
         continue;
       }
-      const projectSessions = target.get(owner.projectId);
+      const projectId = owner.projectId;
+      if (!projectId) continue;
+      const projectSessions = target.get(projectId);
       if (projectSessions) {
         projectSessions.push(session);
       } else {
-        target.set(owner.projectId, [session]);
+        target.set(projectId, [session]);
       }
       if (!scopeTarget) continue;
       const scopeSessions = scopeTarget.get(owner.scopeDirectory);
