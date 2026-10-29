@@ -5,8 +5,8 @@
 `service.js` is the only server writer of the `workspaces` settings field and
 of the neutral directories under `<OPENCHAMBER_DATA_DIR>/workspaces/`.
 `routes.js` registers `GET /api/workspaces`, `POST /api/workspaces` and
-`PATCH /api/workspaces/:id`. The retired active pointer, import, config-target,
-reference-retry and delete routes are gone.
+`PATCH /api/workspaces/:id`. Those three are the whole surface: no route
+activates, imports, deletes or rewrites references.
 
 A workspace is `{ id, name, projectIds }` in settings. Its sessions run in
 `<OPENCHAMBER_DATA_DIR>/workspaces/<id>/`, whose `.opencode/opencode.json`
@@ -86,8 +86,8 @@ special and writes workspace configuration into a repository.
 The directory belongs to OpenChamber and this service is its only writer, so the
 desired `references` and `permissions` are the complete truth. Rewriting removes
 a reference whose project left instead of leaving a stale entry behind.
-Rejected alternative: merging one alias at a time, which cannot express removal
-and carries no owner record for the leftovers.
+Rejected alternative: merging one reference at a time, which cannot express
+removal and carries no owner record for the leftovers.
 
 ### Why registered projects ride in the workspace's settings write
 
@@ -107,7 +107,7 @@ is rejected so a typo cannot create a permanent missing row.
 
 ### Why a missing neutral config is created on read
 
-Existing primary-based workspaces predate the neutral directory. Reporting a
+An existing stored workspace predates the neutral directory. Reporting a
 config error would make every one of them look broken until the user edited it,
 and editing would rewrite a grouping just to become readable. Creating the
 config from the stored project order is the same writer create and edit use, so

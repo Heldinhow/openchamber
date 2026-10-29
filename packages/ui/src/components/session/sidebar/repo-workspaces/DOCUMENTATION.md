@@ -5,12 +5,8 @@
 `RepoWorkspaceCreateForm.tsx` owns both modes: the name, the folder rows, the
 inline validation shown before a request, the folder picker, and the server
 fields shown on their row. `RepoWorkspaceDialog.tsx` is only the window around
-the form. There is no manage list, delete question, review panel, import field
-or reference confirmation; those belonged to the retired primary-based model.
-
-`repoWorkspaceDraft.ts` is gone with the primary, alias and branch fields. The
-form sends `{ name, folders }`, where a row is `{ path }` for a folder the user
-picked or `{ projectId }` for a project the catalog lost.
+the form. The form sends `{ name, folders }`, where a row is `{ path }` for a
+folder the user picked or `{ projectId }` for a project the catalog lost.
 
 The dialogs are mounted only by the desktop/web sidebar: from the New workspace
 control next to New project and from a workspace row's Edit control. Mobile and
@@ -35,5 +31,4 @@ VS Code do not register the route and never mount them.
 - A create can register a folder that was not a project yet; the folder picker
   itself registers nothing and the server stores the new project in the same
   settings write as the workspace.
-- Every row is editable. There is no primary, alias, branch, access or import
-  control, and no row carries a read-only flag.
+- Every row is editable; no row carries a read-only flag.

@@ -52,7 +52,7 @@ locally.
   config write. The dialog reports it and closes; the list shows the same error
   on the next read.
 - Create and edit inputs carry a name and folder rows (`path` or `projectId`).
-  The client does not send aliases, a primary, branches or permissions.
+  The server derives references and edit rules; the client sends neither.
 - The catalog is a runtime-scoped copy of the route's last resolved list. It is
   never written to storage, and a runtime switch makes the old copy ineligible
   until the destination answers.
