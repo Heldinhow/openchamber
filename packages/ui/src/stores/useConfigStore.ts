@@ -4194,17 +4194,21 @@ export const useConfigStore = create<ConfigStore>()(
                             // authoritative owner; without this check startup would
                             // normalize the session to the active project's config.
                             let initialWorkspace = null;
+                            let keepUnresolvedInitialDirectory = false;
                             if (initialDirectory && !resolvedProject && !resolveProjectDirectory(initialDirectory)) {
                                 try {
                                     initialWorkspace = findRepoWorkspaceIn((await fetchRepoWorkspaces()).workspaces, initialDirectory);
                                 } catch {
                                     // The route is absent or failed; the catalog may
-                                    // still name the workspace.
+                                    // still name the workspace. If neither answers, keep
+                                    // the directory instead of silently moving the
+                                    // session to the active project.
                                     initialWorkspace = findRepoWorkspaceByDirectory(initialDirectory);
+                                    keepUnresolvedInitialDirectory = !initialWorkspace;
                                 }
                                 if (!isConfigRuntimeContextCurrent(runtimeContext)) return;
                             }
-                            const resolvedInitialDirectory = (initialWorkspace || resolvedProject || resolveProjectDirectory(initialDirectory))
+                            const resolvedInitialDirectory = (initialWorkspace || keepUnresolvedInitialDirectory || resolvedProject || resolveProjectDirectory(initialDirectory))
                                 ? resolveConfigDirectory(initialDirectory)
                                 : null;
                             const configDirectory = resolvedInitialDirectory ?? getFallbackProjectDirectory();
