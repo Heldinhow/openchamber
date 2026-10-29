@@ -39,6 +39,17 @@ export const getRepoWorkspaceCatalog = (): RepoWorkspaceCatalogState => {
 };
 
 export const publishRepoWorkspaceCatalog = (next: RepoWorkspaceCatalogState): void => {
+  // A fallback reader (the composer, or Mini Chat) must not replace a list the
+  // sidebar already resolved with its own loading/error state: its failed
+  // request would look like the workspace list disappeared.
+  if (
+    next.runtimeKey === catalog.runtimeKey
+    && catalog.status === 'ready'
+    && next.workspaces.length === 0
+    && next.status !== 'ready'
+  ) {
+    return;
+  }
   if (
     next.status === catalog.status
     && next.workspaces === catalog.workspaces

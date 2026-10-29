@@ -15,12 +15,15 @@ type State = {
   workspaces: RepoWorkspaceResolved[];
   /** Stored workspaces the settings parser dropped; shown, never rewritten. */
   discarded: number;
+  /** The runtime whose request produced this state. */
+  runtimeKey: string;
 };
 
 const initialState = (enabled: boolean): State => ({
   status: enabled ? 'loading' : 'unavailable',
   workspaces: [],
   discarded: 0,
+  runtimeKey: getRuntimeKey(),
 });
 
 /** The fields a settings save holds, so a resolved list can be compared to it. */
@@ -59,6 +62,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
         status: 'ready',
         workspaces: document.workspaces,
         discarded: document.discarded,
+        runtimeKey,
       });
     } catch (error) {
       if (generation !== requestGenerationRef.current || runtimeKey !== getRuntimeKey()) return;
@@ -77,7 +81,7 @@ export const useRepoWorkspaces = ({ enabled }: { enabled: boolean }) => {
   }, [load]);
 
   React.useEffect(() => {
-    publishRepoWorkspaceCatalog({ ...state, runtimeKey: getRuntimeKey() });
+    publishRepoWorkspaceCatalog({ ...state });
   }, [state]);
 
   React.useEffect(() => {

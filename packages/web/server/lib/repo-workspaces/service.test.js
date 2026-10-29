@@ -154,7 +154,7 @@ describe('workspace service: create', () => {
     expect(first.state.settings.activeProjectId).toBe('p_shared');
   });
 
-  it('deduplicates folders by resolved path and names references from labels with suffixes', async () => {
+  it('names references from labels with suffixes', async () => {
     const one = makeFolder('one');
     const two = makeFolder('two');
     const { service } = createService({
@@ -166,11 +166,27 @@ describe('workspace service: create', () => {
 
     const result = await service.create({
       name: 'Shop',
-      folders: [{ path: one }, { projectId: 'p_one' }, { path: two }],
+      folders: [{ path: one }, { path: two }],
     });
 
     expect(result.workspace.projects.map((entry) => entry.projectId)).toEqual(['p_one', 'p_two']);
     expect(Object.keys(readWorkspaceConfig(result.workspace.id).references)).toEqual(['App', 'App-2']);
+  });
+
+  it('rejects a duplicate folder instead of silently dropping it', async () => {
+    const one = makeFolder('one');
+    const { service, dependencies } = createService({
+      projects: [{ id: 'p_one', path: one, label: 'One' }],
+    });
+
+    await expect(service.create({
+      name: 'Shop',
+      folders: [{ path: one }, { projectId: 'p_one' }],
+    })).rejects.toMatchObject({
+      status: 422,
+      fields: { 'folders[1].projectId': 'This project is already in the workspace' },
+    });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
   });
 
   it('rejects a missing folder before anything is saved', async () => {

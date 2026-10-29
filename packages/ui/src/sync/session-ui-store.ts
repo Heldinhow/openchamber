@@ -51,7 +51,7 @@ import { getWorktreeSetupWaitEnabled } from "@/lib/openchamberConfig"
 import { resolveCreatedWorktreeStartDirectory, resolveStartDirectory, resolveWorktreeStartDirectory } from "@/lib/worktrees/worktreeStartDirectory"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { resolveWorkspaceDraftDirectory, WorkspaceDraftTargetError } from "@/lib/repoWorkspaces/workspaceDraft"
-import { findRepoWorkspace, findRepoWorkspaceByDirectory, getRepoWorkspaceCatalog, repoWorkspaceDirectories } from "@/lib/repoWorkspaces/catalog"
+import { findRepoWorkspace, findRepoWorkspaceByDirectory, repoWorkspaceDirectories } from "@/lib/repoWorkspaces/catalog"
 import {
   getSyncSessions,
   getAllSyncSessions,
@@ -1208,27 +1208,19 @@ const draftSessionMetadata = (draft: NewSessionDraftState): Metadata | undefined
 const resolveDraftTargetDirectory = async (draft: NewSessionDraftState): Promise<string | null> => {
   const store = useSessionUIStore.getState()
 
-  // A workspace draft runs in the workspace's neutral directory. The catalog
-  // answers once the sidebar has read the route; before that (or when it is
-  // stale) the route is asked directly. Either way the workspace must exist:
-  // falling back would send the session to a member project.
+  // A workspace draft runs in the workspace's neutral directory. The route is
+  // authoritative on send: a catalog that still holds a workspace deleted in
+  // another window must not create a session in its orphaned directory.
+  // Falling back would send the session to a member project.
   if (draft.target === "workspace") {
-    const catalogState = getRepoWorkspaceCatalog()
-    const liveWorkspace = findRepoWorkspace(draft.workspaceId ?? null)
-    if (!liveWorkspace && catalogState.status === "ready") {
-      throw new DraftWorkspaceUnavailableError()
-    }
     let routedDirectory: string | null = null
-    if (!liveWorkspace) {
-      try {
-        routedDirectory = normalizePath(await resolveWorkspaceDraftDirectory(draft.workspaceId))
-      } catch (error) {
-        if (error instanceof WorkspaceDraftTargetError) throw new DraftWorkspaceUnavailableError()
-        throw error
-      }
+    try {
+      routedDirectory = normalizePath(await resolveWorkspaceDraftDirectory(draft.workspaceId))
+    } catch (error) {
+      if (error instanceof WorkspaceDraftTargetError) throw new DraftWorkspaceUnavailableError()
+      throw error
     }
-    const directory = normalizePath(liveWorkspace?.directory ?? null)
-      ?? routedDirectory
+    const directory = routedDirectory
       ?? normalizePath(draft.directoryOverride ?? null)
     if (!directory) throw new DraftWorkspaceUnavailableError()
     if (await opencodeClient.getDirectoryAvailability(directory) === "missing") {

@@ -1226,6 +1226,8 @@ describe('workspace draft target', () => {
 
   let originalCreateSession;
   let originalGetDirectoryAvailability;
+  let originalFetch;
+  let routeWorkspaces;
 
   beforeEach(() => {
     getDeferredSafeStorage().removeItem(DRAFT_TARGET_KEY);
@@ -1241,11 +1243,22 @@ describe('workspace draft target', () => {
     });
     useDirectoryStore.getState().setDirectory(projectB.path, { showOverlay: false });
     publishCatalog([workspace]);
+    routeWorkspaces = [workspace];
+    originalFetch = globalThis.fetch;
+    // The send verifies the workspace against the route, not a possibly stale
+    // catalog copy; answer the route read here.
+    globalThis.fetch = async (input, init) => {
+      if (String(input).includes('/api/workspaces')) {
+        return Response.json({ workspaces: routeWorkspaces, discarded: 0 });
+      }
+      return originalFetch(input, init);
+    };
     originalCreateSession = opencodeClient.createSession;
     originalGetDirectoryAvailability = opencodeClient.getDirectoryAvailability;
   });
 
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     opencodeClient.createSession = originalCreateSession;
     opencodeClient.getDirectoryAvailability = originalGetDirectoryAvailability;
     publishRepoWorkspaceCatalog({
@@ -1377,6 +1390,7 @@ describe('workspace draft target', () => {
   test('a workspace the catalog no longer holds fails before any session is created', async () => {
     const createCalls = [];
     publishCatalog([]);
+    routeWorkspaces = [];
     useSessionUIStore.getState().openNewSessionDraft({
       target: 'workspace',
       workspaceId: 'ws_gone',

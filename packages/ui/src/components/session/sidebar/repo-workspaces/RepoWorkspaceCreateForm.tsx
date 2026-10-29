@@ -180,14 +180,15 @@ export const RepoWorkspaceCreateForm: React.FC<RepoWorkspaceCreateFormProps> = (
 
         <div className="flex flex-col gap-2" aria-describedby={attempted && rows.length === 0 ? rowsErrorId : undefined}>
           {rows.map((row) => {
-            const rowError = rowErrors[row.key] ?? (serverErrors[row.key] ? 'missing' : null);
-            const missing = row.missing || Boolean(serverErrors[row.key]);
+            const serverMessage = serverErrors[row.key] ?? null;
+            const rowError = serverMessage ? null : rowErrors[row.key] ?? null;
+            const missing = row.missing || Boolean(serverMessage);
             const label = row.path || t('sessions.sidebar.workspace.missingProject');
-            const errorText = rowError === 'duplicate'
+            const errorText = serverMessage ?? (rowError === 'duplicate'
               ? t('sessions.sidebar.workspace.folderDuplicate')
               : rowError
                 ? t(row.path ? 'sessions.sidebar.workspace.folderMissing' : 'sessions.sidebar.workspace.missingProject')
-                : null;
+                : null);
             return (
               <div key={row.key} className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">

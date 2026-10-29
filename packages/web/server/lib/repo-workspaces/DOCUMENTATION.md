@@ -34,8 +34,8 @@ never writes into a member repository.
   that is not in the catalog is 422 on create; on edit it is accepted only when
   the stored workspace already holds it, so an unrelated rename does not delete
   the missing row.
-- Folders are deduplicated by resolved path, preserving the first occurrence
-  and the user's order.
+- A duplicate folder or project row is 422 on the later row instead of being
+  dropped silently; the client catches the common case before the request.
 - Create and edit persist `projects` and `workspaces` in one `persistSettings`
   call. `activeProjectId` is never part of that update and never changes here.
   A failed settings write leaves neither a workspace nor a registered project.

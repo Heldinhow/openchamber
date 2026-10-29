@@ -196,7 +196,7 @@ export const createWorkspaceService = (dependencies) => {
         const project = projects.find((candidate) => candidate.id === folder.projectId) ?? null;
         if (!project) {
           if (keepMissingProjectIds.has(folder.projectId)) {
-            resolved.push({ projectId: folder.projectId, path: null, label: '' });
+            resolved.push({ index, projectId: folder.projectId, path: null, label: '' });
             continue;
           }
           fields[`folders[${index}].projectId`] = 'Project not found';
@@ -207,7 +207,7 @@ export const createWorkspaceService = (dependencies) => {
           fields[`folders[${index}].projectId`] = validated.error || 'Folder is not available';
           continue;
         }
-        resolved.push({ projectId: project.id, path: validated.directory, label: projectLabel(project) });
+        resolved.push({ index, projectId: project.id, path: validated.directory, label: projectLabel(project) });
         continue;
       }
 
@@ -223,25 +223,37 @@ export const createWorkspaceService = (dependencies) => {
         continue;
       }
       projects = result.projects;
-      resolved.push({ projectId: result.project.id, path: result.path, label: projectLabel(result.project) });
+      resolved.push({ index, projectId: result.project.id, path: result.path, label: projectLabel(result.project) });
     }
 
     if (Object.keys(fields).length > 0) throw invalid(fields);
 
-    const seenPaths = new Set();
-    const seenProjectIds = new Set();
-    const members = [];
+    // Duplicates are a user mistake, not an entry to drop silently: reject the
+    // later row so the dialog can point at it. The client catches the common
+    // case before the request; this is the trust-boundary check.
+    const seenPaths = new Map();
+    const seenProjectIds = new Map();
     for (const row of resolved) {
-      if (seenProjectIds.has(row.projectId)) continue;
-      if (row.path !== null) {
-        if (seenPaths.has(row.path)) continue;
-        seenPaths.add(row.path);
+      if (seenProjectIds.has(row.projectId)) {
+        fields[`folders[${row.index}].projectId`] = 'This project is already in the workspace';
+      } else {
+        seenProjectIds.set(row.projectId, row.index);
       }
-      seenProjectIds.add(row.projectId);
-      members.push(row);
+      if (row.path !== null) {
+        if (seenPaths.has(row.path)) {
+          fields[`folders[${row.index}].path`] = 'This folder is already in the workspace';
+        } else {
+          seenPaths.set(row.path, row.index);
+        }
+      }
     }
+    if (Object.keys(fields).length > 0) throw invalid(fields);
 
-    return { projects, members, projectIds: members.map((member) => member.projectId) };
+    return {
+      projects,
+      members: resolved.map(({ index: _index, ...row }) => row),
+      projectIds: resolved.map((row) => row.projectId),
+    };
   };
 
   /** The stored project order resolved for the neutral config. */
@@ -268,17 +280,30 @@ export const createWorkspaceService = (dependencies) => {
       const takenNames = new Set();
       for (const member of members) {
         if (!member.path) continue;
+        const configuredPath = path.resolve(member.path);
         const referenceName = nextReferenceName(referenceNameFor(member.label, member.path), takenNames);
         takenNames.add(referenceName);
         references[referenceName] = {
-          path: path.resolve(member.path),
+          path: configuredPath,
           description: member.label || path.basename(member.path),
         };
-        permitted.push({
-          action: 'edit',
-          resource: `${path.resolve(member.path)}/*`,
-          effect: 'allow',
-        });
+        // OpenCode checks the canonical resource too; a symlinked project must
+        // stay editable through either path.
+        const permittedPaths = new Set([configuredPath]);
+        try {
+          const canonical = path.resolve(await fsPromises.realpath(configuredPath));
+          if (canonical !== configuredPath) permittedPaths.add(canonical);
+        } catch {
+          // A missing folder is excluded from the config already; only the
+          // configured path can match if it is readable later.
+        }
+        for (const permittedPath of permittedPaths) {
+          permitted.push({
+            action: 'edit',
+            resource: `${permittedPath}/*`,
+            effect: 'allow',
+          });
+        }
       }
       await writeConfig({ ...existing, references, permissions: permitted }, targetPath);
       return null;
