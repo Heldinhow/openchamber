@@ -696,6 +696,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "프로젝트가 없는 폴더는 저장할 때 등록됩니다.",
   "sessions.sidebar.workspace.showContent": "내용 보기",
   "sessions.sidebar.workspace.configUnreadable": "이 구성 파일을 읽을 수 없습니다. 수정한 뒤 다시 시도하세요.",
+  "sessions.sidebar.workspace.configWriteFailed": "저장했지만 워크스페이스 구성을 작성하지 못했습니다.",
   "sessions.sidebar.workspace.rootConfigShadowed": "이 레이어는 루트의 기존 구성 파일을 가립니다.",
   "sessions.sidebar.workspace.createFailed": "워크스페이스를 만들 수 없습니다.",
   "sessions.sidebar.workspace.pendingTitle": "워크스페이스 생성됨, references 대기 중",

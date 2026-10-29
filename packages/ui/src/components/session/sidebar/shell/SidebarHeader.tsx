@@ -31,6 +31,8 @@ type Props = {
   showProjectDisplayControls: boolean;
   showSectionControls: boolean;
   handleOpenDirectoryDialog: () => void;
+  /** Opens the new-workspace dialog beside the New project control. */
+  handleCreateWorkspace?: () => void;
   /** Whether the issues and pull requests board is offered. */
   showSourceBoard: boolean;
   headerActionIconClass: string;
@@ -46,8 +48,6 @@ type Props = {
   searchMatchCount: number;
   collapseAll: () => void;
   expandAll: () => void;
-  /** A workspace owns the repo order; sort, grouping and single-project display do not apply. */
-  workspaceActive: boolean;
 };
 
 /**
@@ -129,6 +129,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     showProjectDisplayControls,
     showSectionControls,
     handleOpenDirectoryDialog,
+    handleCreateWorkspace,
     showSourceBoard,
     headerActionIconClass,
     headerActionButtonClass,
@@ -142,7 +143,6 @@ export function SidebarHeader(props: Props): React.ReactNode {
     searchMatchCount,
     collapseAll,
     expandAll,
-    workspaceActive,
   } = props;
 
   const rowRef = React.useRef<HTMLDivElement>(null);
@@ -184,8 +184,8 @@ export function SidebarHeader(props: Props): React.ReactNode {
   const projectDisplayMode = useSessionDisplayStore((state) => state.projectDisplayMode);
   const setProjectDisplayMode = useSessionDisplayStore((state) => state.setProjectDisplayMode);
   // VS Code always groups under its workspace.
-  const timeGrouping = showProjectDisplayControls && !workspaceActive && sidebarGrouping === 'time';
-  const isSingleProjectMode = showProjectDisplayControls && !workspaceActive && projectDisplayMode === 'single';
+  const timeGrouping = showProjectDisplayControls && sidebarGrouping === 'time';
+  const isSingleProjectMode = showProjectDisplayControls && projectDisplayMode === 'single';
 
   // One choice per line, rarely touched orders behind submenus that name the
   // current choice, so the menu stays short: selection first, then the view,
@@ -231,7 +231,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
   ];
   // One view: works under their projects, or every project's works in one
   // list by time, which has no project headers to sort.
-  if (showProjectDisplayControls && !workspaceActive) {
+  if (showProjectDisplayControls) {
     displayMenuSections.push(choiceSubmenu('sessions.sidebar.header.listGrouping.label', [
       ['project', 'sessions.sidebar.header.listGrouping.project'],
       ['time', 'sessions.sidebar.header.listGrouping.time'],
@@ -241,7 +241,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     }));
   }
   displayMenuSections.push(<>
-    {!timeGrouping && !workspaceActive ? choiceSubmenu('sessions.sidebar.header.actions.sortProjects', [
+    {!timeGrouping ? choiceSubmenu('sessions.sidebar.header.actions.sortProjects', [
       ['manual', 'sessions.sidebar.header.projectSort.manual'],
       ['a-z', 'sessions.sidebar.header.projectSort.aToZ'],
       ['z-a', 'sessions.sidebar.header.projectSort.zToA'],
@@ -251,7 +251,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
       setProjectSortOrder(order);
       void updateDesktopSettings({ sidebarProjectSortOrder: order });
     }) : null}
-    {showProjectDisplayControls && !workspaceActive ? choiceSubmenu('sessions.sidebar.header.projectDisplay.label', [
+    {showProjectDisplayControls ? choiceSubmenu('sessions.sidebar.header.projectDisplay.label', [
       ['all', 'sessions.sidebar.header.projectDisplay.all'],
       ['single', 'sessions.sidebar.header.projectDisplay.single'],
     ] as const, projectDisplayMode, (mode) => {
@@ -450,6 +450,22 @@ export function SidebarHeader(props: Props): React.ReactNode {
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.addProject')}</p></TooltipContent>
             </Tooltip>
+
+            {handleCreateWorkspace ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={handleCreateWorkspace}
+                    className={cn(headerActionButtonClass, 'text-muted-foreground hover:text-foreground hover:bg-transparent')}
+                    aria-label={t('sessions.sidebar.workspace.new')}
+                  >
+                    <Icon name="stack" className={headerActionIconClass} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.workspace.new')}</p></TooltipContent>
+              </Tooltip>
+            ) : null}
 
             <DropdownMenu>
               <Tooltip>

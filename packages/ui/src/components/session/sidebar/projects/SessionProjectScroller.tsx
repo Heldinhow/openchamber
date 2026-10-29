@@ -34,7 +34,7 @@ import { SessionSidebarRows } from '../SessionSidebarRows';
 import { sessionTreeTextInset } from '../sessions/sessionTreeGeometry';
 import { SessionSidebarActivityHeader } from '../sessionSidebarHeaderPresentation';
 import { resolveSessionSidebarStickyHeader, type SessionSidebarRow, type SessionSidebarRowModel } from '../sessionSidebarRowModel';
-import { MissingWorkspaceRepoItem, SortableProjectItem } from './sortableItems';
+import { SortableProjectItem } from './sortableItems';
 import { WorktreeWorkRow } from '../works/WorktreeWorkRow';
 import { SessionDraftRow } from '../works/SessionDraftRow';
 import { isGroupWork } from '../works/sidebarWorks';
@@ -103,8 +103,6 @@ export type SessionProjectScrollerView = {
   mobileVariant: boolean;
   alwaysShowActions: boolean;
   projectSortOrder: ProjectSortOrder;
-  /** Order comes from the workspace's repos; project dragging is off. */
-  workspaceActive: boolean;
 };
 
 export type SessionProjectScrollerActions = {
@@ -117,8 +115,6 @@ export type SessionProjectScrollerActions = {
   openWorktreesPage: (id: string) => void;
   openProjectEditDialog: (id: string) => void;
   removeProject: (id: string) => void;
-  removeWorkspaceRepo?: (alias: string) => void;
-  relocateWorkspaceRepo?: (alias: string) => void;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
   renderProjectStatusIndicator?: (projectId: string, groups: SessionGroup[]) => React.ReactNode;
   setSingleProjectId: (id: string) => void;
@@ -302,28 +298,11 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
     }
     if (row.kind === 'project-header') {
       const project = row.section.project;
-      const workspace = row.section.workspace;
-      if (workspace?.missing) {
-        return (
-          <MissingWorkspaceRepoItem
-            alias={workspace.alias}
-            primary={workspace.primary}
-            onRelocate={actions.relocateWorkspaceRepo
-              ? () => actions.relocateWorkspaceRepo?.(workspace.alias)
-              : undefined}
-            onRemove={actions.removeWorkspaceRepo
-              ? () => actions.removeWorkspaceRepo?.(workspace.alias)
-              : undefined}
-          />
-        );
-      }
-      const label = workspace?.alias ?? getProjectLabel(project, view.homeDirectory);
-      const description = workspace
-        ? `${project.label ?? project.normalizedPath} · ${formatPathForDisplay(project.normalizedPath, view.homeDirectory)}`
-        : formatPathForDisplay(project.normalizedPath, view.homeDirectory);
+      const label = getProjectLabel(project, view.homeDirectory);
+      const description = formatPathForDisplay(project.normalizedPath, view.homeDirectory);
       return <SortableProjectItem
         id={project.id}
-        disabled={model.singleProjectMode || row.forceExpanded || model.state.editingId !== null || view.projectSortOrder !== 'manual' || view.workspaceActive}
+        disabled={model.singleProjectMode || row.forceExpanded || model.state.editingId !== null || view.projectSortOrder !== 'manual'}
         projectLabel={label}
         projectDescription={description}
         projectDirectory={project.normalizedPath}
@@ -335,8 +314,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
         openSidebarMenuKey={model.state.openSidebarMenuKey} setOpenSidebarMenuKey={model.state.setOpenSidebarMenuKey}
         projectPickerOptions={model.singleProjectMode ? projectPickerOptions : undefined}
         onProjectSelect={model.singleProjectMode ? actions.setSingleProjectId : undefined}
-        workspace={workspace}
-        showNewSession={workspace?.showNewSession ?? true}
+        showNewSession
         onToggle={() => { if (!row.forceExpanded && !model.singleProjectMode) actions.toggleProject(project.id); }}
         onNewSession={() => {
           prepareSessionProjectAction({
@@ -496,10 +474,9 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
   }, [actions, deleteFolder, files, model, openProjectFolder, openProjectOnBoard, projectPickerOptions, renameFolder, renderStatus, requestArchiveAll, showDeletionDialog, spacesPageAvailable, t, toggleFolderCollapse, view]);
 
   const structuralIds = React.useMemo(() => model.rowModel.rows.flatMap((row) => (
-    row.kind === 'project-header' && !row.section.workspace?.missing ? [row.section.project.id] : []
+    row.kind === 'project-header' ? [row.section.project.id] : []
   )), [model.rowModel.rows]);
   const projectDragIds = React.useMemo(() => new Set(model.sectionsForRender
-    .filter((section) => !section.workspace?.missing)
     .map((section) => section.project.id)), [model.sectionsForRender]);
   const folderDropOwnerKeys = React.useMemo(() => model.rowModel.folderDropTargets
     .flatMap((target) => (target.enabled ? [target.ownerKey] : [])), [model.rowModel.folderDropTargets]);
@@ -540,7 +517,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
             addSessionToFolder(overData.scopeKey, overData.folderId, activeData.sessionId);
             return;
           }
-          if (view.hasSessionSearchQuery || view.workspaceActive || model.state.editingId !== null || event.active.id === event.over.id) return;
+          if (view.hasSessionSearchQuery || model.state.editingId !== null || event.active.id === event.over.id) return;
           const activeId = String(event.active.id);
           const overId = String(event.over.id);
           const projectIds = model.sectionsForRender.map((section) => section.project.id);

@@ -37,11 +37,11 @@ export type SessionSidebarWorkEntry =
   | { kind: 'draft'; draft: SessionDraft; projectId: string };
 
 // 'timeline' is the one list of every project's works when the sidebar groups
-// them by time; 'others' holds the projects outside the active workspace.
-export type SessionSidebarActivityKey = 'pinned' | 'work' | 'chats' | 'timeline' | 'others';
+// them by time.
+export type SessionSidebarActivityKey = 'pinned' | 'work' | 'chats' | 'timeline';
 
 /** Activity sections; the display menu's Collapse all / Expand all drive them with the projects. */
-export const SIDEBAR_ACTIVITY_KEYS: readonly SessionSidebarActivityKey[] = ['chats', 'pinned', 'work', 'timeline', 'others'];
+export const SIDEBAR_ACTIVITY_KEYS: readonly SessionSidebarActivityKey[] = ['chats', 'pinned', 'work', 'timeline'];
 
 // 'project' is a one-line file tree row under a project. Rows of zones that
 // mix projects (Pinned, In work, the list by time) are 'mixed-compact', one
@@ -1071,17 +1071,10 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
     const active = projectSections.find((section) => section.project.id === args.activeProjectId) ?? projectSections[0];
     projectSections = active ? [active] : [];
   }
-  // With a workspace active, the projects outside it follow its repos under one zone.
-  const listsWorkspace = projectSections.some((section) => section.workspace);
-  let othersHeader: 'none' | 'open' | 'collapsed' = 'none';
   for (const section of projectSections) {
     const descriptors = buildGroupRenderDescriptors(section, { mainWorkspaceOnly: args.showOnlyMainWorkspace });
     // A project whose only matches moved to a zone shows no empty header.
     if (search && !descriptors.some((descriptor) => !movedGroupKeys.has(descriptor.groupKey) && groupSearchMatches(descriptor.group) > 0)) continue;
-    if (listsWorkspace && !section.workspace) {
-      if (othersHeader === 'none') othersHeader = appendActivityHeader('others') ? 'collapsed' : 'open';
-      if (othersHeader === 'collapsed') continue;
-    }
     const projectCollapsed = !search && !args.singleProjectMode && !args.showOnlyMainWorkspace && args.collapsedProjects.has(section.project.id);
     if (!args.showOnlyMainWorkspace) {
       const rowIndex = rows.length;

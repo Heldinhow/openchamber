@@ -40,7 +40,6 @@ import { z } from 'zod';
 import {
   fromSchema,
   mapParser,
-  parseActiveWorkspaceId,
   parseActivityRenderMode,
   parseBoolean,
   parseCustomProviderIcons,
@@ -247,12 +246,6 @@ export const SETTINGS_REGISTRY = {
     scope: 'instance',
     surfaces: ['web', 'desktop', 'mobile'],
     parse: parseWorkspaces,
-  }),
-  activeWorkspaceId: field<string | null>({
-    scope: 'instance',
-    adopt: 'bootstrap-only',
-    surfaces: ['web', 'desktop', 'mobile'],
-    parse: parseActiveWorkspaceId,
   }),
   securityScopedBookmarks: field({ scope: 'instance', surfaces: ['desktop'], parse: parseStringList }),
   pinnedDirectories: field({ scope: 'instance', parse: parseStringSet }),

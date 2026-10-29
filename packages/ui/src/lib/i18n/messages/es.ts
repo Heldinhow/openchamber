@@ -705,6 +705,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "Las carpetas sin proyecto se registran al guardar.",
   "sessions.sidebar.workspace.showContent": "Ver contenido",
   "sessions.sidebar.workspace.configUnreadable": "No se pudo leer este archivo de configuración. Corrígelo e inténtalo de nuevo.",
+  "sessions.sidebar.workspace.configWriteFailed": "Se guardó, pero no se pudo escribir la configuración del espacio de trabajo.",
   "sessions.sidebar.workspace.rootConfigShadowed": "Esta capa sombrea el archivo de configuración existente en la raíz.",
   "sessions.sidebar.workspace.createFailed": "No se pudo crear el espacio de trabajo.",
   "sessions.sidebar.workspace.pendingTitle": "Espacio de trabajo creado, references pendientes",

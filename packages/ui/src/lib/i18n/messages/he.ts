@@ -649,6 +649,7 @@ export const dict = {
   "sessions.sidebar.workspace.noticeUnregistered": "תיקיות בלי פרויקט יירשמו בעת השמירה.",
   "sessions.sidebar.workspace.showContent": "הצגת התוכן",
   "sessions.sidebar.workspace.configUnreadable": "לא ניתן לקרוא את קובץ התצורה הזה. תקנו אותו ונסו שוב.",
+  "sessions.sidebar.workspace.configWriteFailed": "נשמר, אך לא ניתן היה לכתוב את תצורת סביבת העבודה.",
   "sessions.sidebar.workspace.rootConfigShadowed": "השכבה הזו מסתירה את קובץ התצורה הקיים בשורש.",
   "sessions.sidebar.workspace.createFailed": "לא ניתן ליצור את סביבת העבודה.",
   "sessions.sidebar.workspace.pendingTitle": "סביבת העבודה נוצרה, references ממתינות",

@@ -108,64 +108,52 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: 'bad' }).workStatusSectionOrder).toBeUndefined();
     expect(helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: [] }).workStatusSectionOrder).toEqual([]);
   });
-  it('round-trips workspaces by entry, counts discarded ones, and clears the pointer with null', () => {
+  it('round-trips workspaces by entry, counts discarded ones, and reads the legacy shape', () => {
     const helpers = createTestHelpers();
     const workspace = {
       id: 'ws_shop',
       name: 'Shop Platform',
+      projectIds: ['p', 'w'],
+    };
+    const legacy = {
+      id: 'ws_legacy',
+      name: 'Legacy',
       primaryProjectId: 'p',
       repos: [
-        { projectId: 'p', alias: 'api', description: 'API', branch: 'main' },
         { projectId: 'w', alias: 'web', description: 'Web', branch: 'feat/tokens' },
+        { projectId: 'p', alias: 'api', description: 'API', branch: 'main' },
       ],
       createdRefs: ['web'],
-      editRules: [
-        // A deny from the removed read-only option still parses so a save can replace it.
-        { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
-        // Kept even though no repo uses the alias any more.
-        { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },
-      ],
+      editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'deny' }],
     };
     const ignored = [
-      { id: 'ws_no_name', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: 'api' }] },
-      { id: 'ws_primary_outside', name: 'Outside', primaryProjectId: 'missing', repos: [{ projectId: 'p', alias: 'api' }] },
-      { id: 'ws_bad_alias', name: 'Bad alias', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: 'a pi' }] },
+      { id: 'ws_no_name', projectIds: ['p'] },
+      { id: 'ws_no_projects', name: 'No projects', projectIds: [] },
+      { id: 'ws_bad_project', name: 'Bad project', projectIds: [42] },
     ];
     const current = {
       projects: [{ id: 'p', path: '/home/testuser/project' }],
       activeProjectId: 'p',
     };
 
-    const changes = helpers.sanitizeSettingsUpdate({
-      workspaces: [workspace, ...ignored],
-      activeWorkspaceId: 'ws_shop',
-    });
-    expect(changes.workspaces).toEqual([workspace]);
-    expect(changes.activeWorkspaceId).toBe('ws_shop');
-    expect(helpers.sanitizeRepoWorkspaces([workspace, ...ignored]).discarded).toBe(3);
+    const changes = helpers.sanitizeSettingsUpdate({ workspaces: [workspace, legacy, ...ignored] });
+    // The legacy primary, its references and its rules leave the stored entry;
+    // only the project order survives.
+    expect(changes.workspaces).toEqual([
+      workspace,
+      { id: 'ws_legacy', name: 'Legacy', projectIds: ['w', 'p'] },
+    ]);
+    expect(helpers.sanitizeRepoWorkspaces([workspace, legacy, ...ignored]).discarded).toBe(3);
     expect(helpers.sanitizeRepoWorkspaces('bad')).toBeUndefined();
-    const defaults = helpers.sanitizeRepoWorkspaces([{
-      ...workspace,
-      repos: [{ projectId: 'p', alias: 'api', readOnly: true }],
-      editRules: [{ alias: 'api', resource: '/p/*', effect: 'ask' }, 'bad'],
-    }]).workspaces[0];
-    expect(Object.hasOwn(defaults.repos[0], 'readOnly')).toBe(false);
-    expect(defaults.editRules).toEqual([]);
 
     const saved = helpers.mergePersistedSettings(current, changes);
     expect(saved.projects).toEqual(current.projects);
     expect(saved.activeProjectId).toBe('p');
-    expect(saved.workspaces).toEqual([workspace]);
+    expect(saved.workspaces).toEqual(changes.workspaces);
 
     const reloaded = helpers.formatSettingsResponse(JSON.parse(JSON.stringify(saved)));
-    expect(reloaded.workspaces).toEqual([workspace]);
-    expect(reloaded.activeWorkspaceId).toBe('ws_shop');
-
-    const cleared = helpers.mergePersistedSettings(reloaded, helpers.sanitizeSettingsUpdate({ activeWorkspaceId: null }));
-    const formatted = helpers.formatSettingsResponse(JSON.parse(JSON.stringify(cleared)));
-    expect(formatted.activeWorkspaceId).toBeNull();
-    expect(formatted.workspaces).toEqual([workspace]);
-    expect(helpers.sanitizeSettingsUpdate({ activeWorkspaceId: '' }).activeWorkspaceId).toBeUndefined();
+    expect(reloaded.workspaces).toEqual(changes.workspaces);
+    expect(reloaded.activeWorkspaceId).toBeUndefined();
     expect(helpers.sanitizeSettingsUpdate({ workspaces: 'bad' }).workspaces).toBeUndefined();
   });
   it('round-trips telemetry opt-in with the hidden list and preserves it across unrelated writes', () => {
@@ -892,7 +880,7 @@ describe('settings registry gate', () => {
     splashBgLight: '#fff', splashFgLight: '#000', splashBgDark: '#000', splashFgDark: '#fff',
     lastDirectory: '/home/testuser/project', homeDirectory: '/home/testuser', opencodeBinary: '/usr/local/bin/opencode',
     projects: [{ id: 'p', path: '/home/testuser/project' }], activeProjectId: 'p',
-    workspaces: [{ id: 'ws_shop', name: 'Shop', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: 'api', description: '', branch: 'main' }], createdRefs: [] }], activeWorkspaceId: 'ws_shop',
+    workspaces: [{ id: 'ws_shop', name: 'Shop', projectIds: ['p'] }],
     securityScopedBookmarks: ['bookmark'], pinnedDirectories: ['/home/testuser/project'],
     desktopLanAccessEnabled: true, desktopKeepAwakeEnabled: true, desktopMinimizeToTrayEnabled: true, desktopMacMenuBarEnabled: true, desktopLinuxNativeFrame: true, sidebarShowChatsSection: false, sidebarShowWorkSection: false, sidebarShowPinnedSection: true, sidebarDetailedZoneRows: true, sidebarWorktreeNameByBranch: true,
     desktopUiPassword: 'secret', githubClientId: 'client', githubScopes: 'repo', gitlabClientId: 'gitlab-client', skillCatalogs: [{ id: 'c', label: 'C', source: 'https://x' }],

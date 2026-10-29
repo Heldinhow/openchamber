@@ -68,74 +68,35 @@ const sanitizeCustomProviderIcons = (value) => {
 // structurally invalid workspace is dropped and counted; `projectId` values
 // are not checked against the catalog here, because a missing project must
 // not erase the workspace.
-const WORKSPACE_ALIAS_PATTERN = /^[^\s/`,@][^\s/`,]*$/;
-
-const workspaceRepoSchema = z.object({
-  projectId: z.string().trim().min(1),
-  alias: z.string().trim().min(1).regex(WORKSPACE_ALIAS_PATTERN),
-  description: z.string().optional(),
-  branch: z.string().optional(),
-});
-
-const workspaceEditRuleSchema = z.object({
-  alias: z.string().trim().min(1),
-  resource: z.string().trim().min(1),
-  effect: z.enum(['allow', 'deny']),
-});
-
-const activeWorkspaceIdSchema = z.union([z.null(), z.string().trim().min(1)]);
-
 const workspaceSchema = z.object({
   id: z.string().trim().min(1),
   name: z.string().trim().min(1),
-  primaryProjectId: z.string().trim().min(1),
-  repos: z.array(z.unknown()),
-  createdRefs: z.unknown().optional(),
-  editRules: z.unknown().optional(),
+  projectIds: z.unknown().optional(),
+  // Legacy primary-based shape, read only for its stored repo order.
+  repos: z.unknown().optional(),
 });
+
+const legacyWorkspaceRepoSchema = z.object({ projectId: z.string() });
+
+const workspaceProjectIds = (entry) => {
+  if (Array.isArray(entry.projectIds)) return entry.projectIds;
+  const legacyRepos = z.array(legacyWorkspaceRepoSchema).safeParse(entry.repos);
+  return legacyRepos.success ? legacyRepos.data.map((repo) => repo.projectId) : [];
+};
 
 const sanitizeRepoWorkspace = (entry) => {
   const parsed = workspaceSchema.safeParse(entry);
   if (!parsed.success) return undefined;
-  const repos = [];
-  const aliases = new Set();
-  for (const repoEntry of parsed.data.repos) {
-    const repo = workspaceRepoSchema.safeParse(repoEntry);
-    if (!repo.success || aliases.has(repo.data.alias)) return undefined;
-    aliases.add(repo.data.alias);
-    repos.push({
-      projectId: repo.data.projectId,
-      alias: repo.data.alias,
-      description: repo.data.description ?? '',
-      branch: repo.data.branch ?? '',
-    });
+  const projectIds = [];
+  for (const candidate of workspaceProjectIds(parsed.data)) {
+    const projectId = z.string().trim().min(1).safeParse(candidate);
+    if (projectId.success && !projectIds.includes(projectId.data)) projectIds.push(projectId.data);
   }
-  if (repos.length === 0 || !repos.some((repo) => repo.projectId === parsed.data.primaryProjectId)) {
-    return undefined;
-  }
-  const secondaryAliases = new Set(
-    repos.filter((repo) => repo.projectId !== parsed.data.primaryProjectId).map((repo) => repo.alias),
-  );
-  const rawCreatedRefs = Array.isArray(parsed.data.createdRefs) ? parsed.data.createdRefs : [];
-  const createdRefs = [...new Set(
-    rawCreatedRefs.filter((alias) => secondaryAliases.has(alias)),
-  )];
-  // Not filtered by `repos`: a rule for a repo that left must stay readable so
-  // it can still be removed from the config.
-  const rawEditRules = Array.isArray(parsed.data.editRules) ? parsed.data.editRules : [];
-  const editRules = [];
-  for (const ruleEntry of rawEditRules) {
-    const rule = workspaceEditRuleSchema.safeParse(ruleEntry);
-    if (rule.success) editRules.push(rule.data);
-  }
-  return {
-    id: parsed.data.id,
-    name: parsed.data.name,
-    primaryProjectId: parsed.data.primaryProjectId,
-    repos,
-    createdRefs,
-    editRules,
-  };
+  if (projectIds.length === 0) return undefined;
+  // `primaryProjectId`, `createdRefs`, `editRules` and `activeWorkspaceId` are
+  // deliberately dropped: the new model has no primary and never rewrites a
+  // member repository.
+  return { id: parsed.data.id, name: parsed.data.name, projectIds };
 };
 
 /**
@@ -451,10 +412,6 @@ export const createSettingsHelpers = (dependencies) => {
       // Malformed entries are dropped here, never written raw. The read route
       // gets the same parser's `discarded` count.
       result.workspaces = workspaces.workspaces;
-    }
-    const activeWorkspaceId = activeWorkspaceIdSchema.safeParse(candidate.activeWorkspaceId);
-    if (activeWorkspaceId.success) {
-      result.activeWorkspaceId = activeWorkspaceId.data;
     }
     if (SIDEBAR_PROJECT_DISPLAY_MODE_VALUES.has(candidate.sidebarProjectDisplayMode)) {
       result.sidebarProjectDisplayMode = candidate.sidebarProjectDisplayMode;

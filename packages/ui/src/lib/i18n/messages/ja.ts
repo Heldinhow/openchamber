@@ -696,6 +696,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "プロジェクトのないフォルダは保存時に登録されます。",
   "sessions.sidebar.workspace.showContent": "内容を表示",
   "sessions.sidebar.workspace.configUnreadable": "この設定ファイルを読み取れませんでした。修正してもう一度お試しください。",
+  "sessions.sidebar.workspace.configWriteFailed": "保存しましたが、ワークスペースの設定を書き込めませんでした。",
   "sessions.sidebar.workspace.rootConfigShadowed": "このレイヤーはルートにある既存の設定ファイルを覆い隠します。",
   "sessions.sidebar.workspace.createFailed": "ワークスペースを作成できませんでした。",
   "sessions.sidebar.workspace.pendingTitle": "ワークスペースは作成済み、references は保留中",

@@ -12,6 +12,7 @@ const baseProps = {
   showProjectDisplayControls: true,
   showSectionControls: true,
   handleOpenDirectoryDialog: () => undefined,
+  handleCreateWorkspace: () => undefined,
   showSourceBoard: true,
   headerActionIconClass: 'h-4.5 w-4.5',
   headerActionButtonClass: 'inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md leading-none text-foreground hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed',
@@ -25,7 +26,6 @@ const baseProps = {
   searchMatchCount: 0,
   collapseAll: () => undefined,
   expandAll: () => undefined,
-  workspaceActive: false,
 };
 
 function StatefulHeader({

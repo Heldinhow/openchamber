@@ -11,14 +11,12 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Icon } from '@/components/icon/Icon';
-import { Button } from '@/components/ui/button';
 import { cn, getRevealLabelKey } from '@/lib/utils';
 import { PROJECT_ICON_MAP, resolveProjectColor, ProjectIconImage } from '@/lib/projectMeta';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
 import { CrossfadeZoneHeader } from './CrossfadeZoneHeaders';
 import { useProjectFolderMissing } from './useProjectFolderMissing';
-import type { ProjectSectionWorkspace } from './sessionProjectRender';
 
 type ProjectIdentityProps = {
   id: string;
@@ -33,7 +31,6 @@ type ProjectHeaderIdentityProps = ProjectIdentityProps & {
   isCollapsed?: boolean;
   alwaysShowActions?: boolean;
   labelClassName?: string;
-  workspace?: ProjectSectionWorkspace;
 };
 
 type ProjectPickerOption = ProjectIdentityProps & { projectDescription: string };
@@ -48,9 +45,7 @@ const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
   isCollapsed,
   alwaysShowActions = false,
   labelClassName,
-  workspace,
 }) => {
-  const { t } = useI18n();
   const { currentTheme } = useThemeSystem();
   const projectIconName = projectIcon ? PROJECT_ICON_MAP[projectIcon] : null;
   const iconColor = resolveProjectColor(projectColor);
@@ -71,26 +66,7 @@ const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
             <Icon name={isCollapsed ? 'arrow-right-s' : 'arrow-down-s'} className="h-3.5 w-3.5" />
           </span>
         ) : null}
-        {workspace ? (
-          <span
-            className={cn(
-              'h-3.5 w-3.5 items-center justify-center rounded-[3px]',
-              hasCollapseControl && alwaysShowActions ? 'hidden' : 'inline-flex',
-              iconVisibilityClassName,
-            )}
-            role={workspace.primary ? 'img' : undefined}
-            aria-label={workspace.primary ? t('sessions.sidebar.workspace.primary') : undefined}
-            title={workspace.primary ? t('sessions.sidebar.workspace.primary') : undefined}
-          >
-            <span
-              className={cn(
-                'h-1.5 w-1.5 rounded-full',
-                workspace.primary ? 'bg-foreground' : 'border border-muted-foreground',
-              )}
-              aria-hidden="true"
-            />
-          </span>
-        ) : projectIconImage ? (
+        {projectIconImage ? (
           <span
             className={cn(
               'h-3.5 w-3.5 items-center justify-center overflow-hidden rounded-[3px]',
@@ -159,86 +135,7 @@ interface SortableProjectItemProps extends ProjectIdentityProps {
   setOpenSidebarMenuKey: (key: string | null) => void;
   projectPickerOptions?: ProjectPickerOption[];
   onProjectSelect?: (projectId: string) => void;
-  workspace?: ProjectSectionWorkspace;
 }
-
-const WorkspaceGitState: React.FC<{ git: NonNullable<ProjectSectionWorkspace['git']> }> = ({ git }) => {
-  const { t } = useI18n();
-  if (git.isRepo === false) {
-    return <span className="text-[0.6875rem] font-medium text-muted-foreground">{t('sessions.sidebar.workspace.noGit')}</span>;
-  }
-  if (git.changes === null) {
-    return null;
-  }
-  if (git.changes === 0) {
-    const label = t('sessions.sidebar.workspace.noChanges');
-    return <span className="inline-flex h-1.5 w-1.5 rounded-full bg-status-success" title={label} role="img" aria-label={label} />;
-  }
-  const label = git.changes === 1
-    ? t('sessions.sidebar.workspace.changeCountSingle', { count: git.changes })
-    : t('sessions.sidebar.workspace.changeCountPlural', { count: git.changes });
-  return (
-    <span className="inline-flex items-center gap-0.5 text-[0.6875rem] font-medium text-muted-foreground" title={label}>
-      <Icon name="pencil" className="h-3 w-3" aria-hidden="true" />
-      <span aria-hidden="true">{git.changes}</span>
-      <span className="sr-only">{label}</span>
-    </span>
-  );
-};
-
-/**
- * A workspace repo whose project left the catalog. The row stays in the
- * workspace's order so one missing project cannot drop the others; relocating
- * registers the folder again through the existing add-project path.
- */
-export const MissingWorkspaceRepoItem: React.FC<{
-  alias: string;
-  primary: boolean;
-  onRelocate?: () => void;
-  onRemove?: () => void;
-}> = ({ alias, primary, onRelocate, onRemove }) => {
-  const { t } = useI18n();
-  return (
-    <div className="relative flex items-center gap-1.5 py-1 ps-4 pe-3.5">
-      <span
-        className="relative inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center"
-        role={primary ? 'img' : undefined}
-        aria-label={primary ? t('sessions.sidebar.workspace.primary') : undefined}
-      >
-        <span
-          className={cn('h-1.5 w-1.5 rounded-full', primary ? 'bg-foreground' : 'border border-muted-foreground')}
-          aria-hidden="true"
-        />
-      </span>
-      <span className="min-w-0 truncate typography-ui-section font-bold text-foreground">{alias}</span>
-      <span className="inline-flex flex-shrink-0 items-center gap-1 text-[0.6875rem] font-medium text-status-warning">
-        <Icon name="alert" className="h-3 w-3" />
-        {t('sessions.sidebar.workspace.missingProject')}
-      </span>
-      <span className="ms-auto flex shrink-0 items-center gap-2">
-        <Button
-          variant="link"
-          size="xs"
-          className="h-auto p-0 typography-micro"
-          onClick={onRelocate}
-        >
-          {t('sessions.sidebar.workspace.relocate')}
-        </Button>
-        {onRemove ? (
-          <Button
-            variant="link"
-            size="xs"
-            className="h-auto p-0 typography-micro"
-            aria-label={t('sessions.sidebar.workspace.removeMissingRepo', { alias })}
-            onClick={onRemove}
-          >
-            {t('sessions.sidebar.workspace.remove')}
-          </Button>
-        ) : null}
-      </span>
-    </div>
-  );
-};
 
 export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   id,
@@ -273,7 +170,6 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   setOpenSidebarMenuKey,
   projectPickerOptions,
   onProjectSelect,
-  workspace,
 }) => {
   const { t } = useI18n();
   const folderMissing = useProjectFolderMissing(projectDirectory);
@@ -482,17 +378,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       alwaysShowActions={alwaysShowActions}
                       // The label starts past the 14px icon and the 6px gap.
                       labelClassName={cn('[--oc-actions-inset:1.25rem]', headerLabelMaskClass)}
-                      workspace={workspace}
                     />
-                    {workspace?.branchChip ? (
-                      <span
-                        className={cn('inline-flex min-w-0 max-w-[7rem] flex-shrink items-center gap-1 text-[0.6875rem] font-medium text-muted-foreground', headerCoveredFadeClass)}
-                        title={workspace.branchChip}
-                      >
-                        <Icon name="git-branch" className="h-3 w-3 flex-shrink-0" />
-                        <span className="truncate font-mono">{workspace.branchChip}</span>
-                      </span>
-                    ) : null}
                     {folderMissing ? (
                       <span
                         className={cn('inline-flex flex-shrink-0 items-center text-status-warning', headerCoveredFadeClass)}
@@ -505,12 +391,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                     {statusIndicator ? (
                       <span className={cn('ms-1 inline-flex flex-shrink-0 items-center', headerCoveredFadeClass)}>{statusIndicator}</span>
                     ) : null}
-                    {workspace ? (
-                      <span className={cn('ms-auto inline-flex flex-shrink-0 items-center gap-1.5', headerCoveredFadeClass)}>
-                        {workspace.git ? <WorkspaceGitState git={workspace.git} /> : null}
-                        {projectDirectory ? <DirectoryActionIndicator directory={projectDirectory} /> : null}
-                      </span>
-                    ) : projectDirectory ? <DirectoryActionIndicator directory={projectDirectory} className={cn('ms-auto', headerCoveredFadeClass)} /> : null}
+                    {projectDirectory ? <DirectoryActionIndicator directory={projectDirectory} className={cn('ms-auto', headerCoveredFadeClass)} /> : null}
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8}>

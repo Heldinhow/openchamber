@@ -182,7 +182,6 @@ which requests only providers enabled for this panel.
 |---|---|---|
 | Context + cost | `contextUsage.ts` over `useSessionMessages`; cost via `useSubagentCostRollup` (own cost + every descendant subagent, recursively) | see below — the store getters cannot serve this |
 | Branch, ahead/behind, attention | `useGitStore` directory state | warmed via `runBackgroundNetworkTask(ensureStatus)` and refreshed from Git mutation hints |
-| Workspace repo list | `useWorkspaceGitStatuses` over the active workspace from `useRepoWorkspaces`, keyed by project id | only while the session lands in a repo of the workspace; the shared git store is the one source |
 | Changed files | `useGitStore` status `files` + `diffStats` | working tree, not session-authored edits |
 | PR + checks | `useFreshestSourceControlVisualSummaryForBranch` | **read-only**; follows the freshest bound-identity entry for the branch |
 | Subagents | child sessions from `useAllLiveSessions` (`parentID`) + `useAllSessionStatuses`; per-row cost from `computeRollup`'s `perChildCost` (each child's own subtree total, so nested subagent-of-subagent cost rolls up under its immediate parent row) | |
@@ -366,49 +365,6 @@ passed, as the server's summary counts them. This is the form GitHub's pull
 request list uses, so the number reads the same in both places. The row once
 showed "1 failed" or "2 running" alone, which gave no sense of how far the run
 was; the per-state counts now live in the row's tooltip.
-
-### The workspace repo list
-
-When the session's directory lands in the primary or a secondary repo of the
-active workspace, one-repo workspaces included, the Project section becomes
-the workspace's section: its title is the `stack` icon and the workspace name
-(user content, `dir="auto"`, full name on hover), and it lists every repo
-instead of the single branch, nested-repo and changed rows. Sessions outside
-a workspace keep the plain "Project <name>" readout. `WorkspaceRepositoryList`
-renders the rows and owns nothing else: `WorkStatusPrimaryGroup` reads the
-workspace, places the session (`repoWorkspaceSessionPlacement`) and feeds the
-list the live statuses.
-
-Primary first, then the workspace's own repo order. Each repo is its own
-disclosure: a chevron, the alias, a muted `· primary` on the primary, and on
-the trailing side the live branch, visible folded or not. Folded, the trigger
-also shows the compact git state the left sidebar uses: a pencil with the
-change count, a green dot when clean. Unfolded, the count moves to a detail
-row ("3 files changed" or "No changes") with ahead/behind as its value, plus
-a `saved branch: …` note when the live branch differs from the one saved on
-the workspace; nothing checks out or rewrites the snapshot. A repo whose
-status has not arrived shows no branch and no count, never a false clean. A
-repo without git reads "not a Git repository", and a repo whose project left
-the catalog reads `missing`; neither has anything to unfold, so neither has a
-chevron, and a missing repo is never fetched.
-
-Clicking a changes row opens that repo's working diff through the panel's own
-directory with `targetDirectory` set to the repo's project path, so a
-secondary repo opens without moving the session. A clean repo's row opens
-nothing. On the phone it opens the Changes tab.
-
-Each repo's expansion persists as `repository-repo:<projectId>` in the
-persisted `workStatusExpandedSections` map. Without a stored value a
-workspace of up to three repos opens expanded, a larger one folded.
-
-### Why one disclosure per repo and not one list collapsible
-
-The list used to be a single "Repositories" collapsible under "Project api",
-which named the workspace twice and folded all repos or none. Per-repo rows
-let a reader fold the repos they are not working in while every branch stays
-readable, and the workspace name in the title answers which workspace this
-is. The count lives in the trigger only while folded, so it never shows
-twice.
 
 ### Changed files come from git status, not the session
 
@@ -838,8 +794,7 @@ Git context surface being opened first.
 Expanded sections (`workStatusExpandedSections`, keyed by a stable section id)
 and the scroll offset (`workStatusScrollTop`) live in the persisted
 `useUIStore`. Component state would not do: the content unmounts every time the
-context panel opens, which would silently discard the user's arrangement. Each
-workspace repo row persists under `repository-repo:<projectId>` in the same map.
+context panel opens, which would silently discard the user's arrangement.
 
 The scroll offset is restored in the scroller's callback ref, at the moment it
 attaches, and read through `useUIStore.getState()` rather than a subscription —

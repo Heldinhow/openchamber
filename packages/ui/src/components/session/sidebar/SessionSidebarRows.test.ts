@@ -5,7 +5,6 @@ import {
   getInitialSessionSidebarRowIndexes,
   mergeSessionSidebarVirtualIndexes,
   sectionSpacingAfter,
-  sectionWrapperClass,
   sessionSidebarRowVirtualKey,
 } from './sessionSidebarVirtualization';
 import type { Session } from '@/lib/opencode/model';
@@ -68,19 +67,6 @@ describe('SessionSidebarRows section spacing', () => {
       if (withChats) expect(spacingBefore(rows, 'activity-header', 'activity:work:header')).toBe('pb-2');
       expect(spacingBefore(rows, 'project-header')).toBe('pb-4');
     }
-  });
-
-  test('the zone of projects outside a workspace takes the divider before it, not before its first project', () => {
-    const base = input(false);
-    const repo = { ...base.sections[0], workspace: { alias: 'api', primary: true, showSessions: true, showNewSession: true, branchChip: null, git: null, missing: false } };
-    const notes: ProjectSection = { project: { id: 'notes', normalizedPath: '/notes' }, groups: [] };
-    const sections = [repo, notes];
-    const rows = buildSessionSidebarRowModel({ ...base, sections, authoritativeSections: sections, workEntries: [], zoneSessionIds: new Set() }).rows;
-    const zone = rows.findIndex((row) => row.key === 'activity:others:header');
-    expect(sectionSpacingAfter(rows[zone - 1], rows[zone])).toBe('pb-4');
-    expect(sectionWrapperClass(rows[zone - 1], rows[zone])).toContain('after:h-px');
-    expect(rows[zone + 1]?.kind).toBe('project-header');
-    expect(sectionWrapperClass(rows[zone], rows[zone + 1])).toBe('');
   });
 
   test('a row that ends a section is estimated as its siblings plus its gap', () => {

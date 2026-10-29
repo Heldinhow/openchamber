@@ -695,6 +695,7 @@ export const dict = {
   'sessions.sidebar.workspace.noticeUnregistered': 'Folders without a project are registered when you save.',
   'sessions.sidebar.workspace.showContent': 'View content',
   'sessions.sidebar.workspace.configUnreadable': 'Couldn\'t read this configuration file. Fix it and try again.',
+  'sessions.sidebar.workspace.configWriteFailed': 'Saved, but the workspace configuration could not be written.',
   'sessions.sidebar.workspace.rootConfigShadowed': 'This layer shadows the existing root config file.',
   'sessions.sidebar.workspace.createFailed': 'Couldn\'t create the workspace.',
   'sessions.sidebar.workspace.pendingTitle': 'Workspace created, references pending',

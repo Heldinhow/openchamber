@@ -24,12 +24,7 @@ import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
 import { WorkspaceSidebarSlot } from './sidebar/shell/WorkspaceSidebarHeader';
 import { RepoWorkspaceDialog } from './sidebar/repo-workspaces/RepoWorkspaceDialog';
-import { RepoWorkspaceReview } from './sidebar/repo-workspaces/RepoWorkspaceReview';
-import { RepoWorkspaceDeleteDialog, RepoWorkspaceManageDialog } from './sidebar/repo-workspaces/RepoWorkspaceManageDialogs';
-import { updateRepoWorkspace, type RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
-import { relocateWorkspaceRepoPayload } from './sidebar/repo-workspaces/repoWorkspaceDraft';
-import { DirectoryExplorerDialog } from './DirectoryExplorerDialog';
-import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
 import type { SessionProjectListProps } from './sidebar/projects/SessionProjectScroller';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -187,7 +182,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   // Mobile and VS Code have no `/api/workspaces` route in this version: the
   // feature stays absent instead of breaking the sidebar.
   const repoWorkspaces = useRepoWorkspaces({ enabled: !isVSCode && !mobileVariant && !phone });
-  const workspaceActive = repoWorkspaces.activeWorkspace !== null;
   // sessionAttentionStates removed — now using notification-store directly in SessionNodeItem
   const worktreeMetadata = useSessionUIStore((state) => state.worktreeMetadata);
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
@@ -445,134 +439,26 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     sessionEvents.requestDirectoryDialog();
   }, []);
 
-  const selectWorkspace = repoWorkspaces.selectWorkspace;
-  const handleSelectWorkspace = React.useCallback(async (id: string | null) => {
-    try {
-      await selectWorkspace(id);
-    } catch {
-      toast.error(t('sessions.sidebar.workspace.switchFailed'));
-    }
-  }, [selectWorkspace, t]);
-
   const [workspaceDialog, setWorkspaceDialog] = React.useState<
     | { mode: 'create' }
     | { mode: 'edit'; workspaceId: string }
-    | { mode: 'manage' }
-    | { mode: 'delete'; workspaceId: string }
     | null
   >(null);
-  const [workspaceReviewOpen, setWorkspaceReviewOpen] = React.useState(false);
   const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialog({ mode: 'create' }), []);
-  const activeWorkspaceId = repoWorkspaces.activeWorkspace?.id ?? null;
-  const openWorkspaceEditDialog = React.useCallback(() => {
-    if (activeWorkspaceId) setWorkspaceDialog({ mode: 'edit', workspaceId: activeWorkspaceId });
-  }, [activeWorkspaceId]);
-  const openWorkspaceManageDialog = React.useCallback(() => setWorkspaceDialog({ mode: 'manage' }), []);
-  const editWorkspaceFromManage = React.useCallback((workspace: RepoWorkspaceResolved) => {
+  const openWorkspaceEditDialog = React.useCallback((workspace: RepoWorkspaceResolved) => {
     setWorkspaceDialog({ mode: 'edit', workspaceId: workspace.id });
   }, []);
-  const deleteWorkspaceFromManage = React.useCallback((workspace: RepoWorkspaceResolved) => {
-    setWorkspaceDialog({ mode: 'delete', workspaceId: workspace.id });
-  }, []);
   const reloadRepoWorkspaces = repoWorkspaces.reload;
-  // Creation registers folders and activates the workspace on the server; the
-  // settings document is the only way this window learns the new projects.
-  const handleWorkspaceCreated = React.useCallback(() => {
+  // Creation may register folders and edits may follow a settings change from
+  // another window; the settings document is the only way this window learns
+  // the new project catalog.
+  const handleWorkspaceSaved = React.useCallback(() => {
     void syncDesktopSettings();
     reloadRepoWorkspaces();
   }, [reloadRepoWorkspaces]);
-  const handleWorkspaceRefsChanged = React.useCallback(() => {
-    reloadRepoWorkspaces();
-  }, [reloadRepoWorkspaces]);
-  const activateWorkspaceFromManage = React.useCallback((workspace: RepoWorkspaceResolved) => {
-    void handleSelectWorkspace(workspace.id).then(() => setWorkspaceDialog(null));
-  }, [handleSelectWorkspace]);
   const editingWorkspace = workspaceDialog?.mode === 'edit'
     ? repoWorkspaces.workspaces.find((workspace) => workspace.id === workspaceDialog.workspaceId) ?? null
     : null;
-  const deletingWorkspace = workspaceDialog?.mode === 'delete'
-    ? repoWorkspaces.workspaces.find((workspace) => workspace.id === workspaceDialog.workspaceId) ?? null
-    : null;
-
-  // A missing repo row has no dialog: save the same workspace minus that repo
-  // through the edit route, keeping the reference it cannot verify.
-  const activeRepoWorkspace = repoWorkspaces.activeWorkspace;
-  const handleRemoveWorkspaceRepo = React.useCallback(async (alias: string) => {
-    if (!activeRepoWorkspace) return;
-    const remaining = activeRepoWorkspace.repos.filter((repo) => repo.alias !== alias);
-    if (remaining.length === 0) return;
-    const primaryProjectId = remaining.some((repo) => repo.projectId === activeRepoWorkspace.primaryProjectId)
-      ? activeRepoWorkspace.primaryProjectId
-      : (remaining.find((repo) => !repo.missing) ?? remaining[0]).projectId;
-    try {
-      await updateRepoWorkspace(activeRepoWorkspace.id, {
-        name: activeRepoWorkspace.name,
-        repos: remaining.map((repo) => ({
-          projectId: repo.projectId,
-          alias: repo.alias,
-          branch: repo.branch,
-          primary: repo.projectId === primaryProjectId,
-        })),
-        keepRefs: [alias],
-      });
-      handleWorkspaceRefsChanged();
-    } catch {
-      toast.error(t('sessions.sidebar.workspace.removeRepoFailed'));
-    }
-  }, [activeRepoWorkspace, handleWorkspaceRefsChanged, t]);
-
-  // Relocation picks a folder for the repo that lost its project, then saves
-  // that repo by path; the alias, the primary and every other repo stay.
-  const [relocatingWorkspaceRepoAlias, setRelocatingWorkspaceRepoAlias] = React.useState<string | null>(null);
-  const handleRelocateWorkspaceRepo = React.useCallback(async (pickedPath: string) => {
-    const alias = relocatingWorkspaceRepoAlias;
-    setRelocatingWorkspaceRepoAlias(null);
-    const workspace = activeRepoWorkspace;
-    if (!workspace || !alias) return;
-    const path = normalizePath(pickedPath) ?? pickedPath.trim();
-    if (!path) return;
-    const git = getRegisteredRuntimeAPIs()?.git;
-    if (git) {
-      await useGitStore.getState().ensureStatus(path, git).catch(() => undefined);
-    }
-    const branch = useGitStore.getState().directories.get(path)?.status?.current ?? '';
-    try {
-      await updateRepoWorkspace(workspace.id, relocateWorkspaceRepoPayload(workspace, alias, path, branch));
-      handleWorkspaceRefsChanged();
-    } catch {
-      toast.error(t('sessions.sidebar.workspace.editFailed'));
-    }
-  }, [activeRepoWorkspace, handleWorkspaceRefsChanged, relocatingWorkspaceRepoAlias, t]);
-
-  const handleEditWorkspaceFromReview = React.useCallback(() => {
-    setWorkspaceReviewOpen(false);
-    openWorkspaceEditDialog();
-  }, [openWorkspaceEditDialog]);
-
-  const handleOpenWorkspaceSession = React.useCallback(() => {
-    if (!activeRepoWorkspace) return;
-    const primary = activeRepoWorkspace.repos.find((repo) => repo.projectId === activeRepoWorkspace.primaryProjectId);
-    if (!primary?.project) return;
-    setActiveProjectIdOnly(primary.projectId);
-    openNewSessionDraft({ selectedProjectId: primary.projectId, directoryOverride: primary.project.path });
-    setWorkspaceReviewOpen(false);
-  }, [activeRepoWorkspace, openNewSessionDraft, setActiveProjectIdOnly]);
-
-  // The diff belongs to the repo whose card was clicked; the panel it opens in
-  // stays the current one, and the target directory is what DiffView reads.
-  const handleOpenWorkspaceDiff = React.useCallback((path: string) => {
-    const primaryPath = activeRepoWorkspace
-      ? activeRepoWorkspace.repos.find((repo) => repo.projectId === activeRepoWorkspace.primaryProjectId)?.project?.path
-      : null;
-    const owner = projects.find((project) => project.id === activeProjectId)?.path ?? primaryPath ?? path;
-    useUIStore.getState().openContextPanelTab(owner, {
-      mode: 'diff',
-      diffScope: 'working',
-      targetDirectory: path,
-    });
-    setWorkspaceReviewOpen(false);
-  }, [activeProjectId, activeRepoWorkspace, projects]);
-
 
   const normalizedProjects = React.useMemo(() => {
     return projects.flatMap((project) => {
@@ -784,10 +670,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         projectRootBranches,
         lastRepoStatus: lastRepoStatusRef.current,
       }}
-      workspace={{
-        workspaces: repoWorkspaces.workspaces,
-        activeWorkspaceId: repoWorkspaces.activeWorkspaceId,
-      }}
       view={{
         isVisible,
         hasSessionSearchQuery,
@@ -827,10 +709,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         },
         openProjectEditDialog: setEditingProjectDialogId,
         removeProject,
-        removeWorkspaceRepo: activeRepoWorkspace && activeRepoWorkspace.repos.length > 1
-          ? handleRemoveWorkspaceRepo
-          : undefined,
-        relocateWorkspaceRepo: setRelocatingWorkspaceRepoAlias,
         reorderProjects,
         startSessionWorktreeMenuLoad: handleSessionWorktreeMenuLoad,
         initialActiveSessionByProject,
@@ -861,6 +739,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         showProjectDisplayControls={!isVSCode}
         showSectionControls={!isVSCode}
         handleOpenDirectoryDialog={handleOpenDirectoryDialog}
+        handleCreateWorkspace={!isVSCode && !mobileVariant && !phone ? openWorkspaceDialog : undefined}
         // A desktop page: phones have their own shell, VS Code no source pickers.
         showSourceBoard={!mobileVariant && !isVSCode}
         headerActionIconClass={headerActionIconClass}
@@ -875,31 +754,16 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         searchMatchCount={searchMatchCount}
         collapseAll={projectView.actions.collapseAll}
         expandAll={projectView.actions.expandAll}
-        workspaceActive={workspaceActive}
       />
 
       <WorkspaceSidebarSlot
         status={repoWorkspaces.status}
         workspaces={repoWorkspaces.workspaces}
-        activeWorkspace={repoWorkspaces.activeWorkspace}
         discarded={repoWorkspaces.discarded}
-        activating={repoWorkspaces.activating}
         onRetry={repoWorkspaces.reload}
-        onSelect={handleSelectWorkspace}
-        onCreate={openWorkspaceDialog}
         onEdit={openWorkspaceEditDialog}
-        onManage={openWorkspaceManageDialog}
       />
       {collection}
-      {repoWorkspaces.activeWorkspace ? (
-        <button
-          type="button"
-          onClick={() => setWorkspaceReviewOpen(true)}
-          className="mx-2.5 mt-1 flex min-h-7 shrink-0 items-center rounded-md px-1.5 text-start typography-meta text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground"
-        >
-          {t('sessions.sidebar.workspace.review')}
-        </button>
-      ) : null}
 
       <SidebarFooter
         onOpenSettings={handleOpenSettings}
@@ -952,54 +816,8 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         onOpenChange={(open) => {
           if (!open) setWorkspaceDialog(null);
         }}
-        editing={editingWorkspace ? {
-          workspace: editingWorkspace,
-          refs: editingWorkspace.refs,
-          refsError: editingWorkspace.refsError,
-        } : null}
-        onCreated={handleWorkspaceCreated}
-        onRefsChanged={handleWorkspaceRefsChanged}
-      />
-
-      <RepoWorkspaceManageDialog
-        open={workspaceDialog?.mode === 'manage'}
-        onOpenChange={(open) => {
-          if (!open) setWorkspaceDialog(null);
-        }}
-        workspaces={repoWorkspaces.workspaces}
-        activeWorkspaceId={activeWorkspaceId}
-        activating={repoWorkspaces.activating}
-        onActivate={activateWorkspaceFromManage}
-        onEdit={editWorkspaceFromManage}
-        onDelete={deleteWorkspaceFromManage}
-      />
-
-      <RepoWorkspaceDeleteDialog
-        open={workspaceDialog?.mode === 'delete' && deletingWorkspace !== null}
-        workspace={deletingWorkspace}
-        onOpenChange={(open) => {
-          if (!open) setWorkspaceDialog(null);
-        }}
-        onDeleted={handleWorkspaceCreated}
-      />
-
-      <DirectoryExplorerDialog
-        open={relocatingWorkspaceRepoAlias !== null}
-        onOpenChange={(open) => {
-          if (!open) setRelocatingWorkspaceRepoAlias(null);
-        }}
-        onPickDirectory={(path) => void handleRelocateWorkspaceRepo(path)}
-      />
-
-      <RepoWorkspaceReview
-        open={workspaceReviewOpen}
-        onOpenChange={setWorkspaceReviewOpen}
-        workspace={repoWorkspaces.activeWorkspace}
-        refs={repoWorkspaces.refs}
-        refsError={repoWorkspaces.refsError}
-        onEdit={handleEditWorkspaceFromReview}
-        onOpenSession={handleOpenWorkspaceSession}
-        onOpenDiff={handleOpenWorkspaceDiff}
+        editing={editingWorkspace}
+        onSaved={handleWorkspaceSaved}
       />
 
     </div>

@@ -1,26 +1,20 @@
 import * as React from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import type { RepoWorkspaceRef, RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
+import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import { RepoWorkspaceCreateForm } from './RepoWorkspaceCreateForm';
 
 type RepoWorkspaceDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
-  onRefsChanged: () => void;
-  /** Present when editing any workspace; absent for a new one. */
-  editing?: {
-    workspace: RepoWorkspaceResolved;
-    refs: readonly RepoWorkspaceRef[];
-    refsError: { path: string; message: string } | null;
-  } | null;
+  onSaved: () => void;
+  /** Present when editing a workspace; absent for a new one. */
+  editing?: RepoWorkspaceResolved | null;
 };
 
 export const RepoWorkspaceDialog: React.FC<RepoWorkspaceDialogProps> = ({
   open,
   onOpenChange,
-  onCreated,
-  onRefsChanged,
+  onSaved,
   editing = null,
 }) => {
   const titleId = React.useId();
@@ -31,11 +25,10 @@ export const RepoWorkspaceDialog: React.FC<RepoWorkspaceDialogProps> = ({
       {open ? (
         <DialogContent aria-labelledby={titleId} className="sm:max-w-xl">
           <RepoWorkspaceCreateForm
-            editing={editing ?? undefined}
+            editing={editing}
             titleId={titleId}
             onClose={close}
-            onCreated={onCreated}
-            onRefsChanged={onRefsChanged}
+            onSaved={onSaved}
           />
         </DialogContent>
       ) : null}

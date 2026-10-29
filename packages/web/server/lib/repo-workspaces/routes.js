@@ -9,9 +9,6 @@ const respondWithError = (res, error, fallbackMessage) => {
   if (error instanceof WorkspaceRequestError) {
     const body = { error: error.message };
     if (error.fields) body.fields = error.fields;
-    if (error.configError) body.configError = error.configError;
-    if (error.conflict) body.conflict = error.conflict;
-    if (error.importError) body.importError = error.importError;
     return res.status(error.status).json(body);
   }
   return res.status(500).json({ error: fallbackMessage });
@@ -28,24 +25,6 @@ export const registerWorkspaceRoutes = (app, dependencies) => {
     }
   });
 
-  // The dialog reads the target before saving; the folder may not be a project.
-  app.get('/api/workspaces/config-target', async (req, res) => {
-    try {
-      return res.json(await service.configTarget({ path: req.query.path }));
-    } catch (error) {
-      return respondWithError(res, error, 'Failed to read the config target');
-    }
-  });
-
-  // Before the `/:id` routes, so `import` is never read as a workspace id.
-  app.post('/api/workspaces/import', async (req, res) => {
-    try {
-      return res.json(await service.importDraft(req.body));
-    } catch (error) {
-      return respondWithError(res, error, 'Failed to import workspace file');
-    }
-  });
-
   app.post('/api/workspaces', async (req, res) => {
     try {
       return res.status(201).json(await service.create(req.body));
@@ -59,30 +38,6 @@ export const registerWorkspaceRoutes = (app, dependencies) => {
       return res.json(await service.update(req.params.id, req.body));
     } catch (error) {
       return respondWithError(res, error, 'Failed to update workspace');
-    }
-  });
-
-  app.delete('/api/workspaces/:id', async (req, res) => {
-    try {
-      return res.json(await service.remove(req.params.id, req.body));
-    } catch (error) {
-      return respondWithError(res, error, 'Failed to delete workspace');
-    }
-  });
-
-  app.post('/api/workspaces/active', async (req, res) => {
-    try {
-      return res.json(await service.activate(req.body));
-    } catch (error) {
-      return respondWithError(res, error, 'Failed to activate workspace');
-    }
-  });
-
-  app.post('/api/workspaces/:id/refs/retry', async (req, res) => {
-    try {
-      return res.json(await service.retryRefs(req.params.id, req.body));
-    } catch (error) {
-      return respondWithError(res, error, 'Failed to retry workspace references');
     }
   });
 };

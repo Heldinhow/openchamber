@@ -11,114 +11,45 @@ let root: Root;
 let host: HTMLElement;
 const realFetch = globalThis.fetch;
 let fetchResponse: (input: string, init?: RequestInit) => Promise<Response>;
-let seen: Array<{ active: string | null; refs: number }> = [];
+let reads = 0;
 
 const documentPayload = {
-  workspaces: [
-    {
-      id: 'ws_1',
-      name: 'Shop Platform',
-      primaryProjectId: 'p_api',
-      repos: [
-        { projectId: 'p_api', alias: 'api', description: 'api', branch: 'main', missing: false, project: null },
-        { projectId: 'p_web', alias: 'web', description: 'web', branch: 'main', missing: false, project: null },
-      ],
-      createdRefs: ['web'],
-      refs: [],
-      refsError: null,
-    },
-    {
-      id: 'ws_2',
-      name: 'Docs',
-      primaryProjectId: 'p_docs',
-      repos: [
-        { projectId: 'p_docs', alias: 'docs', description: 'docs', branch: 'main', missing: false, project: null },
-      ],
-      createdRefs: [],
-      refs: [{
-        alias: 'docs',
-        path: '/repos/docs',
-        description: 'docs',
-        status: 'ok',
-        owned: false,
-        current: { path: '/repos/docs', description: 'docs' },
-      }],
-      refsError: null,
-    },
-  ],
-  activeWorkspaceId: 'ws_1',
+  workspaces: [{
+    id: 'ws_1',
+    name: 'Shop Platform',
+    directory: '/data/workspaces/ws_1',
+    projects: [{ projectId: 'p_api', missing: false, project: { id: 'p_api', path: '/repos/api', label: 'API' } }],
+    configError: null,
+  }],
   discarded: 0,
-  refs: [],
-  refsError: null,
 };
 
 const Probe = () => {
   const workspaces = useRepoWorkspaces({ enabled: true });
-  seen.push({ active: workspaces.activeWorkspace?.id ?? null, refs: workspaces.refs.length });
   return (
-    <>
-      <span data-id="state">
-        {JSON.stringify({
-          status: workspaces.status,
-          ids: workspaces.workspaces.map((workspace) => workspace.id),
-          active: workspaces.activeWorkspace?.id ?? null,
-          name: workspaces.activeWorkspace?.name ?? null,
-          refs: workspaces.refs.map((ref) => ref.alias),
-          docsRefs: workspaces.workspaces.find((workspace) => workspace.id === 'ws_2')?.refs.length ?? null,
-        })}
-      </span>
-      <button type="button" onClick={() => void workspaces.selectWorkspace('ws_2')}>switch</button>
-    </>
+    <span data-id="state">
+      {JSON.stringify({
+        status: workspaces.status,
+        ids: workspaces.workspaces.map((workspace) => workspace.id),
+        names: workspaces.workspaces.map((workspace) => workspace.name),
+        directories: workspaces.workspaces.map((workspace) => workspace.directory),
+        discarded: workspaces.discarded,
+      })}
+    </span>
   );
 };
 
 type ProbeState = {
   status: string;
   ids: string[];
-  active: string | null;
-  name: string | null;
-  refs: string[];
-  docsRefs: number | null;
+  names: string[];
+  directories: string[];
+  discarded: number;
 };
 
-const stateOf = (id: string): ProbeState => {
-  const text = document.querySelector(`[data-id="${id}"]`)?.textContent ?? '{}';
-  return JSON.parse(text);
-};
-
-const state = (): ProbeState => stateOf('state');
-
-const SecondaryProbe = () => {
-  const workspaces = useRepoWorkspaces({ enabled: true });
-  seen.push({ active: workspaces.activeWorkspace?.id ?? null, refs: workspaces.refs.length });
-  return (
-    <span data-id="state-secondary">
-      {JSON.stringify({
-        status: workspaces.status,
-        active: workspaces.activeWorkspace?.id ?? null,
-        name: workspaces.activeWorkspace?.name ?? null,
-        refs: workspaces.refs.map((ref) => ref.alias),
-      })}
-    </span>
-  );
-};
-
-const pressSwitch = async () => {
-  const button = [...document.querySelectorAll('button')].find((entry) => entry.textContent === 'switch');
-  expect(button !== undefined).toBe(true);
-  await act(async () => {
-    button!.click();
-  });
-};
-
-const docsRef = {
-  alias: 'docs',
-  path: '/repos/docs',
-  description: 'docs',
-  status: 'ok',
-  owned: false,
-  current: { path: '/repos/docs', description: 'docs' },
-};
+const state = (): ProbeState => JSON.parse(
+  document.querySelector('[data-id="state"]')?.textContent ?? '{}',
+);
 
 beforeEach(async () => {
   dom = new Window({ url: 'http://localhost' });
@@ -138,12 +69,12 @@ beforeEach(async () => {
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
   }
   ({ useRepoWorkspaces } = await import('./useRepoWorkspaces'));
-  fetchResponse = async () => Response.json({});
+  reads = 0;
+  fetchResponse = async () => {
+    reads += 1;
+    return Response.json(documentPayload);
+  };
   globalThis.fetch = async (input, init) => fetchResponse(String(input), init);
-  seen = [];
-  host = document.createElement('div');
-  document.body.append(host);
-  root = createRoot(host);
 });
 
 afterEach(async () => {
@@ -159,207 +90,64 @@ afterEach(async () => {
 });
 
 describe('useRepoWorkspaces', () => {
-  test('a failed reload keeps the resolved list and its active workspace', async () => {
-    fetchResponse = async () => Response.json(documentPayload);
+  beforeEach(async () => {
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+  });
 
+  test('loads the resolved list with its neutral directories', async () => {
     await act(async () => root.render(<Probe />));
-    expect(state()).toMatchObject({
+
+    expect(state()).toEqual({
       status: 'ready',
-      ids: ['ws_1', 'ws_2'],
-      active: 'ws_1',
-      docsRefs: 1,
+      ids: ['ws_1'],
+      names: ['Shop Platform'],
+      directories: ['/data/workspaces/ws_1'],
+      discarded: 0,
     });
+  });
+
+  test('a failed reload keeps the resolved list', async () => {
+    await act(async () => root.render(<Probe />));
+    expect(state().status).toBe('ready');
 
     fetchResponse = async () => { throw new Error('offline'); };
     await act(async () => {
       window.dispatchEvent(new CustomEvent('openchamber:settings-synced', {
-        detail: { settings: { workspaces: documentPayload.workspaces, activeWorkspaceId: 'ws_1' } },
+        detail: { settings: { workspaces: [{ id: 'ws_1', name: 'Renamed', projectIds: ['p_api'] }] } },
       }));
     });
 
-    expect(state()).toMatchObject({
-      status: 'error',
-      ids: ['ws_1', 'ws_2'],
-      active: 'ws_1',
-      docsRefs: 1,
-    });
+    expect(state()).toMatchObject({ status: 'error', ids: ['ws_1'], names: ['Shop Platform'] });
   });
 
-  test('a switch changes the workspace name and its references together', async () => {
-    fetchResponse = async () => Response.json(documentPayload);
-    await act(async () => root.render(<Probe />));
-    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
-
-    // The switch's read stays open so the intermediate state can be inspected.
-    let resolveRead: (response: Response) => void = () => undefined;
-    const read = new Promise<Response>((resolve) => { resolveRead = resolve; });
-    fetchResponse = async (input) => {
-      if (String(input).endsWith('/api/workspaces')) return read;
-      return Response.json({ activeWorkspaceId: 'ws_2' });
-    };
-
-    await pressSwitch();
-    // The previous complete view stays until the read answers: no new name
-    // paired with the old, empty reference list.
-    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
-
-    await act(async () => {
-      resolveRead(Response.json({
-        ...documentPayload,
-        activeWorkspaceId: 'ws_2',
-        refs: [docsRef],
-      }));
-    });
-
-    expect(state()).toMatchObject({ status: 'ready', active: 'ws_2', name: 'Docs', refs: ['docs'] });
-    expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
-  });
-
-  test('a switch in one hook brings every other mounted copy to the new workspace and refs', async () => {
-    let reads = 0;
-    fetchResponse = async (input) => {
-      if (String(input).endsWith('/api/workspaces')) reads += 1;
-      return Response.json(documentPayload);
-    };
-    await act(async () => root.render(<><Probe /><SecondaryProbe /></>));
-    // Each mounted copy reads once on mount.
-    expect(reads).toBe(2);
-    expect(stateOf('state-secondary')).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
-
-    reads = 0;
-    fetchResponse = async (input) => {
-      if (!String(input).endsWith('/api/workspaces')) return Response.json({ activeWorkspaceId: 'ws_2' });
-      reads += 1;
-      return Response.json({ ...documentPayload, activeWorkspaceId: 'ws_2', refs: [docsRef] });
-    };
-
-    await pressSwitch();
-    await act(async () => {});
-
-    // The announcing copy does not read again; the other one reads the same
-    // pointer with its references instead of applying the event's id.
-    expect(reads).toBe(2);
-    expect(state()).toMatchObject({ active: 'ws_2', name: 'Docs', refs: ['docs'] });
-    expect(stateOf('state-secondary')).toMatchObject({ status: 'ready', active: 'ws_2', name: 'Docs', refs: ['docs'] });
-    expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
-  });
-
-  test('a list changed elsewhere during a switch is read once the switch settles', async () => {
-    let reads = 0;
-    fetchResponse = async () => {
-      reads += 1;
-      return Response.json(documentPayload);
-    };
+  test('a workspace list changed in another window is read once', async () => {
     await act(async () => root.render(<Probe />));
     expect(reads).toBe(1);
-    expect(state()).toMatchObject({ active: 'ws_1', ids: ['ws_1', 'ws_2'] });
 
-    const updatedPayload = {
-      ...documentPayload,
-      activeWorkspaceId: 'ws_2',
-      refs: [docsRef],
-      workspaces: [
-        documentPayload.workspaces[0],
-        { ...documentPayload.workspaces[1], name: 'Docs renamed' },
-        {
-          id: 'ws_3',
-          name: 'New',
-          primaryProjectId: 'p_new',
-          repos: [{ projectId: 'p_new', alias: 'new', description: 'new', branch: 'main', missing: false, project: null }],
-          createdRefs: [],
-          refs: [],
-          refsError: null,
-        },
-      ],
-    };
-
-    let resolveSwitchRead: (response: Response) => void = () => undefined;
-    const switchRead = new Promise<Response>((resolve) => { resolveSwitchRead = resolve; });
-    fetchResponse = async (input) => {
-      if (!String(input).endsWith('/api/workspaces')) return Response.json({ activeWorkspaceId: 'ws_2' });
-      reads += 1;
-      return reads === 2 ? switchRead : Response.json(updatedPayload);
-    };
-
-    await pressSwitch();
-    expect(reads).toBe(2);
-
-    await act(async () => {
-      window.dispatchEvent(new CustomEvent('openchamber:settings-synced', {
-        detail: { settings: { workspaces: updatedPayload.workspaces, activeWorkspaceId: 'ws_2' } },
-      }));
-    });
-    // The pointer still waits for the switch's read; the list change is queued.
-    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
-
-    await act(async () => {
-      resolveSwitchRead(Response.json(documentPayload));
-    });
-    await act(async () => {});
-
-    expect(reads).toBe(3);
-    expect(state()).toMatchObject({ ids: ['ws_1', 'ws_2', 'ws_3'], active: 'ws_2', name: 'Docs renamed' });
-  });
-
-  test('a pointer-only settings event during a switch does not flash an empty reference list', async () => {
-    let reads = 0;
     fetchResponse = async () => {
       reads += 1;
-      return Response.json(documentPayload);
+      return Response.json({
+        ...documentPayload,
+        workspaces: [{ ...documentPayload.workspaces[0], name: 'Renamed' }],
+      });
     };
-    await act(async () => root.render(<Probe />));
-
-    let resolveSwitchRead: (response: Response) => void = () => undefined;
-    const switchRead = new Promise<Response>((resolve) => { resolveSwitchRead = resolve; });
-    fetchResponse = async (input) => {
-      if (!String(input).endsWith('/api/workspaces')) return Response.json({ activeWorkspaceId: 'ws_2' });
-      reads += 1;
-      return switchRead;
-    };
-
-    await pressSwitch();
-    expect(reads).toBe(2);
-
     await act(async () => {
       window.dispatchEvent(new CustomEvent('openchamber:settings-synced', {
-        detail: { settings: { activeWorkspaceId: 'ws_1' } },
-      }));
-    });
-    expect(state()).toMatchObject({ active: 'ws_1', name: 'Shop Platform', refs: [] });
-
-    await act(async () => {
-      resolveSwitchRead(Response.json({
-        ...documentPayload,
-        activeWorkspaceId: 'ws_2',
-        refs: [docsRef],
+        detail: { settings: { workspaces: [{ id: 'ws_1', name: 'Renamed', projectIds: ['p_api'] }] } },
       }));
     });
 
-    // A pointer-only change queues no extra read.
     expect(reads).toBe(2);
-    expect(state()).toMatchObject({ status: 'ready', active: 'ws_2', name: 'Docs', refs: ['docs'] });
-    expect(seen.every((entry) => !(entry.active === 'ws_2' && entry.refs === 0))).toBe(true);
+    expect(state()).toMatchObject({ status: 'ready', names: ['Renamed'] });
   });
 
-  test('a failed switch read applies the activated pointer with that workspace\'s last refs', async () => {
-    fetchResponse = async () => Response.json(documentPayload);
+  test('a runtime without the route is unavailable, not an error', async () => {
+    fetchResponse = async () => new Response('Not found', { status: 404 });
+
     await act(async () => root.render(<Probe />));
-    expect(state()).toMatchObject({ status: 'ready', active: 'ws_1' });
 
-    fetchResponse = async (input) => {
-      if (String(input).endsWith('/api/workspaces')) throw new Error('offline');
-      return Response.json({ activeWorkspaceId: 'ws_2' });
-    };
-
-    await pressSwitch();
-
-    // The old workspace is not claimed and the new one is not shown as having
-    // no references: the last document's own refs for it are used, with Retry.
-    expect(state()).toMatchObject({
-      status: 'error',
-      active: 'ws_2',
-      name: 'Docs',
-      refs: ['docs'],
-    });
+    expect(state()).toMatchObject({ status: 'unavailable', ids: [] });
   });
 });

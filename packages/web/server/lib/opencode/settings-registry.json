@@ -49,15 +49,6 @@
         "mobile"
       ]
     },
-    "activeWorkspaceId": {
-      "scope": "instance",
-      "surfaces": [
-        "web",
-        "desktop",
-        "mobile"
-      ],
-      "adopt": "bootstrap-only"
-    },
     "securityScopedBookmarks": {
       "scope": "instance",
       "surfaces": [

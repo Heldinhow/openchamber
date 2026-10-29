@@ -3357,6 +3357,7 @@ export const dict = {
   "sessions.sidebar.workspace.noticeUnregistered": "Ordner ohne Projekt werden beim Speichern registriert.",
   "sessions.sidebar.workspace.showContent": "Inhalt anzeigen",
   "sessions.sidebar.workspace.configUnreadable": "Diese Konfigurationsdatei konnte nicht gelesen werden. Korrigiere sie und versuche es erneut.",
+  "sessions.sidebar.workspace.configWriteFailed": "Gespeichert, aber die Workspace-Konfiguration konnte nicht geschrieben werden.",
   "sessions.sidebar.workspace.rootConfigShadowed": "Diese Ebene überlagert die vorhandene Konfigurationsdatei im Stammverzeichnis.",
   "sessions.sidebar.workspace.createFailed": "Der Arbeitsbereich konnte nicht erstellt werden.",
   "sessions.sidebar.workspace.pendingTitle": "Arbeitsbereich erstellt, References ausstehend",

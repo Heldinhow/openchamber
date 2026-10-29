@@ -384,28 +384,11 @@ export const parseProjects = fromSchema(
   }).refine((projects) => projects.length > 0),
 );
 
-/** A `permissions` entry this workspace wrote; `resource` is the glob it covers. */
-export type WorkspaceEditRule = {
-  alias: string;
-  resource: string;
-  effect: 'allow' | 'deny';
-};
-
-/** One project inside a multi-repo workspace; `alias` is its OpenCode reference key. */
-export type WorkspaceRepo = {
-  projectId: string;
-  alias: string;
-  description: string;
-  branch: string;
-};
-
+/** A named group of projects whose sessions run in a neutral directory. */
 export type RepoWorkspace = {
   id: string;
   name: string;
-  primaryProjectId: string;
-  repos: WorkspaceRepo[];
-  createdRefs: string[];
-  editRules: WorkspaceEditRule[];
+  projectIds: string[];
 };
 
 /** `discarded` is the number of entries the per-entry parser rejected. */
@@ -414,65 +397,29 @@ type RepoWorkspacesParse = {
   discarded: number;
 };
 
-// OpenCode reference keys: no whitespace, `/`, backtick or comma, and no leading `@`.
-const WORKSPACE_ALIAS_PATTERN = /^[^\s/`,@][^\s/`,]*$/;
+const legacyWorkspaceRepoSchema = z.object({ projectId: nonEmptyTrimmed });
 
-const workspaceRepoSchema = z.object({
-  projectId: nonEmptyTrimmed,
-  alias: nonEmptyTrimmed.pipe(z.string().regex(WORKSPACE_ALIAS_PATTERN)),
-  description: z.string().optional(),
-  branch: z.string().optional(),
-});
-
-const workspaceEditRuleSchema = z.object({
-  alias: nonEmptyTrimmed,
-  resource: nonEmptyTrimmed,
-  effect: z.enum(['allow', 'deny']),
-});
+const workspaceProjectIds = (entry: { projectIds?: unknown; repos?: unknown }): unknown[] => {
+  if (Array.isArray(entry.projectIds)) return entry.projectIds;
+  // Legacy shape: the order of `repos` is the order the user chose. The old
+  // primary id and its reference bookkeeping are ignored.
+  const legacyRepos = z.array(legacyWorkspaceRepoSchema).safeParse(entry.repos);
+  return legacyRepos.success ? legacyRepos.data.map((repo) => repo.projectId) : [];
+};
 
 const workspaceEntrySchema = z.object({
   id: nonEmptyTrimmed,
   name: nonEmptyTrimmed,
-  primaryProjectId: nonEmptyTrimmed,
-  repos: z.array(z.unknown()),
-  // A malformed entry is dropped, never allowed to take the workspace with it.
-  createdRefs: z.array(z.string().optional().catch(undefined)).catch([]),
-  // Kept for aliases that are no longer in `repos`, so their rules can be removed.
-  editRules: z.array(z.unknown()).catch([]),
+  projectIds: z.array(z.unknown()).optional(),
+  repos: z.array(z.unknown()).optional(),
 }).transform((workspace) => {
-  const repos: WorkspaceRepo[] = [];
-  const aliases = new Set<string>();
-  for (const repoEntry of workspace.repos) {
-    const repo = workspaceRepoSchema.safeParse(repoEntry);
-    if (!repo.success || aliases.has(repo.data.alias)) return undefined;
-    aliases.add(repo.data.alias);
-    repos.push({
-      projectId: repo.data.projectId,
-      alias: repo.data.alias,
-      description: repo.data.description ?? '',
-      branch: repo.data.branch ?? '',
-    });
+  const projectIds: string[] = [];
+  for (const candidate of workspaceProjectIds(workspace)) {
+    const projectId = nonEmptyTrimmed.safeParse(candidate);
+    if (projectId.success && !projectIds.includes(projectId.data)) projectIds.push(projectId.data);
   }
-  if (repos.length === 0 || !repos.some((repo) => repo.projectId === workspace.primaryProjectId)) return undefined;
-  const secondaryAliases = new Set(
-    repos.filter((repo) => repo.projectId !== workspace.primaryProjectId).map((repo) => repo.alias),
-  );
-  const createdRefs = Array.from(new Set(
-    workspace.createdRefs.flatMap((alias) => (alias !== undefined && secondaryAliases.has(alias) ? [alias] : [])),
-  ));
-  const editRules: WorkspaceEditRule[] = [];
-  for (const ruleEntry of workspace.editRules) {
-    const rule = workspaceEditRuleSchema.safeParse(ruleEntry);
-    if (rule.success) editRules.push(rule.data);
-  }
-  return {
-    id: workspace.id,
-    name: workspace.name,
-    primaryProjectId: workspace.primaryProjectId,
-    repos,
-    createdRefs,
-    editRules,
-  };
+  if (projectIds.length === 0) return undefined;
+  return { id: workspace.id, name: workspace.name, projectIds };
 });
 
 /**
@@ -501,9 +448,6 @@ export const parseRepoWorkspaces: SettingsParser<RepoWorkspacesParse> = (value) 
 };
 
 export const parseWorkspaces: SettingsParser<RepoWorkspace[]> = (value) => parseRepoWorkspaces(value, {})?.workspaces;
-
-/** `null` clears the pointer; a non-empty workspace id keeps it. */
-export const parseActiveWorkspaceId = fromSchema(z.union([z.null(), nonEmptyTrimmed]));
 
 const followUpBehaviorSchema = z.enum(['steer', 'queue']);
 

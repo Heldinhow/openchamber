@@ -81,41 +81,26 @@ describe('settings registry', () => {
         {
           id: 'ws_shop',
           name: 'Shop Platform',
-          primaryProjectId: 'proj_api',
-          repos: [
-            { projectId: 'proj_api', alias: 'api', description: 'API', branch: 'main' },
-            { projectId: 'proj_missing', alias: 'web', description: 'Frontend', branch: 'feat/tokens' },
-          ],
-          createdRefs: ['web', 'gone'],
+          projectIds: ['proj_api', 'proj_missing'],
         },
         {
           id: 'ws_broken',
           name: 'Broken',
-          primaryProjectId: 'proj_api',
-          repos: [{ projectId: 'proj_web', alias: 'web' }],
+          projectIds: [],
         },
       ],
-      activeWorkspaceId: 'ws_shop',
     };
     const parsed = parseSettingsDocument(document);
     const expectedWorkspaces = [{
       id: 'ws_shop',
       name: 'Shop Platform',
-      primaryProjectId: 'proj_api',
-      repos: [
-        { projectId: 'proj_api', alias: 'api', description: 'API', branch: 'main' },
-        { projectId: 'proj_missing', alias: 'web', description: 'Frontend', branch: 'feat/tokens' },
-      ],
-      createdRefs: ['web'],
-      editRules: [],
+      projectIds: ['proj_api', 'proj_missing'],
     }];
 
     expect(parsed?.workspaces).toEqual(expectedWorkspaces);
-    expect(parsed?.activeWorkspaceId).toBe('ws_shop');
     expect(parsed?.activeProjectId).toBe('proj_api');
     expect(parsed?.projects?.map((project) => project.path)).toEqual(['/repo/api', '/repo/web']);
     expect(parseSettingsDocument(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
-    expect(parseSettingsDocument({ activeWorkspaceId: null })).toEqual({ activeWorkspaceId: null });
     expect(parseSettingsDocument({ workspaces: 'bad', projects: document.projects })).toEqual({ projects: parsed?.projects });
   });
 

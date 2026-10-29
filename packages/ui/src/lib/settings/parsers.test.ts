@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseActiveWorkspaceId, parseProjects, parseRepoWorkspaces } from './parsers';
+import { parseProjects, parseRepoWorkspaces } from './parsers';
 
 describe('parseProjects', () => {
   test('keeps per-project agent, model and thinking defaults across a settings round trip', () => {
@@ -20,96 +20,57 @@ describe('parseProjects', () => {
 });
 
 describe('parseRepoWorkspaces', () => {
-  const validWorkspace = {
-    id: 'ws_shop',
-    name: 'Shop Platform',
-    primaryProjectId: 'proj_api',
-    repos: [
-      { projectId: 'proj_api', alias: 'api', description: 'API de checkout', branch: 'main' },
-      { projectId: 'proj_web', alias: 'web', description: 'Frontend', branch: 'feat/tokens' },
-    ],
-    createdRefs: ['web'],
-    editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'allow' }],
-  };
-
-  test('keeps valid entries and counts each rejected one', () => {
+  test('keeps valid entries in stored order and counts each rejected one', () => {
     const result = parseRepoWorkspaces([
-      validWorkspace,
-      { name: 'No id', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: 'p' }] },
-      { id: 'ws_no_name', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: 'p' }] },
-      { id: 'ws_no_repos', name: 'No repos', primaryProjectId: 'p', repos: [] },
-      { id: 'ws_primary_outside', name: 'Primary outside', primaryProjectId: 'p', repos: [{ projectId: 'q', alias: 'q' }] },
-      {
-        id: 'ws_duplicate_alias',
-        name: 'Duplicate alias',
-        primaryProjectId: 'p',
-        repos: [{ projectId: 'p', alias: 'same' }, { projectId: 'q', alias: 'same' }],
-      },
-      { id: 'ws_at_alias', name: 'At alias', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: '@api' }] },
-      { id: 'ws_space_alias', name: 'Space alias', primaryProjectId: 'p', repos: [{ projectId: 'p', alias: 'a pi' }] },
-      validWorkspace,
+      { id: 'ws_shop', name: 'Shop', projectIds: ['p_web', 'p_api'] },
+      { name: 'No id', projectIds: ['p'] },
+      { id: 'ws_no_name', projectIds: ['p'] },
+      { id: 'ws_no_projects', name: 'No projects', projectIds: [] },
+      { id: 'ws_duplicate_project', name: 'Duplicate project', projectIds: ['p', 'p'] },
+      { id: 'ws_bad_project', name: 'Bad project', projectIds: [42] },
     ], {});
 
-    expect(result?.discarded).toBe(8);
-    expect(result?.workspaces).toEqual([validWorkspace]);
-  });
-
-  test('keeps createdRefs only for existing secondary aliases', () => {
-    const result = parseRepoWorkspaces([{
-      ...validWorkspace,
-      createdRefs: ['web', 'api', 'gone', 42, 'web'],
-    }], {});
-
-    expect(result?.workspaces[0]?.createdRefs).toEqual(['web']);
-    expect(parseRepoWorkspaces([{ ...validWorkspace, createdRefs: undefined }], {})?.workspaces[0]?.createdRefs).toEqual([]);
-  });
-
-  test('ignores a legacy readOnly key, keeps old deny rules and drops malformed edit rules', () => {
-    const result = parseRepoWorkspaces([{
-      ...validWorkspace,
-      repos: [
-        { projectId: 'proj_api', alias: 'api', readOnly: 'yes' },
-        { projectId: 'proj_web', alias: 'web', readOnly: true },
-      ],
-      editRules: [
-        { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
-        { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },
-        { alias: 'bad', resource: '/repos/bad/*', effect: 'ask' },
-        'nope',
-      ],
-    }], {});
-
-    // Deny rules from the removed read-only option still parse so the next save or delete can remove them.
-    expect(result?.workspaces[0]?.repos.map((repo) => Object.keys(repo).includes('readOnly'))).toEqual([false, false]);
-    expect(result?.workspaces[0]?.editRules).toEqual([
-      { alias: 'web', resource: '/repos/web/*', effect: 'deny' },
-      { alias: 'gone', resource: '/repos/gone/*', effect: 'allow' },
+    expect(result?.discarded).toBe(4);
+    expect(result?.workspaces).toEqual([
+      { id: 'ws_shop', name: 'Shop', projectIds: ['p_web', 'p_api'] },
+      { id: 'ws_duplicate_project', name: 'Duplicate project', projectIds: ['p'] },
     ]);
+  });
+
+  test('reads a legacy primary-based entry in repo order and drops its bookkeeping', () => {
+    const result = parseRepoWorkspaces([{
+      id: 'ws_legacy',
+      name: 'Legacy',
+      primaryProjectId: 'p_api',
+      repos: [
+        { projectId: 'p_web', alias: 'web', description: 'Web', branch: 'main' },
+        { projectId: 'p_api', alias: 'api', description: 'API', branch: 'main' },
+      ],
+      createdRefs: ['api'],
+      editRules: [{ alias: 'api', resource: '/repos/api/*', effect: 'allow' }],
+    }], {});
+
+    expect(result?.discarded).toBe(0);
+    expect(result?.workspaces[0]).toEqual({
+      id: 'ws_legacy',
+      name: 'Legacy',
+      projectIds: ['p_web', 'p_api'],
+    });
   });
 
   test('does not invalidate a workspace for an unknown project id', () => {
     const result = parseRepoWorkspaces([{
       id: 'ws_missing_project',
       name: 'Missing project',
-      primaryProjectId: 'proj_gone',
-      repos: [{ projectId: 'proj_gone', alias: 'gone' }],
+      projectIds: ['proj_gone'],
     }], {});
 
     expect(result?.discarded).toBe(0);
-    expect(result?.workspaces[0]?.primaryProjectId).toBe('proj_gone');
+    expect(result?.workspaces[0]?.projectIds).toEqual(['proj_gone']);
   });
 
   test('rejects a non-array field instead of reading it as no workspaces', () => {
     expect(parseRepoWorkspaces('nope', {})).toBeUndefined();
     expect(parseRepoWorkspaces([], {})).toEqual({ workspaces: [], discarded: 0 });
-  });
-});
-
-describe('parseActiveWorkspaceId', () => {
-  test('keeps an id, clears with null, and rejects everything else', () => {
-    expect(parseActiveWorkspaceId(' ws_shop ', {})).toBe('ws_shop');
-    expect(parseActiveWorkspaceId(null, {})).toBeNull();
-    expect(parseActiveWorkspaceId('', {})).toBeUndefined();
-    expect(parseActiveWorkspaceId(42, {})).toBeUndefined();
   });
 });

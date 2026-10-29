@@ -97,20 +97,12 @@ describe('buildSessionSidebarRowModel', () => {
     expect(new Set(model.rows.map((row) => row.key)).size).toBe(model.rows.length);
   });
 
-  test('projects outside the active workspace follow its repos under one zone that folds', () => {
-    const repo: ProjectSection = {
-      ...project([group([node('repo')])]),
-      workspace: { alias: 'api', primary: true, showSessions: true, showNewSession: true, branchChip: null, git: null, missing: false },
-    };
-    const plain = (id: string): ProjectSection => ({ project: { id, normalizedPath: `/${id}` }, groups: [group([node(`${id}-session`)], { directory: `/${id}`, folderScopeKey: `/${id}` })] });
+  test('projects keep their caller order without a workspace zone', () => {
     const headers = (input: SessionSidebarRowModelArgs) => buildSessionSidebarRowModel(input).rows.flatMap((row) => (
-      row.kind === 'activity-header' ? [`zone:${row.activityKey}`] : row.kind === 'project-header' ? [row.section.project.id] : []
+      row.kind === 'project-header' ? [row.section.project.id] : []
     ));
+    const plain = (id: string): ProjectSection => ({ project: { id, normalizedPath: `/${id}` }, groups: [group([node(`${id}-session`)], { directory: `/${id}`, folderScopeKey: `/${id}` })] });
 
-    const input = args([repo, plain('notes'), plain('blog')]);
-    expect(headers(input)).toEqual(['project-a', 'zone:others', 'notes', 'blog']);
-    input.collapsedActivities = new Set(['others']);
-    expect(headers(input)).toEqual(['project-a', 'zone:others']);
     expect(headers(args([plain('notes'), plain('blog')]))).toEqual(['notes', 'blog']);
   });
 

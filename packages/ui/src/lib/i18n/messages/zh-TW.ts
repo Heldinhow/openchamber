@@ -721,6 +721,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.workspace.noticeUnregistered": "沒有專案的資料夾會在儲存時註冊。",
   "sessions.sidebar.workspace.showContent": "查看內容",
   "sessions.sidebar.workspace.configUnreadable": "無法讀取此設定檔。請修正後再試一次。",
+  "sessions.sidebar.workspace.configWriteFailed": "已儲存，但無法寫入工作區設定。",
   "sessions.sidebar.workspace.rootConfigShadowed": "此層會覆寫根目錄中現有的設定檔。",
   "sessions.sidebar.workspace.createFailed": "無法建立工作區。",
   "sessions.sidebar.workspace.pendingTitle": "工作區已建立，references 待寫入",

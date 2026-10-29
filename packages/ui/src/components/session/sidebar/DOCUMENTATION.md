@@ -133,17 +133,22 @@ reads sessions and spaces only in `recent` and only while its list is shown
 hold the order under the pointer the way the sidebar does. Search ranking keeps its own order; the
 command palette lists projects only for a query, so it does not use it.
 
-## Workspace filter
+## Workspaces
 
-A workspace (`lib/repoWorkspaces`) puts its repos at the top of the sidebar. `projects/repoWorkspaceSections.ts` is the only projection: it takes the resolved workspaces, the project catalog, sessions already owned by each project, the active pointer and the existing per-project git status, and returns one section per repo followed by one plain section per other project. Without an active workspace it passes the current grouping through unchanged; while a workspace is active its repos come first in the workspace's `repos` order, and every other project follows under the "Other projects" zone (`others` in `SIDEBAR_ACTIVITY_KEYS`, folded like any zone), drawn as in All projects with its sessions and actions. The divider goes before that zone, not between it and its first project. The project sort applies to those projects ("Recent" ranks them without holding the order under the pointer); the sort, grouping and drag controls stay disabled while a workspace is active, so the order shown is the one chosen in All projects. In the repo group, the primary alone lists sessions and offers "+ session", and a secondary row shows its alias, its saved branch snapshot (only when it differs from `main`), the live git state and its change count. A repo whose project left the catalog keeps its row as a missing project, with Relocate opening the folder picker and saving that repo by path through the workspace edit route (the alias, the primary and the other repos stay); the workspace and the other repos stay usable. Removal of the repo belongs to the workspace edit dialog.
+A workspace (`lib/repoWorkspaces`) is a named group of projects whose sessions
+run in a neutral directory. Until the full workspace section lands, the sidebar
+above the project list renders one `shell/WorkspaceSidebarHeader.tsx` row per
+workspace with its name and an Edit control revealed on hover and keyboard
+focus. The New workspace control sits next to New project in
+`shell/SidebarHeader.tsx`. Workspace rows and plain project sections are
+independent: a project that belongs to a workspace keeps its normal section and
+sessions, and nothing is filtered out.
 
-The UI does not filter again. `SessionProjectCollection` scopes ordered, archived and root sessions to the sections' sessions, so zones, prefetch, drafts and PR discovery cannot list a secondary repo's work; Chats and the single-project/list-by-time views do not apply while a workspace is active. The workspace header (name, repo count, menu with every workspace and "All projects") is `shell/WorkspaceSidebarHeader.tsx`; choosing the active workspace or "All projects" clears the pointer. With a workspace active the header shows the `stack` icon before its name. The header stays whenever at least one workspace exists and names "All projects" when none is active, so the menu and "+" never disappear with the filter off. Its menu also opens "Manage workspaces", the list where each row can activate, edit or delete. A stored workspace the parser discarded is shown as a discreet count next to the header; nothing is written back. Only the header slot waits: the first read shows three skeleton lines there and never replaces the project list. A failed read keeps the last resolved header and filter, adds Retry, and leaves the project list usable; a ready empty list shows the empty card instead. Mobile and VS Code never mount the feature because the route is not part of their runtime. With an active workspace, a "Workspace view" row under the repo list opens `repo-workspaces/RepoWorkspaceReview.tsx`: one card per repo with its live git state and reference state, the header total over the repos that could be read, the existing diff for the repo whose card was clicked, and the edit/session actions at the bottom.
-
-With no workspace at all, `WorkspaceEmptyCard` sits above the project list instead of taking over the sidebar, and its "Create workspace" button, the header's "+" and the menu's "New workspace" open the same `repo-workspaces/RepoWorkspaceDialog.tsx`. The dialog keeps the draft until submit; a creation whose reference writes failed swaps the form for its pending card and keeps the created workspace. The header menu's "Edit workspace" opens the same dialog on the active workspace, with the reference diff and confirmations; "Manage workspaces" opens it on any workspace, whose own reference states travel with the resolved list. A missing repo row also offers "Remove", which saves the workspace without that repo through the edit route. The module owns the validation, diff and pending-card invariants in its own `DOCUMENTATION.md`.
-
-### Why the other projects stay listed and not filtered out
-
-An active workspace used to filter the list down to its repos, and a plain project came back only through "All projects". Switching the whole list to reach a project the workspace does not hold cost a click each way, so the projection keeps every project and only puts the workspace's repos first. A separate zone header, the same one Chats and Pinned use, marks where they end, instead of a new heading style.
+A stored workspace the parser discarded is shown as a discreet count under the
+rows; nothing is written back. Only the workspace slot waits: the first read
+shows skeletons there and never replaces the project list. A failed read keeps
+the last resolved rows and adds Retry; a runtime without `/api/workspaces`
+(mobile, VS Code) mounts none of it.
 
 ## The phone
 
