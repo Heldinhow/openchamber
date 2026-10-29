@@ -58,8 +58,8 @@ afterEach(() => {
 });
 
 describe('workspace routes', () => {
-  it('lists resolved workspaces', async () => {
-    const { app } = createApp({
+  it('lists resolved workspaces and creates a missing neutral config', async () => {
+    const { app, dependencies } = createApp({
       readSettings: async () => ({
         projects: [{ id: 'p', path: folder, label: 'Repo' }],
         workspaces: [{ id: 'ws_1', name: 'Shop', projectIds: ['p'] }],
@@ -75,10 +75,11 @@ describe('workspace routes', () => {
       directory: path.join(dataDir, 'workspaces', 'ws_1'),
       projects: [{ projectId: 'p', missing: false, project: { id: 'p', path: folder, label: 'Repo' } }],
     });
-    expect(response.body.workspaces[0].configError).toEqual({
-      path: path.join(dataDir, 'workspaces', 'ws_1', '.opencode', 'opencode.json'),
-      message: 'Failed to read the workspace configuration',
-    });
+    expect(response.body.workspaces[0].configError).toBeNull();
+    expect(dependencies.writeConfig).toHaveBeenCalledWith({
+      references: { Repo: { path: folder, description: 'Repo' } },
+      permissions: [{ action: 'edit', resource: `${folder}/*`, effect: 'allow' }],
+    }, path.join(dataDir, 'workspaces', 'ws_1', '.opencode', 'opencode.json'));
   });
 
   it('creates a workspace and answers 201', async () => {

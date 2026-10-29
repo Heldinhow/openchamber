@@ -41,12 +41,17 @@ never writes into a member repository.
   A failed settings write leaves neither a workspace nor a registered project.
 - The settings read-to-persist section is one queue per service instance, so two
   concurrent saves cannot drop each other's workspace.
+- A workspace id is `ws_` plus letters, digits or dashes. The parsers drop any
+  other id as discarded, and the service refuses one before it reaches a path,
+  so an id can never escape `<OPENCHAMBER_DATA_DIR>/workspaces/`.
 - `GET` resolves each `projectId` against the current catalog. A project that
   left the catalog keeps its row as `missing` with `project: null`; the rest of
   the workspace and the other projects survive.
-- Every resolved workspace carries `directory` and `configError`. A missing or
-  unparseable neutral config is a per-workspace error, never an empty project
-  list and never a failed list request.
+- Every resolved workspace carries `directory` and `configError`. A neutral
+  config that exists but cannot be read or parsed is a per-workspace error and
+  is never overwritten. A missing config is not an error: `GET` creates it from
+  the stored projects, so a legacy workspace becomes usable on its first read.
+  If that write fails, the same error is reported beside the workspace.
 - After the settings write, the service writes the neutral config best effort.
   A failed write is returned as `configError` beside the saved workspace; the
   workspace stays and is listed with the same error on the next read.
@@ -99,6 +104,16 @@ The catalog is a separate read and a project can be removed while its grouping
 still matters. Accepting only the ids the edited workspace already holds keeps
 the row visible and lets the user remove it deliberately; any other unknown id
 is rejected so a typo cannot create a permanent missing row.
+
+### Why a missing neutral config is created on read
+
+Existing primary-based workspaces predate the neutral directory. Reporting a
+config error would make every one of them look broken until the user edited it,
+and editing would rewrite a grouping just to become readable. Creating the
+config from the stored project order is the same writer create and edit use, so
+a legacy workspace starts working on its first read. A config that exists but
+cannot be parsed is different: rewriting it would destroy whatever the user
+left there, so it stays an error until they fix or remove it.
 
 ### Why a failed config write is not a failed request
 

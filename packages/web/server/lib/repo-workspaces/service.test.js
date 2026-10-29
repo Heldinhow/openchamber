@@ -226,9 +226,10 @@ describe('workspace service: create', () => {
 });
 
 describe('workspace service: list and update', () => {
-  it('reads legacy primary-based settings in stored repo order without rewriting them', async () => {
+  it('reads legacy primary-based settings in repo order and creates its neutral config', async () => {
     const api = makeFolder('api');
     const web = makeFolder('web');
+    const before = [snapshot(api), snapshot(web)];
     const { service, dependencies, state } = createService({
       projects: [{ id: 'p_api', path: api }, { id: 'p_web', path: web }],
       workspaces: [{
@@ -248,11 +249,39 @@ describe('workspace service: list and update', () => {
     const result = await service.list();
 
     expect(result.workspaces[0].projects.map((entry) => entry.projectId)).toEqual(['p_web', 'p_api']);
-    // A legacy workspace has no neutral config yet: that is a per-workspace
-    // error, not an empty list and not a request failure.
-    expect(result.workspaces[0].configError).not.toBeNull();
+    // The neutral directory did not exist yet; reading the workspace creates it
+    // from the stored project order instead of reporting a config error.
+    expect(result.workspaces[0].configError).toBeNull();
+    expect(result.workspaces[0].directory).toBe(path.join(dataDir, 'workspaces', 'ws_legacy'));
+    expect(readWorkspaceConfig('ws_legacy').references).toEqual({
+      web: { path: web, description: 'web' },
+      api: { path: api, description: 'api' },
+    });
+    expect([snapshot(api), snapshot(web)]).toEqual(before);
     expect(dependencies.persistSettings).not.toHaveBeenCalled();
     expect(state.settings.workspaces[0].primaryProjectId).toBe('p_api');
+  });
+
+  it('discards a stored id that cannot name a directory', async () => {
+    const api = makeFolder('api');
+    const { service, dependencies } = createService({
+      projects: [{ id: 'p_api', path: api }],
+      workspaces: [{
+        id: '../../../escape',
+        name: 'Escape',
+        projectIds: ['p_api'],
+      }],
+    });
+
+    const result = await service.list();
+
+    expect(result.workspaces).toEqual([]);
+    expect(result.discarded).toBe(1);
+    await expect(service.update('../../../escape', {
+      name: 'Escape',
+      folders: [{ projectId: 'p_api' }],
+    })).rejects.toMatchObject({ status: 404 });
+    expect(dependencies.persistSettings).not.toHaveBeenCalled();
   });
 
   it('keeps a project that left the catalog as missing and still lists the others', async () => {
@@ -274,7 +303,7 @@ describe('workspace service: list and update', () => {
     expect(workspace.configError).toBeNull();
   });
 
-  it('reports an unreadable neutral config as a per-workspace error', async () => {
+  it('keeps a malformed neutral config and reports it without overwriting', async () => {
     const api = makeFolder('api');
     const { service } = createService();
     const created = await service.create({ name: 'Shop', folders: [{ path: api }] });
@@ -285,6 +314,7 @@ describe('workspace service: list and update', () => {
 
     expect(result.workspaces[0].configError?.path).toBe(configPath);
     expect(result.workspaces[0].projects).toHaveLength(1);
+    expect(fs.readFileSync(configPath, 'utf8')).toBe('{ not json');
   });
 
   it('saves an edit under the same id and directory and updates references in place', async () => {

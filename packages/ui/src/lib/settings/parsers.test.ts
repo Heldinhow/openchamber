@@ -23,17 +23,20 @@ describe('parseRepoWorkspaces', () => {
   test('keeps valid entries in stored order and counts each rejected one', () => {
     const result = parseRepoWorkspaces([
       { id: 'ws_shop', name: 'Shop', projectIds: ['p_web', 'p_api'] },
+      { id: 'ws_123e4567-e89b-12d3-a456-426614174000', name: 'Legacy id', projectIds: ['p'] },
       { name: 'No id', projectIds: ['p'] },
-      { id: 'ws_no_name', projectIds: ['p'] },
-      { id: 'ws_no_projects', name: 'No projects', projectIds: [] },
-      { id: 'ws_duplicate_project', name: 'Duplicate project', projectIds: ['p', 'p'] },
-      { id: 'ws_bad_project', name: 'Bad project', projectIds: [42] },
+      { id: '../escape', name: 'Escape', projectIds: ['p'] },
+      { id: 'ws_noname', projectIds: ['p'] },
+      { id: 'ws_noprojects', name: 'No projects', projectIds: [] },
+      { id: 'ws_dupproject', name: 'Duplicate project', projectIds: ['p', 'p'] },
+      { id: 'ws_badproject', name: 'Bad project', projectIds: [42] },
     ], {});
 
-    expect(result?.discarded).toBe(4);
+    expect(result?.discarded).toBe(5);
     expect(result?.workspaces).toEqual([
       { id: 'ws_shop', name: 'Shop', projectIds: ['p_web', 'p_api'] },
-      { id: 'ws_duplicate_project', name: 'Duplicate project', projectIds: ['p'] },
+      { id: 'ws_123e4567-e89b-12d3-a456-426614174000', name: 'Legacy id', projectIds: ['p'] },
+      { id: 'ws_dupproject', name: 'Duplicate project', projectIds: ['p'] },
     ]);
   });
 
@@ -60,7 +63,7 @@ describe('parseRepoWorkspaces', () => {
 
   test('does not invalidate a workspace for an unknown project id', () => {
     const result = parseRepoWorkspaces([{
-      id: 'ws_missing_project',
+      id: 'ws_missingproject',
       name: 'Missing project',
       projectIds: ['proj_gone'],
     }], {});

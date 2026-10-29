@@ -110,7 +110,9 @@ export type RepoWorkspaceFolderInput = {
 type SaveRepoWorkspaceInput = {
   name: string;
   folders: RepoWorkspaceFolderInput[];
-};export const createRepoWorkspace = async (input: SaveRepoWorkspaceInput): Promise<RepoWorkspaceSaveResult> => {
+};
+
+export const createRepoWorkspace = async (input: SaveRepoWorkspaceInput): Promise<RepoWorkspaceSaveResult> => {
   const response = await runtimeFetch('/api/workspaces', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },

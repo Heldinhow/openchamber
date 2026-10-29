@@ -13,6 +13,8 @@ import { z } from 'zod';
 import { resolveProjectForDirectory } from '../projects/add-project.js';
 
 const WORKSPACE_ID_PREFIX = 'ws_';
+/** New ids are hex; stored legacy ids were `ws_<uuid>`. Nothing else may name a directory. */
+const WORKSPACE_ID_PATTERN = /^ws_[A-Za-z0-9-]+$/;
 const NEUTRAL_CONFIG_DIR = '.opencode';
 const NEUTRAL_CONFIG_FILE = 'opencode.json';
 
@@ -88,9 +90,13 @@ const nextReferenceName = (base, taken) => {
 
 const projectLabel = (project) => project.label?.trim() || '';
 
-const storedWorkspaces = (value, sanitizeRepoWorkspaces) => (
-  sanitizeRepoWorkspaces(value) ?? { workspaces: [], discarded: 0 }
-);
+const storedWorkspaces = (value, sanitizeRepoWorkspaces) => {
+  const result = sanitizeRepoWorkspaces(value) ?? { workspaces: [], discarded: 0 };
+  // Defense in depth: an id that can escape `<data>/workspaces/` never reaches
+  // a path, even if a caller injects a sanitizer that keeps it.
+  const workspaces = result.workspaces.filter((workspace) => WORKSPACE_ID_PATTERN.test(workspace.id));
+  return { workspaces, discarded: result.discarded + result.workspaces.length - workspaces.length };
+};
 
 export const createWorkspaceService = (dependencies) => {
   const {
@@ -115,29 +121,49 @@ export const createWorkspaceService = (dependencies) => {
     return run;
   };
 
-  const workspaceDirectory = (workspaceId) => path.resolve(openchamberDataDir, 'workspaces', workspaceId);
+  const workspaceDirectory = (workspaceId) => {
+    if (!WORKSPACE_ID_PATTERN.test(workspaceId)) {
+      throw new WorkspaceRequestError(404, 'Workspace not found');
+    }
+    return path.resolve(openchamberDataDir, 'workspaces', workspaceId);
+  };
   const neutralConfigPath = (workspaceId) => path.join(
     workspaceDirectory(workspaceId),
     NEUTRAL_CONFIG_DIR,
     NEUTRAL_CONFIG_FILE,
   );
 
+  /**
+   * A missing file is not an error: a legacy workspace has no neutral config
+   * yet, and `list` creates one. A file that exists but cannot be read or
+   * parsed is an error and is never overwritten.
+   */
   const readNeutralConfig = async (targetPath) => {
     try {
       await fsPromises.stat(targetPath);
-      // The writer is the only one that should touch this file, but a user can
-      // still edit it. A parse failure is an error for this workspace.
-      const config = readConfigFile(targetPath);
-      return { config, error: null };
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { config: null, missing: true, error: null };
+      return {
+        config: null,
+        missing: false,
+        error: { path: targetPath, message: 'Failed to read the workspace configuration' },
+      };
+    }
+    try {
+      return { config: readConfigFile(targetPath), missing: false, error: null };
     } catch {
-      return { config: null, error: { path: targetPath, message: 'Failed to read the workspace configuration' } };
+      return {
+        config: null,
+        missing: false,
+        error: { path: targetPath, message: 'Failed to read the workspace configuration' },
+      };
     }
   };
 
-  const resolveWorkspace = async (workspace, projects) => {
+  const resolveWorkspace = async (workspace, projects, configWriteError = null) => {
     const byId = new Map(projects.map((project) => [project.id, project]));
     const targetPath = neutralConfigPath(workspace.id);
-    const { error } = await readNeutralConfig(targetPath);
+    const { missing, error } = await readNeutralConfig(targetPath);
     return {
       id: workspace.id,
       name: workspace.name,
@@ -150,7 +176,7 @@ export const createWorkspaceService = (dependencies) => {
           project: project ? { id: project.id, path: project.path, label: projectLabel(project) } : null,
         };
       }),
-      configError: error,
+      configError: error ?? (missing ? configWriteError : null),
     };
   };
 
@@ -218,6 +244,19 @@ export const createWorkspaceService = (dependencies) => {
     return { projects, members, projectIds: members.map((member) => member.projectId) };
   };
 
+  /** The stored project order resolved for the neutral config. */
+  const membersForWorkspace = (workspace, projects) => {
+    const byId = new Map(projects.map((project) => [project.id, project]));
+    return workspace.projectIds.map((projectId) => {
+      const project = byId.get(projectId) ?? null;
+      return {
+        projectId,
+        path: project?.path ?? null,
+        label: project ? projectLabel(project) : '',
+      };
+    });
+  };
+
   /** Absolute references and edit allow rules for every available member. */
   const writeNeutralConfig = async (workspaceId, members) => {
     const targetPath = neutralConfigPath(workspaceId);
@@ -254,7 +293,13 @@ export const createWorkspaceService = (dependencies) => {
     const stored = storedWorkspaces(settings.workspaces, sanitizeRepoWorkspaces);
     const workspaces = [];
     for (const workspace of stored.workspaces) {
-      workspaces.push(await resolveWorkspace(workspace, projects));
+      const read = await readNeutralConfig(neutralConfigPath(workspace.id));
+      // A legacy workspace has no neutral directory yet. Creating it on read is
+      // what makes its stored projects usable without touching a repository.
+      const configWriteError = read.missing
+        ? await writeNeutralConfig(workspace.id, membersForWorkspace(workspace, projects))
+        : null;
+      workspaces.push(await resolveWorkspace(workspace, projects, configWriteError));
     }
     return { workspaces, discarded: stored.discarded };
   };
@@ -280,6 +325,9 @@ export const createWorkspaceService = (dependencies) => {
   });
 
   const update = async (workspaceId, payload) => withSettingsLock(async () => {
+    if (!WORKSPACE_ID_PATTERN.test(workspaceId)) {
+      throw new WorkspaceRequestError(404, 'Workspace not found');
+    }
     const input = parsePayload(payload ?? {});
     const settings = await readSettings();
     const stored = storedWorkspaces(settings.workspaces, sanitizeRepoWorkspaces);

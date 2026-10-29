@@ -127,9 +127,10 @@ describe('settings helpers', () => {
       editRules: [{ alias: 'web', resource: '/repos/web/*', effect: 'deny' }],
     };
     const ignored = [
-      { id: 'ws_no_name', projectIds: ['p'] },
-      { id: 'ws_no_projects', name: 'No projects', projectIds: [] },
-      { id: 'ws_bad_project', name: 'Bad project', projectIds: [42] },
+      { id: 'ws_noname', projectIds: ['p'] },
+      { id: 'ws_noprojects', name: 'No projects', projectIds: [] },
+      { id: 'ws_badproject', name: 'Bad project', projectIds: [42] },
+      { id: '../../escape', name: 'Escape', projectIds: ['p'] },
     ];
     const current = {
       projects: [{ id: 'p', path: '/home/testuser/project' }],
@@ -143,7 +144,7 @@ describe('settings helpers', () => {
       workspace,
       { id: 'ws_legacy', name: 'Legacy', projectIds: ['w', 'p'] },
     ]);
-    expect(helpers.sanitizeRepoWorkspaces([workspace, legacy, ...ignored]).discarded).toBe(3);
+    expect(helpers.sanitizeRepoWorkspaces([workspace, legacy, ...ignored]).discarded).toBe(4);
     expect(helpers.sanitizeRepoWorkspaces('bad')).toBeUndefined();
 
     const saved = helpers.mergePersistedSettings(current, changes);

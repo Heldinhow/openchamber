@@ -69,7 +69,7 @@ const sanitizeCustomProviderIcons = (value) => {
 // are not checked against the catalog here, because a missing project must
 // not erase the workspace.
 const workspaceSchema = z.object({
-  id: z.string().trim().min(1),
+  id: z.string().trim().regex(/^ws_[A-Za-z0-9-]+$/, 'Workspace id is invalid'),
   name: z.string().trim().min(1),
   projectIds: z.unknown().optional(),
   // Legacy primary-based shape, read only for its stored repo order.

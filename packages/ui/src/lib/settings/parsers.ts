@@ -408,7 +408,7 @@ const workspaceProjectIds = (entry: { projectIds?: unknown; repos?: unknown }): 
 };
 
 const workspaceEntrySchema = z.object({
-  id: nonEmptyTrimmed,
+  id: nonEmptyTrimmed.pipe(z.string().regex(/^ws_[A-Za-z0-9-]+$/, 'Workspace id is invalid')),
   name: nonEmptyTrimmed,
   projectIds: z.array(z.unknown()).optional(),
   repos: z.array(z.unknown()).optional(),
