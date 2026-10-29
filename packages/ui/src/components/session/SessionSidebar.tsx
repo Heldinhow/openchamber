@@ -22,9 +22,7 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { SidebarHeader } from './sidebar/shell/SidebarHeader';
 import { SidebarFooter } from './sidebar/shell/SidebarFooter';
 import { SidebarSearchEmptyState } from './sidebar/shell/SidebarSearchEmptyState';
-import { WorkspaceSidebarSlot } from './sidebar/shell/WorkspaceSidebarHeader';
 import { RepoWorkspaceDialog } from './sidebar/repo-workspaces/RepoWorkspaceDialog';
-import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import { SessionProjectCollection } from './sidebar/list/SessionProjectCollection';
 import type { SessionProjectListProps } from './sidebar/projects/SessionProjectScroller';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -59,6 +57,7 @@ import {
 } from './sidebar/sessionWorktreeMenu';
 import { resolveProjectRef } from '@/lib/worktreeSessionCreator';
 import { useRepoWorkspaces } from '@/hooks/useRepoWorkspaces';
+import { workspaceSectionKey } from './sidebar/projects/workspaceSections';
 import { syncDesktopSettings } from '@/lib/persistence';
 
 const PROJECT_ACTIVE_SESSION_STORAGE_KEY = 'oc.sessions.activeSessionByProject';
@@ -445,10 +444,10 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     | null
   >(null);
   const openWorkspaceDialog = React.useCallback(() => setWorkspaceDialog({ mode: 'create' }), []);
-  const openWorkspaceEditDialog = React.useCallback((workspace: RepoWorkspaceResolved) => {
-    setWorkspaceDialog({ mode: 'edit', workspaceId: workspace.id });
+  const openWorkspaceEditDialog = React.useCallback((workspaceId: string) => {
+    setWorkspaceDialog({ mode: 'edit', workspaceId });
   }, []);
-  const openWorkspaceSessionDraft = React.useCallback((workspace: RepoWorkspaceResolved) => {
+  const openWorkspaceSessionDraft = React.useCallback((workspace: { id: string; name: string; directory: string }) => {
     openNewSessionDraftFromTree({
       target: 'workspace',
       workspaceId: workspace.id,
@@ -563,7 +562,11 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     () => sortProjectsByOrder(normalizedProjects, projectSortOrder, manualProjectOrder),
     [normalizedProjects, projectSortOrder, manualProjectOrder],
   );
-  const projectView = useSessionProjectViewState({ isVSCode, projects: sortedProjects });
+  const projectViewProjects = React.useMemo(
+    () => [...sortedProjects, ...repoWorkspaces.workspaces.map((workspace) => ({ id: workspaceSectionKey(workspace.id) }))],
+    [repoWorkspaces.workspaces, sortedProjects],
+  );
+  const projectView = useSessionProjectViewState({ isVSCode, projects: projectViewProjects });
 
   // VS Code has no Archive page: its archived sessions sit inline behind the header toggle.
   const searchEmptyState = React.useMemo(() => (
@@ -700,11 +703,21 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         onSearchMatchCountChange: setSearchMatchCount,
       renderList: phone?.renderList,
       }}
+      workspace={{
+        workspaces: repoWorkspaces.workspaces,
+        status: repoWorkspaces.status,
+        discarded: repoWorkspaces.discarded,
+        onRetry: repoWorkspaces.reload,
+      }}
       actions={{
         rowActions: {
           allowReselect,
           onSessionSelected,
           resetSessionSearch,
+        },
+        workspace: {
+          openNewSession: openWorkspaceSessionDraft,
+          openEdit: openWorkspaceEditDialog,
         },
         alwaysShowActions: alwaysShowSidebarActions,
         setActiveProjectIdOnly,
@@ -764,14 +777,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         expandAll={projectView.actions.expandAll}
       />
 
-      <WorkspaceSidebarSlot
-        status={repoWorkspaces.status}
-        workspaces={repoWorkspaces.workspaces}
-        discarded={repoWorkspaces.discarded}
-        onRetry={repoWorkspaces.reload}
-        onNewSession={openWorkspaceSessionDraft}
-        onEdit={openWorkspaceEditDialog}
-      />
       {collection}
 
       <SidebarFooter

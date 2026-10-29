@@ -644,6 +644,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.project.selectAria': '프로젝트 선택, 현재 {project}',
   'sessions.sidebar.workspace.menuLabel': '워크스페이스',
   'sessions.sidebar.workspace.newSessionFor': '{name}에서 새 세션',
+  'sessions.sidebar.workspace.menuFor': '{name} 워크스페이스 메뉴',
   'sessions.sidebar.workspace.missing': '워크스페이스를 사용할 수 없음',
   'sessions.sidebar.workspace.repoCountSingle': '{count}개 저장소',
   'sessions.sidebar.workspace.repoCountPlural': '{count}개 저장소',

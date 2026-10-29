@@ -644,6 +644,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.project.selectAria': '选择项目，当前为 {project}',
   'sessions.sidebar.workspace.menuLabel': '工作区',
   'sessions.sidebar.workspace.newSessionFor': '在 {name} 中新建会话',
+  'sessions.sidebar.workspace.menuFor': '{name} 的工作区菜单',
   'sessions.sidebar.workspace.missing': '工作区不可用',
   'sessions.sidebar.workspace.repoCountSingle': '{count} 个仓库',
   'sessions.sidebar.workspace.repoCountPlural': '{count} 个仓库',

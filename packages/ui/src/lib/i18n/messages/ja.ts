@@ -644,6 +644,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.project.selectAria': 'プロジェクトを選択、現在は{project}',
   'sessions.sidebar.workspace.menuLabel': 'ワークスペース',
   'sessions.sidebar.workspace.newSessionFor': '{name} で新しいセッション',
+  'sessions.sidebar.workspace.menuFor': '{name} のワークスペースメニュー',
   'sessions.sidebar.workspace.missing': 'ワークスペースを利用できません',
   'sessions.sidebar.workspace.repoCountSingle': '{count} リポジトリ',
   'sessions.sidebar.workspace.repoCountPlural': '{count} リポジトリ',

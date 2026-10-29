@@ -8,7 +8,7 @@ import {
 } from '@/lib/repoWorkspaces/client';
 import { publishRepoWorkspaceCatalog } from '@/lib/repoWorkspaces/catalog';
 
-type RepoWorkspacesStatus = 'loading' | 'ready' | 'error' | 'unavailable';
+export type RepoWorkspacesStatus = 'loading' | 'ready' | 'error' | 'unavailable';
 
 type State = {
   status: RepoWorkspacesStatus;

@@ -3311,6 +3311,7 @@ export const dict = {
   'sessions.sidebar.project.selectAria': 'Projekt auswählen, aktuell {project}',
   'sessions.sidebar.workspace.menuLabel': 'Arbeitsbereiche',
   'sessions.sidebar.workspace.newSessionFor': 'Neue Sitzung in {name}',
+  'sessions.sidebar.workspace.menuFor': 'Arbeitsbereichsmenü für {name}',
   'sessions.sidebar.workspace.missing': 'Arbeitsbereich nicht verfügbar',
   'sessions.sidebar.workspace.repoCountSingle': '{count} Repository',
   'sessions.sidebar.workspace.repoCountPlural': '{count} Repositories',

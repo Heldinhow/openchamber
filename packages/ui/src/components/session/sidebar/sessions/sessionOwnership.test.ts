@@ -98,6 +98,47 @@ describe('createSessionOwnershipIndex', () => {
     ]);
   });
 
+  test('gives a workspace the exact neutral directory and leaves member projects to their projects', () => {
+    const ownership = createSessionOwnershipIndex(
+      [
+        ownershipSession('workspace-session', { directory: '/projects/app/.openchamber-workspace' }),
+        ownershipSession('project-session', { directory: '/projects/app/src' }),
+      ],
+      [{ id: 'app', normalizedPath: '/projects/app' }],
+      new Map(),
+      false,
+      [],
+      [],
+      [],
+      [{ id: 'ws_product', directory: '/projects/app/.openchamber-workspace' }],
+    );
+
+    expect(ownership.bySessionId.get('workspace-session')).toMatchObject({
+      kind: 'workspace',
+      workspaceId: 'ws_product',
+      projectId: 'ws_product',
+    });
+    expect(ownership.sessionsByWorkspace.get('ws_product')?.map((session) => session.id)).toEqual(['workspace-session']);
+    expect(ownership.sessionsByProject.get('app')?.map((session) => session.id)).toEqual(['project-session']);
+    expect(ownership.sessionsByProject.get('ws_product')).toBeUndefined();
+  });
+
+  test('indexes archived workspace sessions separately', () => {
+    const ownership = createSessionOwnershipIndex(
+      [],
+      [],
+      new Map(),
+      false,
+      [{ ...ownershipSession('archived-workspace', { directory: '/data/workspaces/ws_product' }), time: { created: 1, updated: 1, archived: 1 } }],
+      [],
+      [],
+      [{ id: 'ws_product', directory: '/data/workspaces/ws_product' }],
+    );
+
+    expect(ownership.archivedSessionsByWorkspace.get('ws_product')?.map((session) => session.id)).toEqual(['archived-workspace']);
+    expect(ownership.archivedSessionsByProject.size).toBe(0);
+  });
+
   test('requires exact workspace directories in VS Code', () => {
     const ownership = createSessionOwnershipIndex(
       [

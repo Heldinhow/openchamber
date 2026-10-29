@@ -597,6 +597,7 @@ export const dict = {
   'sessions.sidebar.project.selectAria': 'اختيار مشروع، الحالي {project}',
   'sessions.sidebar.workspace.menuLabel': 'مساحات العمل',
   'sessions.sidebar.workspace.newSessionFor': 'جلسة جديدة في {name}',
+  'sessions.sidebar.workspace.menuFor': 'قائمة مساحة العمل لـ {name}',
   'sessions.sidebar.workspace.missing': 'مساحة العمل غير متاحة',
   'sessions.sidebar.workspace.repoCountSingle': '{count} مستودع',
   'sessions.sidebar.workspace.repoCountPlural': '{count} مستودعات',

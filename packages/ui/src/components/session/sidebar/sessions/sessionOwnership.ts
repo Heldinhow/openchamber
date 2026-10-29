@@ -28,15 +28,19 @@ export type DirectoryOwner = {
   projectId: string;
   projectRoot: string;
   scopeDirectory: string;
-  kind: 'project' | 'worktree' | 'space';
+  kind: 'project' | 'worktree' | 'space' | 'workspace';
   /** The isolated space that owns the scope, for `kind: 'space'`. */
   spaceId?: string;
+  /** The workspace that owns the scope, for `kind: 'workspace'`. */
+  workspaceId?: string;
 };
 
 export type SessionOwnershipIndex = {
   bySessionId: Map<string, DirectoryOwner>;
   sessionsByProject: Map<string, Session[]>;
   archivedSessionsByProject: Map<string, Session[]>;
+  sessionsByWorkspace: Map<string, Session[]>;
+  archivedSessionsByWorkspace: Map<string, Session[]>;
   sessionsByScope: Map<string, Set<string>>;
   directoryResolutions: number;
 };
@@ -74,9 +78,18 @@ export const createSessionOwnershipIndex = (
   archivedSessions: SessionOwnershipRecord[] = [],
   authoritativeProjects: readonly AuthoritativeOpenCodeProject[] = [],
   spaces: readonly SpaceMark[] = [],
+  workspaces: readonly { id: string; directory: string }[] = [],
 ): SessionOwnershipIndex => {
   const ownerByDirectory = new Map<string, DirectoryOwner>();
   const projectByRoot = new Map<string, Project>();
+  // Workspace ownership is exact: only a session created in the workspace's
+  // neutral directory belongs to it. A neutral directory is not a project
+  // root, so a member project's sessions stay with the project.
+  const workspaceByDirectory = new Map<string, { id: string; directory: string }>();
+  for (const workspace of workspaces) {
+    const directory = normalizePath(workspace.directory);
+    if (directory) workspaceByDirectory.set(directory, { id: workspace.id, directory });
+  }
 
   for (const project of projects) {
     const projectRoot = normalizePath(project.normalizedPath);
@@ -178,7 +191,21 @@ export const createSessionOwnershipIndex = (
   const bySessionId = new Map<string, DirectoryOwner>();
   const sessionsByProject = new Map<string, Session[]>();
   const archivedSessionsByProject = new Map<string, Session[]>();
+  const sessionsByWorkspace = new Map<string, Session[]>();
+  const archivedSessionsByWorkspace = new Map<string, Session[]>();
   const sessionsByScope = new Map<string, Set<string>>();
+
+  const workspaceOwnerOf = (session: SessionOwnershipRecord): DirectoryOwner | null => {
+    const directory = resolveSessionDirectory(session);
+    const workspace = directory ? workspaceByDirectory.get(directory) : undefined;
+    return workspace ? {
+      projectId: workspace.id,
+      projectRoot: workspace.directory,
+      scopeDirectory: workspace.directory,
+      kind: 'workspace',
+      workspaceId: workspace.id,
+    } : null;
+  };
 
   const resolveOwner = (directory: string | null): DirectoryOwner | null => {
     if (!directory) return null;
@@ -214,15 +241,24 @@ export const createSessionOwnershipIndex = (
   const bucket = (
     input: SessionOwnershipRecord[],
     target: Map<string, Session[]>,
+    workspaceTarget: Map<string, Session[]>,
     scopeTarget?: Map<string, Set<string>>,
   ): void => {
     for (const session of input) {
-      const exactOwner = resolveOwner(resolveSessionDirectory(session));
+      const workspaceOwner = workspaceOwnerOf(session);
+      const exactOwner = workspaceOwner ?? resolveOwner(resolveSessionDirectory(session));
       const owner = exactOwner ?? (!isVSCode
         ? canonicalOwnerByOpenCodeProjectId.get(getOpenCodeProjectId(session) ?? '') ?? null
         : null);
       if (!owner) continue;
       bySessionId.set(session.id, owner);
+      if (owner.kind === 'workspace' && owner.workspaceId) {
+        const workspaceId = owner.workspaceId;
+        const workspaceSessions = workspaceTarget.get(workspaceId);
+        if (workspaceSessions) workspaceSessions.push(session);
+        else workspaceTarget.set(workspaceId, [session]);
+        continue;
+      }
       const projectSessions = target.get(owner.projectId);
       if (projectSessions) {
         projectSessions.push(session);
@@ -239,16 +275,18 @@ export const createSessionOwnershipIndex = (
     }
   };
 
-  bucket(sessions, sessionsByProject, sessionsByScope);
+  bucket(sessions, sessionsByProject, sessionsByWorkspace, sessionsByScope);
   // The sidebar's archived buckets hold top-level sessions only: a subsession
   // belongs to the agent run that spawned it. One archived under an active
   // parent is listed on the Archive page instead (`isRestorableOnItsOwn`).
-  bucket(archivedSessions.filter((session) => !session.parentID), archivedSessionsByProject);
+  bucket(archivedSessions.filter((session) => !session.parentID), archivedSessionsByProject, archivedSessionsByWorkspace);
 
   return {
     bySessionId,
     sessionsByProject,
     archivedSessionsByProject,
+    sessionsByWorkspace,
+    archivedSessionsByWorkspace,
     sessionsByScope,
     directoryResolutions: resolvedOwners.size,
   };

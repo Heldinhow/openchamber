@@ -597,6 +597,7 @@ export const dict = {
   'sessions.sidebar.project.selectAria': 'בחר פרויקט, כרגע {project}',
   'sessions.sidebar.workspace.menuLabel': 'סביבות עבודה',
   'sessions.sidebar.workspace.newSessionFor': 'הפעלה חדשה ב-{name}',
+  'sessions.sidebar.workspace.menuFor': 'תפריט סביבת העבודה של {name}',
   'sessions.sidebar.workspace.missing': 'סביבת העבודה אינה זמינה',
   'sessions.sidebar.workspace.repoCountSingle': '{count} מאגר',
   'sessions.sidebar.workspace.repoCountPlural': '{count} מאגרים',

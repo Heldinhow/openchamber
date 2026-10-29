@@ -40,6 +40,8 @@ import { SessionDraftRow } from '../works/SessionDraftRow';
 import { isGroupWork } from '../works/sidebarWorks';
 import { SessionGroupSection, type SessionGroupSectionProps } from './SessionGroupSection';
 import type { ProjectSection } from './sessionProjectRender';
+import { WorkspaceSectionRow } from './WorkspaceSectionRow';
+import type { WorkspaceSidebarIdentity } from './workspaceSections';
 import { CrossfadeZoneHeader, CrossfadeZoneHeaders } from './CrossfadeZoneHeaders';
 import { prepareSessionProjectAction } from './sessionProjectActionContext';
 import { applyShowControl, getProjectLabel, grantGroupAccess, retryGroupStatus, toggleActivityZone } from './sessionProjectListActions';
@@ -107,6 +109,11 @@ export type SessionProjectScrollerView = {
 
 export type SessionProjectScrollerActions = {
   group: GroupActions;
+  workspace: {
+    openNewSession: (workspace: WorkspaceSidebarIdentity) => void;
+    openEdit: (workspaceId: string) => void;
+  };
+  toggleWorkspace: (id: string) => void;
   toggleProject: (id: string) => void;
   setActiveProjectIdOnly: (id: string) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
@@ -295,6 +302,19 @@ function SessionProjectScrollerComponent({ model, view, actions }: SessionProjec
           }}
         />
       </CrossfadeZoneHeader>;
+    }
+    if (row.kind === 'workspace-header') {
+      return <WorkspaceSectionRow
+        section={row.section}
+        collapsed={row.collapsed}
+        forceExpanded={row.forceExpanded}
+        alwaysShowActions={view.alwaysShowActions}
+        openSidebarMenuKey={model.state.openSidebarMenuKey}
+        setOpenSidebarMenuKey={model.state.setOpenSidebarMenuKey}
+        onToggle={() => actions.toggleWorkspace(row.section.workspace.id)}
+        onNewSession={actions.workspace.openNewSession}
+        onEdit={actions.workspace.openEdit}
+      />;
     }
     if (row.kind === 'project-header') {
       const project = row.section.project;

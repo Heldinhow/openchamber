@@ -35,13 +35,17 @@ import type { WorktreeMetadata } from '@/types/worktree';
 import { buildActiveSessionNode, useSessionProjectCollection } from './sessionCollection';
 import { useChildStoreManager } from '@/sync/sync-context';
 import { useGlobalSyncStore } from '@/sync/global-sync-store';
-import { createSessionOwnershipIndex } from '../sessions/sessionOwnership';
+import { createSessionOwnershipIndex, type DirectoryOwner } from '../sessions/sessionOwnership';
 import { useSessionSidebarSections } from '../projects/useSessionSidebarSections';
 import { SessionPrefetchProvider } from './useSessionPrefetch';
 import { isPathWithinProject, normalizePath } from '../utils';
 import type { SessionGroup, SessionNode } from '../types';
 import { SessionProjectScroller, type SessionProjectListProps } from '../projects/SessionProjectScroller';
 import { useSessionGrouping } from '../projects/useSessionGrouping';
+import { WorkspaceSidebarStatus } from '../projects/WorkspaceSectionRow';
+import { buildWorkspaceSidebarSections, workspaceSectionKey } from '../projects/workspaceSections';
+import type { RepoWorkspacesStatus } from '@/hooks/useRepoWorkspaces';
+import type { RepoWorkspaceResolved } from '@/lib/repoWorkspaces/client';
 import { SessionBulkActions } from '../folders/SessionBulkActions';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { isWorkExpanded, type useSessionProjectViewState } from '../projects/useSessionProjectViewState';
@@ -139,11 +143,22 @@ type SessionProjectCollectionProps = {
     /** Draws the list in place of the desktop's scroller: the phone's rows over the same model. */
     renderList?: (props: SessionProjectListProps) => React.ReactNode;
   };
+  /** Workspace rows and the state of their read; independent of the project list. */
+  workspace: {
+    workspaces: readonly RepoWorkspaceResolved[];
+    status: RepoWorkspacesStatus;
+    discarded: number;
+    onRetry: () => void;
+  };
   actions: {
     rowActions: {
       allowReselect: boolean;
       onSessionSelected?: (sessionId: string) => void;
       resetSessionSearch: () => void;
+    };
+    workspace: {
+      openNewSession: (workspace: { id: string; name: string; directory: string }) => void;
+      openEdit: (workspaceId: string) => void;
     };
     alwaysShowActions: boolean;
     setActiveProjectIdOnly: (id: string) => void;
@@ -165,8 +180,8 @@ type SessionProjectCollectionProps = {
   };
 };
 
-const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topology, view, actions }) => {
-  const { alwaysShowActions, projectViewActions, rowActions, ...scrollerActions } = actions;
+const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topology, view, workspace, actions }) => {
+  const { alwaysShowActions, projectViewActions, rowActions, workspace: workspaceActions, ...scrollerActions } = actions;
   const foldersMap = useSessionFoldersStore((state) => state.foldersMap);
   const collapsedFolderIds = useSessionFoldersStore((state) => state.collapsedFolderIds);
   const createFolder = useSessionFoldersStore((state) => state.createFolder);
@@ -195,8 +210,8 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     return byProject;
   }, [spaceList]);
   const ownership = React.useMemo(
-    () => createSessionOwnershipIndex(collection.sessions, topology.projects, topology.availableWorktreesByProject, topology.isVSCode, collection.archivedSessions, authoritativeProjects, spaceList),
-    [authoritativeProjects, collection.archivedSessions, collection.sessions, spaceList, topology.availableWorktreesByProject, topology.isVSCode, topology.projects],
+    () => createSessionOwnershipIndex(collection.sessions, topology.projects, topology.availableWorktreesByProject, topology.isVSCode, collection.archivedSessions, authoritativeProjects, spaceList, workspace.workspaces),
+    [authoritativeProjects, collection.archivedSessions, collection.sessions, spaceList, topology.availableWorktreesByProject, topology.isVSCode, topology.projects, workspace.workspaces],
   );
   const [visibleSessionCountByGroup, setVisibleSessionCountByGroup] = React.useState<Map<string, number>>(new Map());
   const [visibleActivityCountByKey, setVisibleActivityCountByKey] = React.useState<Map<string, number>>(new Map());
@@ -346,6 +361,23 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     foldersMap,
     standaloneGroups,
   });
+  const workspaceSections = React.useMemo(() => buildWorkspaceSidebarSections({
+    workspaces: workspace.workspaces,
+    sessionsByWorkspace: ownership.sessionsByWorkspace,
+    buildNode: (session) => buildActiveSessionNode(collection.childrenMap, session),
+    query: view.hasSessionSearchQuery ? view.normalizedSessionSearchQuery : '',
+  }), [collection.childrenMap, ownership.sessionsByWorkspace, view.hasSessionSearchQuery, view.normalizedSessionSearchQuery, workspace.workspaces]);
+  // A workspace owner is not a project: project selection must not treat a
+  // workspace session as one that moved out of its project.
+  const projectSessionOwnerBySessionId = React.useMemo(() => {
+    let filtered: Map<string, DirectoryOwner> | null = null;
+    for (const [sessionId, owner] of ownership.bySessionId) {
+      if (owner.kind !== 'workspace') continue;
+      filtered ??= new Map(ownership.bySessionId);
+      filtered.delete(sessionId);
+    }
+    return filtered ?? ownership.bySessionId;
+  }, [ownership.bySessionId]);
 
   const onSearchMatchCountChange = view.onSearchMatchCountChange;
   // Unmounting means nothing is listed any more, so the header must not keep
@@ -1026,6 +1058,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     mode: view.hasSessionSearchQuery ? 'search' : 'normal',
     sections: orderedSectionsForRender,
     authoritativeSections: projectSections,
+    workspaceSections,
     // Hidden only from the list: folders and search keep the group.
     chatGroup: showChatsSection ? chatGroup : null,
     pinnedItems,
@@ -1059,7 +1092,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     hideDirectoryControls: view.hideDirectoryControls,
     sessionBatchSize: singleProjectMode && !view.useGroupedSections ? 20 : undefined,
     runIndex,
-  }), [runIndex, chatGroup, showChatsSection, projectView.collapsedActivities, pinnedItems, pinnedWorktreeEntries, workEntries, timeEntries, draftPlacement, movedSessionIds, movedGroupKeys, zoneSessionIds, detailedZoneRows, collapsedFolderIds, collection.pinnedSessionIds, expandedParents, folderAuthorityByOwner, foldersMap, groupSearchDataByGroup, groupStatusByKey, orderedSectionsForRender, projectSections, collapsedGroups, projectView.collapsedProjects, selectedSingleProjectId, sessionOrderIndex, singleProjectMode, view.activeProjectId, view.hasSessionSearchQuery, view.hideDirectoryControls, view.normalizedSessionSearchQuery, view.showOnlyMainWorkspace, view.useGroupedSections, visibleCountByContainer, worktreeArchiveAnchors, liveSpaceIds]);
+  }), [runIndex, chatGroup, showChatsSection, projectView.collapsedActivities, pinnedItems, pinnedWorktreeEntries, workEntries, timeEntries, draftPlacement, movedSessionIds, movedGroupKeys, zoneSessionIds, detailedZoneRows, collapsedFolderIds, collection.pinnedSessionIds, expandedParents, folderAuthorityByOwner, foldersMap, groupSearchDataByGroup, groupStatusByKey, orderedSectionsForRender, projectSections, collapsedGroups, projectView.collapsedProjects, selectedSingleProjectId, sessionOrderIndex, singleProjectMode, view.activeProjectId, view.hasSessionSearchQuery, view.hideDirectoryControls, view.normalizedSessionSearchQuery, view.showOnlyMainWorkspace, view.useGroupedSections, visibleCountByContainer, worktreeArchiveAnchors, liveSpaceIds, workspaceSections]);
   React.useEffect(() => {
     onSearchMatchCountChange(sidebarRowModel.searchMatchCount);
   }, [onSearchMatchCountChange, sidebarRowModel.searchMatchCount]);
@@ -1130,6 +1163,8 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
   ]);
   const scrollerActionSet = React.useMemo(() => ({
     group: groupActions,
+    workspace: workspaceActions,
+    toggleWorkspace: (id: string) => toggleProject(workspaceSectionKey(id)),
     toggleProject,
     setActiveProjectIdOnly: scrollerActions.setActiveProjectIdOnly,
     setSessionSwitcherOpen: scrollerActions.setSessionSwitcherOpen,
@@ -1143,6 +1178,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     setSingleProjectId,
   }), [
     groupActions,
+    workspaceActions,
     scrollerActions.openNewSessionDraft,
     scrollerActions.openNewWorktreeDialog,
     scrollerActions.openProjectEditDialog,
@@ -1165,7 +1201,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       mobileVariant={view.mobileVariant}
       openNewSessionDraft={actions.openNewSessionDraft}
       setSessionSwitcherOpen={actions.setSessionSwitcherOpen}
-      sessionOwnerBySessionId={ownership.bySessionId}
+      sessionOwnerBySessionId={projectSessionOwnerBySessionId}
       handleSessionSelect={selectSessionForProject}
     />
     <SessionPrefetchProvider
@@ -1182,6 +1218,12 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
         getFolderScopesForProject={getFolderScopesForProject}
         isInlineEditing={editingId !== null}
         startFolderRename={startFolderRename}
+      />
+      <WorkspaceSidebarStatus
+        status={workspace.status}
+        hasRows={workspace.workspaces.length > 0}
+        discarded={workspace.discarded}
+        onRetry={workspace.onRetry}
       />
       <div
         className="contents"

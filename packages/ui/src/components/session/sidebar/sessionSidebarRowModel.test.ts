@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Session } from '@/lib/opencode/model';
 import type { SessionGroup, SessionNode } from './types';
 import type { ProjectSection } from './projects/sessionProjectRender';
+import type { WorkspaceSection } from './projects/workspaceSections';
 import { buildSessionSidebarRowModel, countSessionSearchMatches, resolveSessionSidebarStickyHeader, runExpansionKey, type SessionSidebarActivityItem, type SessionSidebarRowModelArgs, type SessionSidebarWorkEntry } from './sessionSidebarRowModel';
 import { countSessionTreeQueryMatches } from './recent/activitySections';
 import { buildMultiRunIndex } from '@/lib/multirun/runs';
@@ -55,6 +56,11 @@ const project = (groups: SessionGroup[]): ProjectSection => ({
   groups,
 });
 
+const workspace = (id: string, nodes: SessionNode[]): WorkspaceSection => ({
+  workspace: { id, name: id.toUpperCase(), directory: `/data/workspaces/${id}` },
+  nodes,
+});
+
 const args = (sections: ProjectSection[]): SessionSidebarRowModelArgs => ({
   mode: 'normal',
   sections,
@@ -104,6 +110,102 @@ describe('buildSessionSidebarRowModel', () => {
     const plain = (id: string): ProjectSection => ({ project: { id, normalizedPath: `/${id}` }, groups: [group([node(`${id}-session`)], { directory: `/${id}`, folderScopeKey: `/${id}` })] });
 
     expect(headers(args([plain('notes'), plain('blog')]))).toEqual(['notes', 'blog']);
+  });
+
+  test('workspace sections lead the plain project sections and own their sessions', () => {
+    const input = args([project([group([node('project-session')])])]);
+    input.workspaceSections = [
+      workspace('ws_one', [node('workspace-one')]),
+      workspace('ws_two', [node('workspace-two-a'), node('workspace-two-b')]),
+    ];
+
+    const model = buildSessionSidebarRowModel(input);
+    const sectionRows = model.rows.flatMap((row) => {
+      if (row.kind === 'workspace-header') return [`workspace:${row.section.workspace.id}`];
+      if (row.kind === 'project-header') return [`project:${row.section.project.id}`];
+      if (row.kind === 'session') return [`session:${row.node.session.id}`];
+      return [];
+    });
+
+    expect(sectionRows).toEqual([
+      'workspace:ws_one',
+      'session:workspace-one',
+      'workspace:ws_two',
+      'session:workspace-two-a',
+      'session:workspace-two-b',
+      'project:project-a',
+      'session:project-session',
+    ]);
+    const workspaceRows = model.rows.filter((row) => row.kind === 'workspace-header');
+    expect(workspaceRows.map((row) => row.kind === 'workspace-header' && row.section.workspace.directory)).toEqual([
+      '/data/workspaces/ws_one',
+      '/data/workspaces/ws_two',
+    ]);
+    const workspaceSessions = model.rows.filter((row) => row.kind === 'session' && row.node.session.id.startsWith('workspace-'));
+    expect(workspaceSessions.every((row) => row.kind === 'session' && row.groupDirectory?.startsWith('/data/workspaces/'))).toBe(true);
+  });
+
+  test('a workspace renders only its header and sessions, with no repository rows or counts', () => {
+    const input = args([project([group([node('project-session')])])]);
+    input.workspaceSections = [workspace('ws_one', [node('workspace-session')])];
+
+    const rows = buildSessionSidebarRowModel(input).rows;
+    const workspaceIndex = rows.findIndex((row) => row.kind === 'workspace-header');
+    const projectIndex = rows.findIndex((row) => row.kind === 'project-header');
+    const workspaceRows = rows.slice(workspaceIndex, projectIndex);
+
+    expect(workspaceRows.map((row) => row.kind)).toEqual(['workspace-header', 'session']);
+    expect(workspaceRows.some((row) => row.kind === 'group-header')).toBe(false);
+    expect('count' in (workspaceRows[0] ?? {})).toBe(false);
+    expect('repoCount' in (workspaceRows[0] ?? {})).toBe(false);
+  });
+
+  test('a collapsed workspace keeps its row and hides its sessions', () => {
+    const input = args([]);
+    input.workspaceSections = [workspace('ws_one', [node('workspace-session')])];
+    input.collapsedProjects = new Set(['workspace:ws_one']);
+
+    const rows = buildSessionSidebarRowModel(input).rows;
+
+    expect(rows.map((row) => row.kind)).toEqual(['workspace-header']);
+    expect(rows[0]).toMatchObject({ kind: 'workspace-header', collapsed: true });
+  });
+
+  test('a workspace session in work leaves its workspace like a project session', () => {
+    const input = args([]);
+    input.workspaceSections = [workspace('ws_one', [node('working'), node('idle')])];
+    input.workEntries = sessionWorks([timelineItem('working', { projectId: null, groupDirectory: '/data/workspaces/ws_one' })]);
+    input.movedSessionIds = new Set(['working']);
+    input.zoneSessionIds = new Set(['working']);
+
+    const workspaceSessions = buildSessionSidebarRowModel(input).rows.flatMap((row) => (
+      row.kind === 'session' && row.node.session.id !== 'working' ? [row.node.session.id] : []
+    ));
+
+    expect(workspaceSessions).toEqual(['idle']);
+  });
+
+  test('plain project sections render the same with and without workspace sections', () => {
+    const projectSection = (): ProjectSection => project([group([node('project-session')])]);
+    const withoutWorkspaces = buildSessionSidebarRowModel(args([projectSection()])).rows;
+    const withWorkspaces = args([projectSection()]);
+    withWorkspaces.workspaceSections = [workspace('ws_one', [node('workspace-session')])];
+    const rows = buildSessionSidebarRowModel(withWorkspaces).rows;
+    const projectRows = rows.filter((row) => row.kind === 'project-header' || (row.kind === 'session' && row.node.session.id === 'project-session'));
+
+    expect(projectRows).toEqual(withoutWorkspaces.filter((row) => row.kind === 'project-header' || row.kind === 'session'));
+  });
+
+  test('a search counts workspace matches in the header total', () => {
+    const input = args([]);
+    input.mode = 'search';
+    input.normalizedQuery = 'workspace-session';
+    input.workspaceSections = [workspace('ws_one', [node('workspace-session'), node('other')])];
+
+    const model = buildSessionSidebarRowModel(input);
+
+    expect(model.searchMatchCount).toBe(1);
+    expect(model.rows.map((row) => row.kind)).toContain('workspace-header');
   });
 
   test('detailed zone rows give the Tree view the two-line row', () => {

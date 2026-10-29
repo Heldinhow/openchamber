@@ -669,6 +669,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.project.selectAria': '選擇專案，目前為 {project}',
   'sessions.sidebar.workspace.menuLabel': '工作區',
   'sessions.sidebar.workspace.newSessionFor': '在 {name} 中新增工作階段',
+  'sessions.sidebar.workspace.menuFor': '{name} 的工作區選單',
   'sessions.sidebar.workspace.missing': '工作區無法使用',
   'sessions.sidebar.workspace.repoCountSingle': '{count} 個儲存庫',
   'sessions.sidebar.workspace.repoCountPlural': '{count} 個儲存庫',

@@ -643,6 +643,7 @@ export const dict = {
   'sessions.sidebar.project.selectAria': 'Select project, currently {project}',
   'sessions.sidebar.workspace.menuLabel': 'Workspaces',
   'sessions.sidebar.workspace.newSessionFor': 'New session in {name}',
+  'sessions.sidebar.workspace.menuFor': 'Workspace menu for {name}',
   'sessions.sidebar.workspace.missing': 'Workspace unavailable',
   'sessions.sidebar.workspace.repoCountSingle': '{count} repo',
   'sessions.sidebar.workspace.repoCountPlural': '{count} repos',

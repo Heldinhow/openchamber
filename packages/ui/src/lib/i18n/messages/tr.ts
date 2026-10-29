@@ -564,6 +564,7 @@ export const dict = {
   'sessions.sidebar.project.selectAria': 'Proje seçin, şu an {project}',
   'sessions.sidebar.workspace.menuLabel': 'Çalışma alanları',
   'sessions.sidebar.workspace.newSessionFor': '{name} içinde yeni oturum',
+  'sessions.sidebar.workspace.menuFor': '{name} çalışma alanı menüsü',
   'sessions.sidebar.workspace.missing': 'Çalışma alanı kullanılamıyor',
   'sessions.sidebar.workspace.repoCountSingle': '{count} depo',
   'sessions.sidebar.workspace.repoCountPlural': '{count} depo',

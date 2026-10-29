@@ -4,6 +4,8 @@ import { compareSessionsByLifecycleOrder, EMPTY_SESSION_ORDER_RANKS } from '@/sy
 import { isSessionPinned } from '@/lib/sessionPins';
 import type { GroupSearchData, SessionGroup, SessionNode } from './types';
 import type { ProjectSection } from './projects/sessionProjectRender';
+import type { WorkspaceSection } from './projects/workspaceSections';
+import { workspaceSectionKey } from './projects/workspaceSections';
 import { buildGroupRenderDescriptors } from './projects/sessionProjectRender';
 import { normalizeFolderRoots, selectFolderIdsForProjection, selectFolderRootNodes, type BlockingBadgeSessionScope } from './sessions/sessionNodeItemUtils';
 import { getSessionFolderIdentityKey, getSessionFolderOwnerKey, getSessionFolderScopes, isArchivedFolderScope } from './sessions/sessionFolderIdentity';
@@ -71,6 +73,8 @@ type RowBase = { key: string; estimateSize: number; treeGuides?: readonly Sessio
 export type SessionSidebarRow =
   | (RowBase & { kind: 'activity-header'; activityKey: SessionSidebarActivityKey; collapsed: boolean; forceExpanded: boolean })
   | (RowBase & { kind: 'project-header'; section: ProjectSection; collapsed: boolean; forceExpanded: boolean })
+  // A workspace is a top-level section of its own, never a synthetic project.
+  | (RowBase & { kind: 'workspace-header'; section: WorkspaceSection; collapsed: boolean; forceExpanded: boolean })
   // `empty`: nothing to list under the header, so it offers no chevron.
   // `depth`: its tree level (1 inside a folder). `mixed`: listed among other
   // projects' works (In work, the list by time), so it names its project.
@@ -99,7 +103,7 @@ export type SessionSidebarRow =
 
 export type SessionSidebarStickyHeader = {
   rowIndex: number;
-  kind: 'activity' | 'project';
+  kind: 'activity' | 'project' | 'workspace';
   id: string;
 };
 
@@ -127,6 +131,8 @@ export type SessionSidebarRowModelArgs = {
   mode: 'normal' | 'search';
   sections: readonly ProjectSection[];
   authoritativeSections: readonly ProjectSection[];
+  /** Top-level workspace sections, in workspace order, above the projects. */
+  workspaceSections?: readonly WorkspaceSection[];
   chatGroup: SessionGroup | null;
   /** Pinned sessions, already ordered and search-filtered; they stay under their project too. */
   pinnedItems?: readonly SessionSidebarActivityItem[];
@@ -1064,6 +1070,43 @@ export const buildSessionSidebarRowModel = (args: SessionSidebarRowModelArgs): S
         push({ kind: 'status', key: `activity:timeline:status:${groupKey}`, estimateSize: STATUS_ESTIMATE, status, group: mainGroup, groupKey, flat: true });
       }
     }
+  }
+
+  for (const workspaceSection of args.singleProjectMode ? [] : args.workspaceSections ?? []) {
+    const containerKey = workspaceSectionKey(workspaceSection.workspace.id);
+    // Search drops a section whose sessions all left for In work or Pinned.
+    const nodes = workspaceSection.nodes
+      .filter((node) => !isMovedToZone(node.session.id))
+      .sort((left, right) => compareNodes(left, right, pinned, args.sessionOrderIndex));
+    if (search && nodes.length === 0) continue;
+    const workspaceCollapsed = !search && args.collapsedProjects.has(containerKey);
+    const rowIndex = rows.length;
+    push({
+      kind: 'workspace-header',
+      key: `${containerKey}:header`,
+      estimateSize: SECTION_HEADER_ESTIMATE,
+      section: workspaceSection,
+      collapsed: workspaceCollapsed,
+      forceExpanded: search,
+    });
+    stickyHeaders.push(Object.freeze({ rowIndex, kind: 'workspace', id: workspaceSection.workspace.id }));
+    if (search) {
+      searchMatchCount += nodes.reduce(
+        (total, node) => total + countSessionTreeQueryMatches(node, args.normalizedQuery),
+        0,
+      );
+    }
+    if (workspaceCollapsed) continue;
+    appendSessions({
+      nodes,
+      containerKey,
+      projectId: null,
+      groupDirectory: workspaceSection.workspace.directory,
+      ownerKey: null,
+      selectionScopeKey: null,
+      archived: false,
+      renderContext: 'project',
+    });
   }
 
   let projectSections = timeEntries ? [] : [...sections];

@@ -136,20 +136,38 @@ command palette lists projects only for a query, so it does not use it.
 ## Workspaces
 
 A workspace (`lib/repoWorkspaces`) is a named group of projects whose sessions
-run in a neutral directory. Until the full workspace section lands, the sidebar
-above the project list renders one `shell/WorkspaceSidebarHeader.tsx` row per
-workspace with its name, a plus that starts a session owned by the workspace,
-and an Edit control; both are revealed on hover and keyboard focus. The New
-workspace control sits next to New project in `shell/SidebarHeader.tsx`.
-Workspace rows and plain project sections are independent: a project that
-belongs to a workspace keeps its normal section and sessions, and nothing is
-filtered out.
+run in a neutral directory. It is a top-level sidebar section
+(`projects/workspaceSections.ts` and `projects/WorkspaceSectionRow.tsx`) listed
+before the plain project sections, in the workspace list's order. The row shows
+the workspace name and its sessions only: no repository rows, repository count
+or session count. A project that belongs to a workspace keeps its normal
+section, session count and sessions; nothing is filtered out. The New workspace
+control sits next to New project in `shell/SidebarHeader.tsx`.
 
-A stored workspace the parser discarded is shown as a discreet count under the
-rows; nothing is written back. Only the workspace slot waits: the first read
-shows skeletons there and never replaces the project list. A failed read keeps
-the last resolved rows and adds Retry; a runtime without `/api/workspaces`
-(mobile, VS Code) mounts none of it.
+Workspace ownership comes from the session's directory through
+`createSessionOwnershipIndex`'s workspace owner kind: only a session whose
+directory is exactly the workspace's neutral directory belongs to it. The index
+files those sessions under `sessionsByWorkspace`, never under a project, so a
+member project's sessions stay under the project and a workspace session is
+never duplicated. A workspace section is not a synthetic project: its keys live
+in the `workspace:<id>` space (`workspaceSectionKey`) and are never passed to a
+project-only control. It has no sortable project header, no repository status
+and no folder scope.
+
+The row's plus starts a workspace draft (`target: 'workspace'`); its menu holds
+only Edit, which opens the same name-and-folders form as create. Both controls
+are revealed on hover and keyboard focus, and the menu closes on Escape or an
+outside click. Collapsing a workspace reuses the project collapse state and
+Collapse all/Expand all cover its key; a search lists only sections whose
+sessions match and forces them open.
+
+A stored workspace the parser discarded is shown as a discreet count beside the
+list; nothing is written back. The first read shows a loading line there. A
+failed read keeps the last resolved rows and adds Retry, and every project
+section stays usable. A workspace whose member project left the catalog keeps
+its row and sessions, because the section reads the neutral directory rather
+than the project list. A runtime without `/api/workspaces` (mobile, VS Code)
+mounts none of it.
 
 ## The phone
 

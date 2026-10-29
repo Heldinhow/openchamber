@@ -653,6 +653,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.project.selectAria": "Selecionar projeto, atualmente {project}",
   "sessions.sidebar.workspace.menuLabel": "Workspaces",
   "sessions.sidebar.workspace.newSessionFor": "Nova sessão em {name}",
+  "sessions.sidebar.workspace.menuFor": "Menu do workspace {name}",
   "sessions.sidebar.workspace.missing": "Espaço de trabalho indisponível",
   "sessions.sidebar.workspace.repoCountSingle": "{count} repo",
   "sessions.sidebar.workspace.repoCountPlural": "{count} repos",

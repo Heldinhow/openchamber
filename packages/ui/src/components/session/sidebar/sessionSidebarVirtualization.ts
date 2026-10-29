@@ -81,15 +81,17 @@ const PROJECT_DIVIDER_CLASS = 'relative after:pointer-events-none after:absolute
 export const sectionWrapperClass = (row: SessionSidebarRow, nextRow: SessionSidebarRow | undefined): string => {
   const spacing = sectionSpacingAfter(row, nextRow);
   if (!spacing) return '';
-  return nextRow?.kind === 'project-header' ? `${spacing} ${PROJECT_DIVIDER_CLASS}` : spacing;
+  const nextIsSection = nextRow?.kind === 'project-header' || nextRow?.kind === 'workspace-header';
+  return nextIsSection ? `${spacing} ${PROJECT_DIVIDER_CLASS}` : spacing;
 };
 
 export const sectionSpacingAfter = (row: SessionSidebarRow, nextRow: SessionSidebarRow | undefined): SectionSpacing | undefined => {
-  // Zones (Chats, Pinned, In work, the list by time) and projects are sections
-  // of equal weight; a project's gap is wider only to hold its divider. A space or archive
-  // header opens a smaller one inside its project, so its sessions read as a
-  // group of their own. A worktree is a work row among session rows and opens none.
-  if (nextRow?.kind === 'project-header') return 'pb-4';
+  // Zones (Chats, Pinned, In work, the list by time), workspaces and projects
+  // are sections of equal weight; a project's gap is wider only to hold its
+  // divider. A space or archive header opens a smaller one inside its project,
+  // so its sessions read as a group of their own. A worktree is a work row
+  // among session rows and opens none.
+  if (nextRow?.kind === 'project-header' || nextRow?.kind === 'workspace-header') return 'pb-4';
   if (nextRow?.kind === 'activity-header') return 'pb-2';
   return nextRow?.kind === 'group-header' && !isGroupWork(nextRow.group) && row.kind !== 'project-header' ? 'pb-1.5' : undefined;
 };
